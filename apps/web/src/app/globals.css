@@ -127,3 +127,6 @@ textarea.in { resize: vertical; min-height: 72px; }
 @media print { .sidebar, .topbar, .no-print { display: none !important; } .shell { display: block; } .content { padding: 0; max-width: none; } body { background: #fff; } }
 .skeleton { background: linear-gradient(90deg, #F4EBE7, #FBF7F5, #F4EBE7); background-size: 200% 100%; animation: sk 1.4s infinite; border-radius: 4px; height: 14px; } @keyframes sk { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+.layout-toggle { gap: 8px; align-items: center; flex-wrap: wrap; }
+.q-card.q-current { box-shadow: 0 0 0 2px var(--rose); }

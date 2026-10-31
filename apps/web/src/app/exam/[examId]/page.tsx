@@ -78,12 +78,14 @@ function Shell({ children }: { children: React.ReactNode }) {
 function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onTakeover }: { engine: ExamEngine; questions: Q[]; exam: any; attemptId: string; clientId: string; onSubmitted: (r: Receipt) => void; onTakeover: () => void }) {
   useSyncExternalStore(engine.subscribe, engine.getVersion, engine.getVersion);
   const [idx, setIdx] = useState(0); const [filter, setFilter] = useState<Filter>('all'); const [view, setView] = useState<'q' | 'review'>('q');
+  const [layout, setLayout] = useState<'single' | 'all'>(() => (typeof window !== 'undefined' && sessionStorage.getItem('oes:layout') === 'all' ? 'all' : 'single'));
+  const chooseLayout = (l: 'single' | 'all') => { setLayout(l); setView('q'); sessionStorage.setItem('oes:layout', l); };
   const [remaining, setRemaining] = useState(engine.remainingMs()); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState('');
   const submitKey = useRef(''); if (!submitKey.current) { submitKey.current = sessionStorage.getItem(`oes:sk:${attemptId}`) ?? `sk${uid()}`; sessionStorage.setItem(`oes:sk:${attemptId}`, submitKey.current); }
   const q = questions[idx]!; const st = engine.get(q.id); const counts = engine.counts();
   const timeUp = useRef(false);
 
-  useEffect(() => { engine.visit(q.id); }, [engine, q.id]);
+  useEffect(() => { if (layout === 'single') engine.visit(q.id); }, [engine, q.id, layout]);
   useEffect(() => { const t = setInterval(() => setRemaining(engine.remainingMs()), 250); return () => clearInterval(t); }, [engine]);
 
   const fetchReceipt = useCallback(async () => { const r = await get(`/attempts/${attemptId}/receipt`); onSubmitted(r); }, [attemptId, onSubmitted]);
@@ -94,15 +96,18 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
     }
   }, [remaining, engine, fetchReceipt, engine.phase]);
 
-  const go = useCallback((n: number) => { setIdx(Math.max(0, Math.min(questions.length - 1, n))); setView('q'); }, [questions.length]);
+  const go = useCallback((n: number) => {
+    const i = Math.max(0, Math.min(questions.length - 1, n)); setIdx(i); setView('q');
+    if (layout === 'all') setTimeout(() => document.getElementById(`q-${questions[i]!.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
+  }, [questions, layout]);
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (view !== 'q' || (e.target as HTMLElement)?.tagName === 'TEXTAREA' || e.ctrlKey || e.metaKey) return;
+      if (view !== 'q' || layout !== 'single' || (e.target as HTMLElement)?.tagName === 'TEXTAREA' || e.ctrlKey || e.metaKey) return;
       if (e.key === 'ArrowRight') go(idx + 1); else if (e.key === 'ArrowLeft') go(idx - 1);
       else if (/^[a-e]$/i.test(e.key) && q.options.some((o) => o.label === e.key.toUpperCase())) engine.select(q.id, e.key.toUpperCase());
     };
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
-  }, [engine, go, idx, q, view]);
+  }, [engine, go, idx, q, view, layout]);
 
   const visible = useMemo(() => questions.map((x, i) => ({ x, i, k: paletteKind(engine.get(x.id)), m: engine.get(x.id).marked })).filter(({ k, m }) => filter === 'all' || (filter === 'marked' ? m : k === filter)),
     [questions, filter, engine.getVersion()]);
@@ -139,7 +144,18 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
       {!engine.online && <div className="conn off" role="alert">Connection lost. Keep working — your answers are held on this device and are saved automatically once the connection returns. {engine.pendingCount()} not yet saved.</div>}
       {msg && <div className="conn" style={{ background: '#FFFBEF', borderBottom: '1px solid #EBD9A8' }} role="status">{msg}</div>}
       <div className="exam-body">
-        {view === 'q' ? (
+        <div className="stack" style={{ minWidth: 0 }}>
+        <div className="row layout-toggle no-print" role="group" aria-label="Question layout">
+          <span className="small muted">View</span>
+          <button className={`btn btn-sm ${layout === 'single' ? 'btn-primary' : ''}`} aria-pressed={layout === 'single'} onClick={() => chooseLayout('single')} data-testid="layout-single">One question at a time</button>
+          <button className={`btn btn-sm ${layout === 'all' ? 'btn-primary' : ''}`} aria-pressed={layout === 'all'} onClick={() => chooseLayout('all')} data-testid="layout-all">All questions on one page</button>
+        </div>
+        {view === 'q' && layout === 'all' ? (
+          <div className="stack" data-testid="all-questions" style={{ gap: 16 }}>
+            {questions.map((x, i) => <QuestionBlock key={x.id} engine={engine} q={x} total={questions.length} current={i === idx} onFocus={() => setIdx(i)} />)}
+            <div className="card"><div className="card-b row"><span className="small muted">{counts.answered} of {questions.length} answered. Answers save automatically as you choose them.</span><span className="grow" /><button className="btn btn-primary" onClick={openReview} disabled={busy}>Review &amp; submit</button></div></div>
+          </div>
+        ) : view === 'q' ? (
           <section className="q-card" aria-label={`Question ${q.number}`}>
             <div className="q-head"><span>QUESTION {pad(q.number)} / {questions.length}{q.type === 'CLINICAL_MCQ' ? ' · CLINICAL' : ''}</span><span>{q.marks} MARK{q.marks === 1 ? '' : 'S'}</span></div>
             <div className="q-body">
@@ -161,6 +177,7 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
             </div>
           </section>
         ) : <ReviewView engine={engine} questions={questions} attemptId={attemptId} clientId={clientId} submitKey={submitKey.current} onBack={(n) => go(n ?? idx)} onSubmitted={onSubmitted} />}
+        </div>
 
         <aside className="stack" aria-label="Question navigator">
           <div className="card"><div className="card-h"><h2>Question palette</h2><span className="small muted mono">{counts.answered}/{questions.length}</span></div><div className="card-b stack">
@@ -174,6 +191,36 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
         </aside>
       </div>
     </div>
+  );
+}
+
+function QuestionBlock({ engine, q, total, current, onFocus }: { engine: ExamEngine; q: Q; total: number; current: boolean; onFocus: () => void }) {
+  const st = engine.get(q.id); const ref = useRef<HTMLElement>(null);
+  // "visited" is recorded when the question has actually been on screen, so the palette stays honest
+  useEffect(() => {
+    const el = ref.current; if (!el || typeof IntersectionObserver === 'undefined') { engine.visit(q.id); return; }
+    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { engine.visit(q.id); io.disconnect(); } }, { threshold: 0.4 });
+    io.observe(el); return () => io.disconnect();
+  }, [engine, q.id]);
+  const ind = engine.phase !== 'running' ? { c: 'bad', t: 'Not saving' } : st.sync === 'error' ? { c: 'bad', t: 'Could not save' } : st.sync === 'saved' && st.savedRev > 0 ? { c: 'ok', t: '✓ Saved' } : st.sync === 'saving' ? { c: 'wait', t: 'Saving…' } : st.rev === 0 ? { c: '', t: '' } : { c: 'wait', t: 'Not yet saved — retrying' };
+  return (
+    <section ref={ref} id={`q-${q.id}`} className={`q-card ${current ? 'q-current' : ''}`} aria-label={`Question ${q.number}`} onFocusCapture={onFocus} style={{ scrollMarginTop: 90 }}>
+      <div className="q-head"><span>QUESTION {pad(q.number)} / {total}{q.type === 'CLINICAL_MCQ' ? ' · CLINICAL' : ''}</span><span>{q.marks} MARK{q.marks === 1 ? '' : 'S'}</span></div>
+      <div className="q-body">
+        {q.vignette && <div className="vignette">{q.vignette}</div>}
+        <div className="q-stem" id={`stem-${q.id}`}>{q.stem}</div>
+        <div role="radiogroup" aria-labelledby={`stem-${q.id}`} className="stack" style={{ gap: 10 }}>
+          {q.options.map((o) => <button key={o.label} role="radio" aria-checked={st.selectedLabel === o.label} className="opt" onClick={() => { onFocus(); engine.select(q.id, o.label); }} data-testid={`all-opt-${q.number}-${o.label}`}><span className="radio" /><span className="lab">{o.label}</span><span>{o.text}</span></button>)}
+        </div>
+      </div>
+      <div className="q-foot">
+        <button className="btn" onClick={() => engine.skip(q.id)} disabled={st.state === 'ANSWERED'}>Skip question</button>
+        <button className="btn" onClick={() => engine.toggleMark(q.id)} aria-pressed={st.marked}>{st.marked ? 'Unmark review' : 'Mark for review'}</button>
+        <button className="btn" onClick={() => engine.clear(q.id)} disabled={!st.selectedLabel}>Clear response</button>
+        <span className="grow" />
+        <span className={`save-state ${ind.c}`} role="status" aria-live="polite">{ind.t}</span>
+      </div>
+    </section>
   );
 }
 
