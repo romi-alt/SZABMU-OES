@@ -22,7 +22,9 @@
     "test": "npm run build:shared && npm run test -w @oes/shared && npm run test -w @oes/api",
     "test:e2e": "playwright test",
     "test:load": "node --env-file=.env tests/load/exam-load.mjs",
-    "test:fault": "npm run build:shared && npm run test:fault -w @oes/api"
+    "test:fault": "npm run build:shared && npm run test:fault -w @oes/api",
+    "backup:db": "node scripts/db-backup.mjs backup",
+    "backup:verify": "node scripts/db-backup.mjs verify"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

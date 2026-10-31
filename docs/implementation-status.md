@@ -12,7 +12,7 @@ Definitions — **Complete**: frontend + backend + persistence + permissions + a
 | Shared unit tests | ✅ 15 / 15 |
 | API integration + security tests (real PostgreSQL 16 + Redis, via Fastify inject) | ✅ 124 / 124 (incl. 15 eligibility + 13 course-access tests) |
 | Browser tests (Playwright/Chromium → Next.js → Nest → PostgreSQL/Redis) | ✅ 16 / 16 (16th = manipulated device clock; 15 re-run after checkpoint 4 changes, the 16th run on its own) |
-| Fault injection (`npm run test:fault`; disposable PG 16 cluster + Redis + real API processes) | ✅ 7 / 7 — not part of `npm test` |
+| Fault injection (`npm run test:fault`; disposable PG 16 cluster + Redis + real API processes) | ✅ 10 / 10 (7 durability + 3 backup/restore) — not part of `npm test` |
 | Load + integrity (2,000 synthetic candidates × 50 questions) | ✅ integrity PASS — see *Load test results* |
 | Production build (`next build`, `tsc`) | ✅ |
 | `docker compose` stack | ⚠️ **written but not run** — no Docker daemon in the build sandbox; PostgreSQL 16 and Redis were run natively instead |
@@ -105,7 +105,8 @@ Candidate lifecycle is now recorded on the attempt itself (`attempts`, `attempt_
 | 1 | 2026-10-31 | `61aa53e` `ea60a21` `c521f28` `c11db08` `c1458fa` | Baseline pushed: docs+audit, infra/CI, load tooling, delivery optimisation, web polish. Secret scan clean; no destructive DB change | ✅ pushed to `claude/oes-platform-foundation`; CI/compose still never executed |
 | 2 | 2026-10-31 | `8eed15e` | **Eligibility policy (Decision 2)** | ✅ implemented + tested (below) |
 | 3 | 2026-10-31 | `3c4f6ea` | **P0-A lecturer ↔ course authorization** | ✅ implemented + tested (below) |
-| 4 | 2026-10-31 | see git log | **P0-B answer durability fault injection** (+ Redis-outage defect fixed) | ✅ 7 fault scenarios pass on disposable infra (below) |
+| 4 | 2026-10-31 | `b4d2813` | **P0-B answer durability fault injection** (+ Redis-outage defect fixed) | ✅ 7 fault scenarios pass on disposable infra (below) |
+| 5 | 2026-10-31 | see git log | **P0-C backup & verified restore** | ✅ logical backup + isolated-restore verification; ❌ PITR/encryption/scheduling (below) |
 
 ### Checkpoint 2 — eligibility admission, roster versions, overrides
 **Defects found before the change:** `refreshRoster` hard-deleted candidates (history lost) and kept no version/approver; `start` only checked that a roster row existed (no account/student status, revocation, institution assignment or local enrolment re-check); no override record; no frozen per-attempt decision.
@@ -138,3 +139,7 @@ Candidate lifecycle is now recorded on the attempt itself (`attempts`, `attempt_
 **Defect found: Redis outage made the API effectively unusable.** "Fail open" was implemented as slow failure: ioredis retried each command for 0.5–2 s (growing) and a login/save makes several Redis calls, so requests exceeded client timeouts; additionally the post-submit BullMQ enqueue waits forever while Redis is down, so *submit* would hang. **Fix:** Redis client with no offline queue, 500 ms command timeout and a 3 s circuit breaker (`RedisService.available`); grade-job enqueue is skipped/time-boxed (sweeper recovers grading). Regression test: scenario E.
 **What this does NOT prove:** power loss / OS crash / disk fault (the "crash" is a PostgreSQL immediate stop on the same host; storage was the sandbox filesystem); replica failover/split-brain; multi-API-process interleavings; network partitions beyond a reset connection; behaviour under the 5,000-candidate load; PgBouncer. Password-reset tokens still live only in Redis (`auth.service.ts`) — recovery flow is unavailable during a Redis outage (exam path unaffected).
 **Not in CI yet:** the suite needs PostgreSQL server binaries + `runuser` when run as root; add as a separate job once the CI workflow has been executed once.
+
+### Checkpoint 5 — P0-C backup & restore
+`scripts/db-backup.mjs` + `docs/operations/backup-restore.md`. **Accepted only after restoration was tested in isolation:** verified on the synthetic dev database and, in the fault suite, on a backup taken *during live candidate writes* (consistent snapshot) — restored into a disposable cluster, every one of 35 tables matched on count and content fingerprint, migrations and integrity triggers matched, the API booted on the restored copy with an intact audit hash chain and sealed receipt; a corrupted dump and a tampered manifest are rejected. Defect found while building it: my first audit-append-only probe queried a nonexistent column and misreported the restore as bad (probe fixed to use `ctid` and to distinguish probe errors from real failures).
+**Not done (blocking for any real deployment):** point-in-time recovery (WAL archiving), encryption of dumps, scheduling/retention/off-site copy, restore-time measurement at production size. RPO today = backup interval.
