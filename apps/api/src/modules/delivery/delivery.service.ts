@@ -265,15 +265,29 @@ export class DeliveryService {
     attemptId: string,
     o: { mode: 'MANUAL' | 'AUTO' | 'FORCED'; clientId?: string; submitKey?: string; expected?: { examQuestionId: string; revision: number; selectedLabel: string | null }[]; actor?: AuthUser; reason?: string; ip?: string },
   ) {
+    // 1. Cheap reads OUTSIDE any transaction: no pooled connection is held while these (or anything else) queue.
+    const pre = (await this.prisma.$queryRaw<{ id: string; examId: string; studentId: string; status: string; receiptCode: string | null; submittedAt: Date | null; answerDigest: string | null }[]>`
+      SELECT id, "examId", "studentId", status, "receiptCode", "submittedAt", "answerDigest" FROM attempts WHERE id = ${attemptId}::uuid`)[0];
+    if (!pre) throw notFound('Attempt');
+    // The approved paper is immutable, so its question ids come from the cache (no DB round trip inside the seal).
+    const eqIds = (await this.paperFor(pre.examId)).map((q) => q.id);
+    const total = eqIds.length;
+    const replay = async (r: { examId: string; studentId: string; status: string; receiptCode: string | null; submittedAt: Date | null; answerDigest: string | null }, count: (q: string) => Promise<number>) =>
+      ({ receiptCode: r.receiptCode!, submittedAt: r.submittedAt!, answered: await count(attemptId), total, digest: r.answerDigest!, status: r.status, replayed: true as const, examId: r.examId, studentId: r.studentId, fresh: false as const });
+    const answeredCount = async (id: string) => (await this.prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM attempt_answers WHERE "attemptId" = ${id}::uuid AND state = 'ANSWERED'`)[0]!.n;
+    if (pre.status !== 'IN_PROGRESS') { const r = await replay(pre, answeredCount); const { fresh: _f, examId: _e, studentId: _s, ...pub } = r; return pub; } // sealed = immutable: replays need no transaction at all
+
+    // 2. The seal itself: as few round trips as possible while the connection is held.
+    //    (lock) → (read answers, fresh snapshot so a save we waited for is included) → (one statement: update + journal).
+    //    Waiting for a free connection is bounded generously instead of failing after Prisma's 2 s default.
     const out = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ id: string; examId: string; studentId: string; status: string; deadlineAt: Date; activeClientId: string | null; receiptCode: string | null; submittedAt: Date | null; answerDigest: string | null; now: Date }[]>`
         SELECT id, "examId", "studentId", status, "deadlineAt", "activeClientId", "receiptCode", "submittedAt", "answerDigest", clock_timestamp() AS now FROM attempts WHERE id = ${attemptId}::uuid FOR UPDATE`;
       const a = rows[0];
       if (!a) throw notFound('Attempt');
-      const total = await tx.examQuestion.count({ where: { examId: a.examId } });
-      if (a.status !== 'IN_PROGRESS') {
-        const answered = await tx.attemptAnswer.count({ where: { attemptId, state: 'ANSWERED' } });
-        return { receiptCode: a.receiptCode!, submittedAt: a.submittedAt!, answered, total, digest: a.answerDigest!, status: a.status, replayed: true, examId: a.examId, studentId: a.studentId, fresh: false };
+      if (a.status !== 'IN_PROGRESS') { // sealed by a concurrent request between our pre-read and the lock
+        const n = (await tx.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM attempt_answers WHERE "attemptId" = ${attemptId}::uuid AND state = 'ANSWERED'`)[0]!.n;
+        return replay(a, async () => n);
       }
       if (o.mode === 'MANUAL' && a.activeClientId !== o.clientId) throw conflict('SESSION_SUPERSEDED', 'This examination is open in another window or device.');
       const late = a.now.getTime() > a.deadlineAt.getTime() + SAVE_GRACE_SECONDS * 1000;
@@ -289,16 +303,19 @@ export class DeliveryService {
           });
         }
       }
-      const eqIds = (await tx.examQuestion.findMany({ where: { examId: a.examId }, select: { id: true } })).map((x) => x.id);
       const am = new Map(answers.map((x) => [x.examQuestionId, x]));
       const digest = answerDigest(eqIds.map((id) => ({ examQuestionId: id, selectedLabel: am.get(id)?.selectedLabel ?? null, revision: am.get(id)?.revision ?? 0 })));
       const submittedAt = a.now;
       const code = receiptCode(this.cfg.RECEIPT_SECRET, attemptId, digest, submittedAt);
       const status = o.mode === 'MANUAL' && !late ? 'SUBMITTED' : 'AUTO_SUBMITTED';
-      await tx.attempt.update({ where: { id: attemptId }, data: { status, submittedAt, submitKey: o.submitKey ?? null, receiptCode: code, answerDigest: digest } });
-      await tx.attemptEvent.create({ data: { attemptId, kind: o.mode === 'FORCED' ? 'FORCE_SUBMITTED' : o.mode === 'AUTO' ? 'AUTO_SUBMITTED' : 'SUBMITTED', actorId: o.actor?.id, detail: { reason: o.reason ?? (o.mode === 'AUTO' ? 'deadline' : undefined), receipt: code } } });
-      return { receiptCode: code, submittedAt, answered: answers.filter((x) => x.state === 'ANSWERED').length, total, digest, status, replayed: false, late, examId: a.examId, studentId: a.studentId, fresh: true };
-    });
+      const kind = o.mode === 'FORCED' ? 'FORCE_SUBMITTED' : o.mode === 'AUTO' ? 'AUTO_SUBMITTED' : 'SUBMITTED';
+      const detail = JSON.stringify({ reason: o.reason ?? (o.mode === 'AUTO' ? 'deadline' : undefined) });
+      // one statement: seal the attempt AND journal the event atomically
+      await tx.$executeRaw`
+        WITH u AS (UPDATE attempts SET status = ${status}::"AttemptStatus", "submittedAt" = ${submittedAt}, "submitKey" = ${o.submitKey ?? null}, "receiptCode" = ${code}, "answerDigest" = ${digest} WHERE id = ${attemptId}::uuid RETURNING id)
+        INSERT INTO attempt_events ("attemptId", kind, "actorId", detail) SELECT id, ${kind}, ${o.actor?.id ?? null}::uuid, ${detail}::jsonb FROM u`;
+      return { receiptCode: code, submittedAt, answered: answers.filter((x) => x.state === 'ANSWERED').length, total, digest, status, replayed: false as const, late, examId: a.examId, studentId: a.studentId, fresh: true as const };
+    }, { maxWait: 15_000, timeout: 20_000 });
     if (out.fresh) {
       // Candidate submits / deadline auto-submits are recorded on the attempt itself (status, receipt, digest, attempt_events).
       // Only staff-initiated seals go to the (globally serialised) audit chain.
