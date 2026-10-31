@@ -80,6 +80,12 @@ enum AttemptStatus {
   VOID
 }
 
+/// Admission decision for a rostered candidate. REVOKED rows are kept (never deleted) so history survives.
+enum CandidateStatus {
+  ADMITTED
+  REVOKED
+}
+
 enum AnswerState {
   ANSWERED
   SKIPPED
@@ -314,6 +320,7 @@ model Student {
   enrollments   Enrollment[]
   candidacies   ExamCandidate[]
   attempts      Attempt[]
+  eligibilityOverrides EligibilityOverride[]
   results       Result[]
   createdAt     DateTime    @default(now()) @db.Timestamptz
 
@@ -415,6 +422,8 @@ model Exam {
   institutions  ExamInstitution[]
   questions     ExamQuestion[]
   candidates    ExamCandidate[]
+  rosterVersions ExamRosterVersion[]
+  eligibilityOverrides EligibilityOverride[]
   invigilators  ExamInvigilator[]
   attempts      Attempt[]
   incidents     Incident[]
@@ -465,6 +474,13 @@ model ExamCandidate {
   institutionId String      @db.Uuid
   extraTimeMin  Int         @default(0)
   accommodation String?
+  /// Current admission decision. Re-validated when a NEW attempt starts; frozen on the attempt afterwards.
+  status        CandidateStatus @default(ADMITTED)
+  /// ENROLMENT = derived from enrolment data by the roster build; OVERRIDE = set by an authorised manual decision (never auto-reverted).
+  decisionSource String     @default("ENROLMENT")
+  statusReason  String?
+  statusChangedAt DateTime? @db.Timestamptz
+  rosterVersion Int         @default(1)
   createdAt     DateTime    @default(now()) @db.Timestamptz
   exam          Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
   student       Student     @relation(fields: [studentId], references: [id])
@@ -507,6 +523,8 @@ model Attempt {
   clientEpoch    Int           @default(0)
   lastHeartbeatAt DateTime?    @db.Timestamptz
   integrityFlags Int           @default(0)
+  /// Eligibility decision frozen at start (source, roster version, enrolment, override). Never re-evaluated per save.
+  admission      Json?
   ip             String?
   userAgent      String?
   exam           Exam          @relation(fields: [examId], references: [id])
@@ -514,6 +532,7 @@ model Attempt {
   answers        AttemptAnswer[]
   events         AttemptEvent[]
   incidents      Incident[]
+  overrides      EligibilityOverride[]
 
   @@unique([examId, studentId])
   @@index([examId, status])
@@ -726,4 +745,43 @@ model AuditLog {
   @@index([institutionId, at])
   @@index([actorId, at])
   @@map("audit_logs")
+}
+
+// ───────────────────────── Eligibility roster versions & overrides ─────────────────────────
+
+/// Immutable, hash-stamped roster snapshot produced by every roster build/refresh and approved by the acting scheduler.
+model ExamRosterVersion {
+  id             String   @id @default(uuid()) @db.Uuid
+  examId         String   @db.Uuid
+  version        Int
+  createdById    String   @db.Uuid
+  approvedById   String   @db.Uuid
+  candidateCount Int
+  revokedCount   Int
+  digest         String
+  snapshot       Json
+  createdAt      DateTime @default(now()) @db.Timestamptz
+  exam           Exam     @relation(fields: [examId], references: [id])
+
+  @@unique([examId, version])
+  @@map("exam_roster_versions")
+}
+
+/// Append-only record of every manual eligibility decision.
+model EligibilityOverride {
+  id           String   @id @default(uuid()) @db.Uuid
+  examId       String   @db.Uuid
+  studentId    String   @db.Uuid
+  attemptId    String?  @db.Uuid
+  oldDecision  String
+  newDecision  String
+  reason       String
+  approvedById String   @db.Uuid
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  exam         Exam     @relation(fields: [examId], references: [id])
+  student      Student  @relation(fields: [studentId], references: [id])
+  attempt      Attempt? @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+
+  @@index([examId, studentId])
+  @@map("eligibility_overrides")
 }
