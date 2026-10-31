@@ -303,7 +303,12 @@ export class DeliveryService {
       // Candidate submits / deadline auto-submits are recorded on the attempt itself (status, receipt, digest, attempt_events).
       // Only staff-initiated seals go to the (globally serialised) audit chain.
       if (o.mode === 'FORCED') await this.audit.log({ actor: o.actor ?? null, action: 'attempt.force_submit', entity: 'attempt', entityId: attemptId, meta: { examId: out.examId, receipt: out.receiptCode, answered: out.answered, total: out.total, reason: o.reason }, ip: o.ip });
-      await this.queues.add(QUEUES.grade, 'grade', { attemptId }, { jobId: `grade-${attemptId}` }).catch((e) => this.log.warn(`grade enqueue failed (sweeper will recover): ${e.message}`));
+      // Best effort and time-boxed: BullMQ waits indefinitely while Redis is down, which must never delay the receipt.
+      // The lifecycle sweeper grades any sealed attempt that was not enqueued.
+      if (this.redis.available) await Promise.race([
+        this.queues.add(QUEUES.grade, 'grade', { attemptId }, { jobId: `grade-${attemptId}` }).catch((e) => this.log.warn(`grade enqueue failed (sweeper will recover): ${e.message}`)),
+        new Promise<void>((resolve) => setTimeout(() => { this.log.warn('grade enqueue timed out (sweeper will recover)'); resolve(); }, 1500).unref()),
+      ]);
     }
     const { fresh: _f, examId: _e, studentId: _s, ...pub } = out;
     return pub;

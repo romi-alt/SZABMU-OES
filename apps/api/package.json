@@ -13,7 +13,8 @@
     "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput & node --watch dist/main.js",
     "start": "node dist/main.js",
     "worker": "node dist/worker.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:fault": "vitest run --config vitest.fault.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",

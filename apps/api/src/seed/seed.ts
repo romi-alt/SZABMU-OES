@@ -138,7 +138,7 @@ async function main() {
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
   const prisma = app.get(PrismaService);
   if (process.argv.includes('--reset')) await resetDatabase(prisma);
-  const r = await seed(app);
+  const r = await seed(app, { studentsPerCampus: Number(process.env.SEED_STUDENTS_PER_CAMPUS ?? 6) });
   console.log(`Seeded synthetic demo data. Demo password for every account: ${DEMO_PASSWORD}`);
   console.log(`Live demo exam id: ${r.examId}`);
   await app.close();

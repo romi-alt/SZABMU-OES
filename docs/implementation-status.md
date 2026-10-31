@@ -11,7 +11,8 @@ Definitions — **Complete**: frontend + backend + persistence + permissions + a
 | Lint (`eslint .`) | ✅ clean |
 | Shared unit tests | ✅ 15 / 15 |
 | API integration + security tests (real PostgreSQL 16 + Redis, via Fastify inject) | ✅ 124 / 124 (incl. 15 eligibility + 13 course-access tests) |
-| Browser tests (Playwright/Chromium → Next.js → Nest → PostgreSQL/Redis) | ✅ 15 / 15 (full suite re-run after checkpoint 3) |
+| Browser tests (Playwright/Chromium → Next.js → Nest → PostgreSQL/Redis) | ✅ 16 / 16 (16th = manipulated device clock; 15 re-run after checkpoint 4 changes, the 16th run on its own) |
+| Fault injection (`npm run test:fault`; disposable PG 16 cluster + Redis + real API processes) | ✅ 7 / 7 — not part of `npm test` |
 | Load + integrity (2,000 synthetic candidates × 50 questions) | ✅ integrity PASS — see *Load test results* |
 | Production build (`next build`, `tsc`) | ✅ |
 | `docker compose` stack | ⚠️ **written but not run** — no Docker daemon in the build sandbox; PostgreSQL 16 and Redis were run natively instead |
@@ -103,7 +104,8 @@ Candidate lifecycle is now recorded on the attempt itself (`attempts`, `attempt_
 | --- | --- | --- | --- | --- |
 | 1 | 2026-10-31 | `61aa53e` `ea60a21` `c521f28` `c11db08` `c1458fa` | Baseline pushed: docs+audit, infra/CI, load tooling, delivery optimisation, web polish. Secret scan clean; no destructive DB change | ✅ pushed to `claude/oes-platform-foundation`; CI/compose still never executed |
 | 2 | 2026-10-31 | `8eed15e` | **Eligibility policy (Decision 2)** | ✅ implemented + tested (below) |
-| 3 | 2026-10-31 | see git log | **P0-A lecturer ↔ course authorization** | ✅ implemented + tested (below) |
+| 3 | 2026-10-31 | `3c4f6ea` | **P0-A lecturer ↔ course authorization** | ✅ implemented + tested (below) |
+| 4 | 2026-10-31 | see git log | **P0-B answer durability fault injection** (+ Redis-outage defect fixed) | ✅ 7 fault scenarios pass on disposable infra (below) |
 
 ### Checkpoint 2 — eligibility admission, roster versions, overrides
 **Defects found before the change:** `refreshRoster` hard-deleted candidates (history lost) and kept no version/approver; `start` only checked that a roster row existed (no account/student status, revocation, institution assignment or local enrolment re-check); no override record; no frozen per-attempt decision.
@@ -120,3 +122,19 @@ Candidate lifecycle is now recorded on the attempt itself (`attempts`, `attempt_
 **Behaviour change / migration note:** existing lecturers have **no** access after this migration until assigned (deliberately no auto-backfill — deny by default). The seed assigns demo lecturers.
 **Tests:** `course-access.test.ts` (13: unassigned course/other campus/other program, create/update/submit/retire, key non-leakage by string search, paper/grading/results paths, admin authorization incl. other campus + anonymous, validation, immediate effect of assign/revoke, history, DB uniqueness, audit) + 1 Playwright; `security.test.ts` updated (403→404 for an unassigned course).
 **Not covered / residual:** lecturers can still list *exams* (schedule metadata) of other courses at their campus; student-facing and examiner flows unchanged; no bulk assignment import; no per-term assignments.
+
+### Checkpoint 4 — P0-B answer-durability fault injection
+**Method.** `npm run test:fault` (`apps/api/test-fault/`) builds the API, creates a **disposable** PostgreSQL 16 cluster (own temp dir, random port, `fsync=on`, `synchronous_commit=on`, 127.0.0.1 only), a disposable Redis and real API child processes. Children get an explicit minimal environment and the harness refuses to run if a URL points at the shared dev/test services (ports 5433/6390). Simulated browsers keep strictly ordered per-question revisions, one in flight, and stop on first failure like the real engine. Core assertion after every fault: *every acknowledged answer is in PostgreSQL at ≥ its acknowledged revision (identical content at equal revision); every stored answer has a matching journal row; no duplicate journal rows.*
+| Requested scenario | Result (measured) |
+| --- | --- |
+| API crash during answer writes (SIGKILL ×2, 6 candidates, random in-flight requests) | ✅ 0 acknowledged answers lost; 0 torn rows; retries converged to the full plan |
+| API crash *inside* a write (journal insert stalled mid-statement) | ✅ (i) backend terminated mid-statement ⇒ neither row nor journal row, never acknowledged; (ii) API killed mid-statement ⇒ PostgreSQL finished the orphaned statement atomically (committed-unacknowledged) ⇒ retry idempotent, exactly one journal row |
+| API restart after committed write (SIGTERM and SIGKILL) | ✅ sheet matches; submit with the client's expected list succeeds; receipt replays identically after another crash; late save refused |
+| Lost HTTP acknowledgement after DB commit (response-dropping proxy) | ✅ data durable although client saw an error; retry returns `duplicate:true`, 1 journal row; lost *submit* ack replays the same receipt |
+| PostgreSQL crash (`pg_ctl stop -m immediate`, then WAL recovery) | ✅ 0 acknowledged answers lost; API reported `db:false` while down (never "healthy"); **recovered without an API restart** |
+| Redis FLUSHALL then hard outage | ❌→✅ **defect found and fixed** (below); afterwards login+start 347 ms, fleet 0 failures, submit 15 ms, health `redis:false` honestly |
+| Duplicate request · out-of-order revision · two-tab conflict · submit racing a save | ✅ already covered by `exam-engine.test.ts` (idempotent replay; concurrent out-of-order converges on highest; SESSION_SUPERSEDED; race ⇒ included or rejected, never "saved but missing") |
+| Client clock manipulation | ✅ API: forged `Date`/`X-Client-Time` headers and body fields (`deadlineAt`, `clientTime`, `serverNow`) ignored; deadline passes in DB ⇒ 409 TIME_EXPIRED and server auto-seals. Browser: device clock 6 h fast ⇒ countdown still ≈45:00 and DB deadline = server start + 45 min (Playwright) |
+**Defect found: Redis outage made the API effectively unusable.** "Fail open" was implemented as slow failure: ioredis retried each command for 0.5–2 s (growing) and a login/save makes several Redis calls, so requests exceeded client timeouts; additionally the post-submit BullMQ enqueue waits forever while Redis is down, so *submit* would hang. **Fix:** Redis client with no offline queue, 500 ms command timeout and a 3 s circuit breaker (`RedisService.available`); grade-job enqueue is skipped/time-boxed (sweeper recovers grading). Regression test: scenario E.
+**What this does NOT prove:** power loss / OS crash / disk fault (the "crash" is a PostgreSQL immediate stop on the same host; storage was the sandbox filesystem); replica failover/split-brain; multi-API-process interleavings; network partitions beyond a reset connection; behaviour under the 5,000-candidate load; PgBouncer. Password-reset tokens still live only in Redis (`auth.service.ts`) — recovery flow is unavailable during a Redis outage (exam path unaffected).
+**Not in CI yet:** the suite needs PostgreSQL server binaries + `runuser` when run as root; add as a separate job once the CI workflow has been executed once.
