@@ -10,8 +10,8 @@ Definitions — **Complete**: frontend + backend + persistence + permissions + a
 | Typecheck (`tsc` api, web, shared) | ✅ clean |
 | Lint (`eslint .`) | ✅ clean |
 | Shared unit tests | ✅ 15 / 15 |
-| API integration + security tests (real PostgreSQL 16 + Redis, via Fastify inject) | ✅ 111 / 111 (incl. 15 eligibility tests, checkpoint 2) |
-| Browser tests (Playwright/Chromium → Next.js → Nest → PostgreSQL/Redis) | ✅ staff.spec 5 / 5 re-run after checkpoint 2; auth (6) + exam (3) specs last passed before it — full re-run pending |
+| API integration + security tests (real PostgreSQL 16 + Redis, via Fastify inject) | ✅ 124 / 124 (incl. 15 eligibility + 13 course-access tests) |
+| Browser tests (Playwright/Chromium → Next.js → Nest → PostgreSQL/Redis) | ✅ 15 / 15 (full suite re-run after checkpoint 3) |
 | Load + integrity (2,000 synthetic candidates × 50 questions) | ✅ integrity PASS — see *Load test results* |
 | Production build (`next build`, `tsc`) | ✅ |
 | `docker compose` stack | ⚠️ **written but not run** — no Docker daemon in the build sandbox; PostgreSQL 16 and Redis were run natively instead |
@@ -102,7 +102,8 @@ Candidate lifecycle is now recorded on the attempt itself (`attempts`, `attempt_
 | # | Date | Commit(s) | What | State |
 | --- | --- | --- | --- | --- |
 | 1 | 2026-10-31 | `61aa53e` `ea60a21` `c521f28` `c11db08` `c1458fa` | Baseline pushed: docs+audit, infra/CI, load tooling, delivery optimisation, web polish. Secret scan clean; no destructive DB change | ✅ pushed to `claude/oes-platform-foundation`; CI/compose still never executed |
-| 2 | 2026-10-31 | see git log | **Eligibility policy (Decision 2)** | ✅ implemented + tested (below) |
+| 2 | 2026-10-31 | `8eed15e` | **Eligibility policy (Decision 2)** | ✅ implemented + tested (below) |
+| 3 | 2026-10-31 | see git log | **P0-A lecturer ↔ course authorization** | ✅ implemented + tested (below) |
 
 ### Checkpoint 2 — eligibility admission, roster versions, overrides
 **Defects found before the change:** `refreshRoster` hard-deleted candidates (history lost) and kept no version/approver; `start` only checked that a roster row existed (no account/student status, revocation, institution assignment or local enrolment re-check); no override record; no frozen per-attempt decision.
@@ -110,3 +111,12 @@ Candidate lifecycle is now recorded on the attempt itself (`attempts`, `attempt_
 **UI:** exam detail roster shows Admission + manual marker; CCE/Super Admin get Withdraw…/Admit… dialog (reason required).
 **Tests:** `apps/api/test/eligibility.test.ts` (15: admission, revocation without deletion, local re-check, restricted account, frozen decision, override authorization for 5 roles + anonymous, validation, grant/revoke/not-on-roster, forceSubmit, re-entry refusal, scoping, append-only, audit) + Playwright staff spec.
 **Limits / not done:** approval of a roster version is by the same actor who scheduled (single-actor — see P-24); no separate roster-approval screen or roster-version viewer in the UI; no automatic roster refresh before the exam opens (refresh occurs on *Schedule*; stale roster is mitigated by the start-time local enrolment check); suspending an in-progress attempt other than force-submit is not implemented (awaiting policy P-25); the "no academic reads on save" test is a static source check, not a runtime query counter.
+
+### Checkpoint 3 — P0-A lecturer ↔ course authorization
+**Defect (verified by reading the code, then by failing tests):** any LECTURER could create questions for *any* `courseId`, and list/read (answer keys included) every question of their institution regardless of course; paper build/read (incl. keys), item analysis, grading review and result listing were scoped by institution only. `Department` is not linked to courses in the schema, so "department" isolation is expressed through course assignment (programs/courses are university-level).
+**Fix:** `course_assignments` (user, course, institution; soft revoke; partial unique index for one active row) and `CourseAccessService` as the single primitive. Enforced for lecturers in: question list (query-level filter), get/update/submit/retire (404 when unassigned), create (403, plus unknown-course 400), paper read/compose/submit, grading queue/analysis/review, result listing. Deny by default: **no assignments ⇒ no access** (including to questions they authored). Other roles are unchanged. Lecturers have no export/report permission at all (tested).
+**Admin:** `POST/DELETE/GET /course-assignments` (Super Admin + Campus Admin for their own campuses only; target must be an active lecturer of that campus; audited), `GET /me/course-assignments`. UI: *Lecturer assignments* page; question bank offers lecturers only their assigned courses.
+**Defect found while testing:** Prisma `OR: []` did **not** behave as "match nothing" — a lecturer with zero assignments saw all questions. Fixed with an explicit empty match; covered by a regression test.
+**Behaviour change / migration note:** existing lecturers have **no** access after this migration until assigned (deliberately no auto-backfill — deny by default). The seed assigns demo lecturers.
+**Tests:** `course-access.test.ts` (13: unassigned course/other campus/other program, create/update/submit/retire, key non-leakage by string search, paper/grading/results paths, admin authorization incl. other campus + anonymous, validation, immediate effect of assign/revoke, history, DB uniqueness, audit) + 1 Playwright; `security.test.ts` updated (403→404 for an unassigned course).
+**Not covered / residual:** lecturers can still list *exams* (schedule metadata) of other courses at their campus; student-facing and examiner flows unchanged; no bulk assignment import; no per-term assignments.

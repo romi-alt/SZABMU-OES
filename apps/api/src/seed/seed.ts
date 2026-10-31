@@ -1,3 +1,4 @@
+import { CourseAccessService } from '../modules/org/course-access.service';
 import 'reflect-metadata';
 import argon2 from 'argon2';
 import { NestFactory } from '@nestjs/core';
@@ -94,6 +95,12 @@ export async function seed(app: INestApplicationContext, opts: { studentsPerCamp
   await prisma.enrollment.updateMany({ where: { eligibility: 'ELIGIBLE' }, data: { attendancePct: 88 } });
 
   // Question bank via the real workflow: lecturer authors → submits → examiner approves
+  // Lecturers act only on explicitly assigned courses (P0-A). Demo assignments: A1 → PATH+PHARM, A2 → PHARM, B → PATH.
+  const access = app.get(CourseAccessService);
+  const uid = async (local: string) => (await prisma.user.findUniqueOrThrow({ where: { email: `${local}@${DOMAIN}` } })).id;
+  for (const [local, inst, courses] of [['lecturer.a', a, [path, pharm]], ['lecturer.a2', a, [pharm]], ['lecturer.b', b, [path]]] as const) {
+    for (const c of courses) await access.assign(sa, { userId: await uid(local), courseId: c.id, institutionId: inst.id });
+  }
   const lect = await asUser(prisma, `lecturer.a@${DOMAIN}`);
   const rev = await asUser(prisma, `examiner@${DOMAIN}`);
   const ids: Record<'PATH' | 'PHARM', string[]> = { PATH: [], PHARM: [] };

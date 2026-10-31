@@ -103,4 +103,20 @@ test.describe('staff workflows', () => {
     await expect(p2.getByRole('button', { name: /Withdraw…|Admit…/ })).toHaveCount(0);
     await ctx2.close();
   });
+
+  test('course assignments: campus admin manages their campus only; a lecturer sees only assigned courses in the question bank', async ({ page, browser }) => {
+    await login(page, 'admin.a');
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Lecturer assignments' }).click();
+    await expect(page.getByRole('heading', { name: 'Lecturer course assignments' })).toBeVisible();
+    await expect(page.locator('tbody tr')).toHaveCount(3); // lecturer.a ×2 (PATH, PHARM) + lecturer.a2 ×1; campus B's assignment is invisible
+    const text = await page.locator('tbody').innerText();
+    expect(text).not.toContain('Saqib'); // lecturer.b belongs to campus B
+
+    const ctx2 = await browser.newContext(); const p2 = await ctx2.newPage();
+    await login(p2, 'lecturer.a2');
+    await p2.getByRole('link', { name: 'Question bank' }).click();
+    await expect(p2.getByRole('heading', { name: /Question bank/ })).toBeVisible();
+    await expect(p2.getByLabel('Course').first().locator('option')).toHaveCount(2); // "All courses" + the single assigned course
+    await ctx2.close();
+  });
 });

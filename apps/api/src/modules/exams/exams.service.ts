@@ -7,6 +7,7 @@ import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import type { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DeliveryService } from '../delivery/delivery.service';
+import { CourseAccessService } from '../org/course-access.service';
 
 export interface ExamInput {
   code: string; title: string; courseId: string; term: string;
@@ -16,7 +17,7 @@ export interface ExamInput {
 
 @Injectable()
 export class ExamsService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly notifications: NotificationsService, private readonly delivery: DeliveryService) {}
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly notifications: NotificationsService, private readonly delivery: DeliveryService, private readonly access: CourseAccessService) {}
 
   /** An exam is visible to campus-scoped users only if one of their institutions participates in it. */
   examScope(u: AuthUser): Prisma.ExamWhereInput {
@@ -54,7 +55,7 @@ export class ExamsService {
   }
 
   async paper(u: AuthUser, examId: string, includeKey: boolean) {
-    await this.load(u, examId);
+    await this.access.assertExam(u, await this.load(u, examId));
     const qs = await this.prisma.examQuestion.findMany({ where: { examId }, orderBy: { position: 'asc' }, include: { question: { select: { id: true, stem: true, vignette: true, type: true, difficulty: true, status: true, options: { select: { label: true, text: true, isCorrect: true }, orderBy: { label: 'asc' } } } } } });
     return qs.map((x) => ({ id: x.id, position: x.position, marks: x.marks, questionId: x.questionId, frozen: !!x.snapshot, question: { ...x.question, options: x.question.options.map((o) => ({ label: o.label, text: o.text, ...(includeKey ? { isCorrect: o.isCorrect } : {}) })) } }));
   }
@@ -62,6 +63,7 @@ export class ExamsService {
   /** Replace the paper's question list. Only APPROVED, in-scope questions of the exam's course may be used. */
   async setPaper(u: AuthUser, examId: string, items: { questionId: string; marks: number }[], ip?: string) {
     const exam = await this.load(u, examId);
+    await this.access.assertExam(u, exam);
     if (!['DRAFT'].includes(exam.status) || !['DRAFT', 'REJECTED'].includes(exam.paperStatus)) throw conflict('BAD_STATE', 'The paper can only be edited while the exam is a draft');
     if (new Set(items.map((i) => i.questionId)).size !== items.length) throw badRequest('Duplicate questions on the paper');
     const qs = await this.prisma.question.findMany({ where: { id: { in: items.map((i) => i.questionId) }, courseId: exam.courseId, status: 'APPROVED', institutionId: scope.filter(u) }, select: { id: true } });
@@ -78,6 +80,7 @@ export class ExamsService {
 
   async submitPaper(u: AuthUser, examId: string, ip?: string) {
     const exam = await this.load(u, examId);
+    await this.access.assertExam(u, exam);
     if (exam.status !== 'DRAFT' || !['DRAFT', 'REJECTED'].includes(exam.paperStatus)) throw conflict('BAD_STATE', 'Paper is not in a submittable state');
     if (exam._count.questions < 1) throw badRequest('The paper has no questions');
     await this.prisma.exam.update({ where: { id: examId }, data: { paperStatus: 'SUBMITTED', status: 'PAPER_PENDING', paperSubmittedBy: u.id } });

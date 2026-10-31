@@ -41,7 +41,10 @@ function Inner() {
   const { me, can } = useMe(); const sp = useSearchParams(); const { run } = useAction();
   const [status, setStatus] = useState(sp.get('status') ?? ''); const [courseId, setCourseId] = useState(''); const [search, setSearch] = useState(''); const [page, setPage] = useState(1);
   const [edit, setEdit] = useState<any | 'new' | null>(null); const [rej, setRej] = useState<any>(null); const [note, setNote] = useState(''); const [view, setView] = useState<any>(null);
-  const programs = useGet<any[]>('/programs'); const courses = (programs.data ?? []).flatMap((p) => p.courses);
+  const programs = useGet<any[]>('/programs'); const mine = useGet<any[]>(me?.role === 'LECTURER' ? '/me/course-assignments' : null);
+  // Lecturers work only on assigned courses; everyone else sees the full catalogue (server enforces either way).
+  const courses = me?.role === 'LECTURER' ? (mine.data ?? []).map((a) => a.course) : (programs.data ?? []).flatMap((p) => p.courses);
+  const assignedInst = me?.role === 'LECTURER' ? mine.data?.[0]?.institution?.id : undefined;
   const qs = `/questions?page=${page}&pageSize=25${status ? `&status=${status}` : ''}${courseId ? `&courseId=${courseId}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`;
   const list = useGet<any>(qs);
   const canWrite = can('question.write'); const canReview = can('question.approve');
@@ -70,7 +73,7 @@ function Inner() {
           ]} />
           <Pager page={page} total={d.total} size={25} onPage={setPage} /></>}</Async>
       </Card>
-      {edit && <Editor q={edit === 'new' ? undefined : edit} courses={courses} institutionId={me?.institutions[0]?.id} onClose={() => setEdit(null)} onSaved={list.reload} />}
+      {edit && <Editor q={edit === 'new' ? undefined : edit} courses={courses} institutionId={assignedInst ?? me?.institutions[0]?.id} onClose={() => setEdit(null)} onSaved={list.reload} />}
       {rej && <Confirm title="Reject question" yes="Reject" danger onNo={() => setRej(null)} onYes={() => run(async () => { await post(`/questions/${rej.id}/review`, { decision: 'REJECT', note }); setRej(null); list.reload(); }, 'Rejected')} body={<Field label="Reason (sent to the author)"><textarea className="in" value={note} onChange={(e) => setNote(e.target.value)} /></Field>} />}
       {view && <Modal title="Question" onClose={() => setView(null)}>
         <div className="stack">{view.vignette && <div className="vignette">{view.vignette}</div>}<b>{view.stem}</b>

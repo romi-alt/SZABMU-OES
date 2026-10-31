@@ -35,6 +35,7 @@ return **404** (existence is not disclosed) or **403** when the caller names an 
 | `student.manage` | · | · | · | ● | · | · | ● |
 | `enrollment.manage` | · | · | · | ● | · | · | ● |
 | `eligibility.override` | · | · | · | · | · | ● | ● |
+| `course.assign` | · | · | · | ● | · | · | ● |
 | `question.read` | · | ● | ● | · | · | ● | ● |
 | `question.write` | · | ● | ● | · | · | · | ● |
 | `question.approve` | · | · | ● | · | · | ● | ● |
