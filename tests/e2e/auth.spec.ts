@@ -1,7 +1,25 @@
 import { expect, test } from '@playwright/test';
 import { PASSWORD, email, login, totp } from './helpers';
 
+/**
+ * The two-factor spec enrols a privileged account in MFA, which changes how that account signs in. It therefore owns a seeded
+ * account that NO other spec uses (examiner2: an MFA-enforced role), and removes the enrolment afterwards through the real admin
+ * endpoint (POST /auth/mfa/reset/:userId), so the suite is order-independent and can be repeated on the same database.
+ */
+const MFA_USER = 'examiner2';
+
 test.describe('authentication', () => {
+  test.afterAll(async ({ playwright }) => {
+    const api = await playwright.request.newContext({ baseURL: 'http://localhost:3000' });
+    try {
+      const sa = await api.post('/api/auth/login', { data: { email: email('super.admin'), password: PASSWORD } });
+      if (!sa.ok()) return;
+      const users = await (await api.get('/api/users?role=EXAMINER&pageSize=100')).json();
+      const target = (users.items ?? []).find((u: { email: string }) => u.email === email(MFA_USER));
+      if (target) await api.post(`/api/auth/mfa/reset/${target.id}`, { data: {} });
+    } finally { await api.dispose(); }
+  });
+
   test('sign-in page shows the university identity and rejects bad credentials accessibly', async ({ page }) => {
     await page.goto('/login');
     await expect(page.getByRole('img', { name: /Shaheed Zulfiqar Ali Bhutto Medical University/i }).first()).toBeVisible();
@@ -68,7 +86,7 @@ test.describe('authentication', () => {
   });
 
   test('two-factor: a staff member opts in with an authenticator app, then must pass the code step at the next sign-in', async ({ page, browser }) => {
-    await login(page, 'invigilator.b');
+    await login(page, MFA_USER);
     await page.goto('/profile');
     await page.getByRole('link', { name: 'Set up two-factor authentication' }).click();
     await page.getByRole('button', { name: 'Begin setup' }).click();
@@ -88,7 +106,7 @@ test.describe('authentication', () => {
     // a fresh browser: password alone is not enough any more
     const ctx2 = await browser.newContext(); const p2 = await ctx2.newPage();
     await p2.goto('/login');
-    await p2.getByLabel('University email').fill(email('invigilator.b'));
+    await p2.getByLabel('University email').fill(email(MFA_USER));
     await p2.getByLabel('Password').fill(PASSWORD);
     await p2.getByRole('button', { name: /sign in/i }).click();
     await expect(p2).toHaveURL(/\/mfa/);
