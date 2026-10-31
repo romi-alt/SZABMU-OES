@@ -16,6 +16,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private readonly log = new Logger('Errors');
   catch(ex: unknown, host: ArgumentsHost) {
     const reply = host.switchToHttp().getResponse<FastifyReply>();
+    reply.type('application/json; charset=utf-8'); // handlers such as CSV export may have preset another content type
     if (ex instanceof HttpException) {
       const r = ex.getResponse();
       const body = typeof r === 'string' ? { code: 'ERROR', message: r } : (r as Record<string, unknown>);

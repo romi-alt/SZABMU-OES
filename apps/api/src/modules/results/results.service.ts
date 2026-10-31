@@ -218,7 +218,7 @@ export class ResultsService {
   async verify(serial: string, code: string) {
     const c = await this.prisma.certificate.findUnique({ where: { serial }, include: { result: { include: { exam: { select: { title: true } }, student: { select: { user: { select: { fullName: true } } } } } } } });
     if (!c || c.verifyCode !== code.toUpperCase()) return { valid: false as const };
-    const parts = c.result.student.user.fullName.split(' ');
-    return { valid: !c.revokedAt, revoked: !!c.revokedAt, serial: c.serial, holder: `${parts[0]} ${parts.slice(1).map((p) => p[0] + '.').join(' ')}`.trim(), exam: c.result.exam.title, issuedAt: c.issuedAt };
+    const parts = c.result.student.user.fullName.split(/\s+/).filter((p) => /^\p{L}/u.test(p));
+    return { valid: !c.revokedAt, revoked: !!c.revokedAt, serial: c.serial, holder: `${parts[0] ?? ''} ${parts.slice(1).map((p) => p[0] + '.').join(' ')}`.trim(), exam: c.result.exam.title, issuedAt: c.issuedAt };
   }
 }
