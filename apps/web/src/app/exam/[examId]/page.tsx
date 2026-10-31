@@ -105,7 +105,6 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
   }, [engine, go, idx, q, view]);
 
   const visible = useMemo(() => questions.map((x, i) => ({ x, i, k: paletteKind(engine.get(x.id)), m: engine.get(x.id).marked })).filter(({ k, m }) => filter === 'all' || (filter === 'marked' ? m : k === filter)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [questions, filter, engine.getVersion()]);
 
   async function saveAndNext() { setBusy(true); await engine.flushAll(8000); setBusy(false); go(idx + 1); }
@@ -131,7 +130,7 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
   return (
     <div className="exam">
       <header className="exam-bar">
-        <div style={{ width: 120 }}><Image src="/logo.png" alt="SZABMU" width={398} height={100} style={{ width: '100%', height: 'auto' }} /></div>
+        <div style={{ width: 168, flex: "none" }}><Image src="/logo.png" alt="SZABMU" width={398} height={100} style={{ width: '100%', height: 'auto' }} /></div>
         <div className="grow"><div className="title">{exam.title}</div><div className="small muted">{questions.length} questions · {exam.totalMarks} marks</div></div>
         <div className="small muted" aria-live="polite">Answered <b className="mono" style={{ color: 'var(--ink)' }}>{counts.answered}</b> / {questions.length}</div>
         <div className={`exam-clock ${low ? 'low' : ''}`} role="timer" aria-label="Time remaining"><div className="k">Remaining</div><div className="v" data-testid="remaining">{clock(remaining)}</div></div>
