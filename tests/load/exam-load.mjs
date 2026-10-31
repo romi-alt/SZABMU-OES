@@ -9,7 +9,7 @@ import { Pool as HttpPool, Agent, setGlobalDispatcher, request } from 'undici';
 import { createHash, randomUUID } from 'node:crypto';
 
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
-const N = +arg('candidates', 2000), M = +arg('questions', 50), THINK = +arg('think', 3000), RAMP = +arg('ramp', 20), APIS = arg('api', 'http://localhost:4000').split(','), CONC = +arg('concurrency', 512), MTOKEN = arg('metrics-token', '');
+const N = +arg('candidates', 2000), M = +arg('questions', 50), THINK = +arg('think', 3000), RAMP = +arg('ramp', 20), APIS = arg('api', 'http://localhost:4000').split(','), CONC = +arg('concurrency', 512), MTOKEN = arg('metrics-token', ''), START_ONLY = process.argv.includes('--start-only');
 const API_OF = new Map(); // session token -> API base URL (round-robin per candidate)
 const DB = process.env.DATABASE_URL ?? 'postgresql://oes:oes_dev_password@localhost:5433/szabmu_oes';
 const sha = (s) => createHash('sha256').update(s).digest('hex');
@@ -74,6 +74,7 @@ async function candidate(c, startDelay) {
   await sleep(startDelay);
   const clientId = `load${c.i}x${Math.random().toString(36).slice(2, 8)}`;
   let st = await call('start', 'POST', '/api/attempts/start', c.token, { examId: ctx.exam, clientId }); if (st.status !== 200) return;
+  if (START_ONLY) return; // benchmark of the start path alone
   const attemptId = st.json.attempt.id; const mine = new Map(); acked.set(attemptId, mine);
   const order = st.json.questions.map((q) => q.id); let nextHb = Date.now() + 15_000;
   for (const qid of order) {

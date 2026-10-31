@@ -91,12 +91,12 @@ export function migrateAndSeed(i: InfraEnv) {
 
 export class Api {
   proc?: ChildProcess; port = 0; log = '';
-  constructor(private readonly infra: InfraEnv) {}
+  constructor(private readonly infra: InfraEnv, private readonly entry = 'dist/main.js', private readonly extraEnv: Record<string, string> = {}) {}
   get base() { return `http://127.0.0.1:${this.port}/api`; }
   async start() {
     if (!this.port) this.port = await freePort();
     this.log = '';
-    this.proc = spawn(process.execPath, ['dist/main.js'], { cwd: API_DIR, env: childEnv(this.infra, { API_PORT: String(this.port) }), stdio: ['ignore', 'pipe', 'pipe'] });
+    this.proc = spawn(process.execPath, [this.entry], { cwd: API_DIR, env: childEnv(this.infra, { API_PORT: String(this.port), ...this.extraEnv }), stdio: ['ignore', 'pipe', 'pipe'] });
     this.proc.stdout?.on('data', (d) => { this.log += d; }); this.proc.stderr?.on('data', (d) => { this.log += d; });
     await until('api health', async () => (await fetch(`${this.base}/health`, { signal: AbortSignal.timeout(2000) })).ok);
   }
