@@ -21,14 +21,15 @@
     "dev:web": "npm run dev -w @oes/web",
     "test": "npm run build:shared && npm run test -w @oes/shared && npm run test -w @oes/api",
     "test:e2e": "playwright test",
-    "test:load": "node --experimental-strip-types tests/load/exam-load.ts"
+    "test:load": "node --env-file=.env tests/load/exam-load.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@playwright/test": "^1.64.1",
     "eslint": "^9.0.0",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.0.0"
+    "typescript-eslint": "^8.0.0",
+    "undici": "^8.12.3"
   },
   "allowScripts": {
     "@swc/core@1.16.21": true,
