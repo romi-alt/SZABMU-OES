@@ -135,4 +135,16 @@ test.describe.serial('student examination — real API and database', () => {
     const stored = execSync(`psql -At "${process.env.DATABASE_URL ?? 'postgresql://oes:oes_dev_password@localhost:5433/szabmu_oes'}" -c "SELECT a.status || ':' || aa.\\"selectedLabel\\" FROM attempts a JOIN attempt_answers aa ON aa.\\"attemptId\\" = a.id WHERE a.\\"studentId\\" = (SELECT id FROM students WHERE \\"regNo\\" = 'DMC-A-2024-0006') AND aa.\\"selectedLabel\\" IS NOT NULL"`, { encoding: 'utf8' }).trim();
     expect(stored).toBe('AUTO_SUBMITTED:A');
   });
+
+  test('a manipulated device clock (6 h fast) changes neither the server-held deadline nor the visible countdown', async ({ page }) => {
+    const dbUrl = process.env.DATABASE_URL ?? 'postgresql://oes:oes_dev_password@localhost:5433/szabmu_oes';
+    await page.clock.install({ time: new Date(Date.now() + 6 * 3600_000) }); // browser believes it is 6 hours later
+    await login(page, 'student.b005');
+    await beginExam(page);
+    await page.getByTestId('opt-C').click();
+    await expect(saveState(page)).toHaveText('✓ Saved');
+    expect(await page.getByTestId('remaining').innerText()).toMatch(/^4[0-5]:\d\d$/); // still ≈45 min, not 45 min + 6 h or 0
+    const row = execSync(`psql -At "${dbUrl}" -c "SELECT round(extract(epoch from (a.\\"deadlineAt\\" - a.\\"startedAt\\"))/60) || '|' || (abs(extract(epoch from (now() - a.\\"startedAt\\"))) < 300) FROM attempts a JOIN students s ON s.id = a.\\"studentId\\" WHERE s.\\"regNo\\" = 'DMC-B-2024-0005'"`).toString().trim();
+    expect(row).toBe('45|true'); // 45-minute window anchored to the SERVER's start time, regardless of the device clock
+  });
 });
