@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { SAVE_GRACE_SECONDS, answerDigest, computeDeadline, receiptCode, seededOrder } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
 import { RedisService } from '../../infra/redis.service';
@@ -95,21 +96,28 @@ export class DeliveryService {
       const paper = await this.paperFor(examId);
       if (!paper.length) throw conflict('NOT_AVAILABLE', 'This examination has no questions');
       const deadline = computeDeadline({ startedAt: now, durationMin: exam.durationMin, extraTimeMin: cand.extraTimeMin, windowEndsAt: exam.closesAt });
+      const id = randomUUID();
+      const ids = paper.map((q) => q.id);
+      const order = exam.shuffleQuestions ? seededOrder(ids, id) : ids;
       try {
-        const created = await this.prisma.attempt.create({ data: { examId, studentId, startedAt: now, deadlineAt: deadline, extraTimeMin: cand.extraTimeMin, questionOrder: [], ip, userAgent: ua?.slice(0, 300) } });
-        const ids = paper.map((q) => q.id);
-        const order = exam.shuffleQuestions ? seededOrder(ids, created.id) : ids;
-        attempt = await this.prisma.attempt.update({ where: { id: created.id }, data: { questionOrder: order } });
-        await this.audit.log({ actor: u, action: 'attempt.start', entity: 'attempt', entityId: created.id, institutionId: cand.institutionId, meta: { examId, deadline }, ip });
+        // One insert: order, deadline and the active-client claim are fixed atomically.
+        // Per-candidate lifecycle lives in `attempts`/`attempt_events` (authoritative); the globally
+        // serialised hash-chained audit log is reserved for staff/administrative actions.
+        attempt = await this.prisma.attempt.create({ data: { id, examId, studentId, startedAt: now, deadlineAt: deadline, extraTimeMin: cand.extraTimeMin, questionOrder: order, activeClientId: clientId, clientEpoch: 1, ip, userAgent: ua?.slice(0, 300), events: { create: [{ kind: 'STARTED', detail: { clientId } }] } } });
       } catch (e) {
         if (e.code !== 'P2002') throw e; // concurrent double-start: fall through and resume the winner
         attempt = await this.prisma.attempt.findUniqueOrThrow({ where: { examId_studentId: { examId, studentId } } });
       }
     }
     // Claim the single active client slot; any older tab is now stale and will be rejected on save.
-    const claimed = await this.prisma.$executeRaw`UPDATE attempts SET "activeClientId" = ${clientId}, "clientEpoch" = "clientEpoch" + 1 WHERE id = ${attempt.id}::uuid AND "activeClientId" IS DISTINCT FROM ${clientId}`;
-    if (claimed) await this.prisma.attemptEvent.create({ data: { attemptId: attempt.id, kind: 'SESSION_CLAIMED', detail: { clientId, previous: attempt.activeClientId } } });
-    const fresh = await this.prisma.attempt.findUniqueOrThrow({ where: { id: attempt.id } });
+    let fresh = attempt;
+    if (attempt.activeClientId !== clientId) {
+      const claimed = await this.prisma.$queryRaw<{ clientEpoch: number }[]>`UPDATE attempts SET "activeClientId" = ${clientId}, "clientEpoch" = "clientEpoch" + 1 WHERE id = ${attempt.id}::uuid AND "activeClientId" IS DISTINCT FROM ${clientId} RETURNING "clientEpoch"`;
+      if (claimed.length) {
+        fresh = { ...attempt, activeClientId: clientId, clientEpoch: claimed[0]!.clientEpoch };
+        await this.prisma.attemptEvent.create({ data: { attemptId: attempt.id, kind: 'SESSION_CLAIMED', detail: { clientId, previous: attempt.activeClientId } } });
+      }
+    }
     if (fresh.questionOrder.length === 0) throw new AppError(500, 'INTERNAL', 'Attempt has no question order');
 
     const paper = await this.paperFor(examId);
@@ -117,7 +125,7 @@ export class DeliveryService {
     const answers = await this.prisma.attemptAnswer.findMany({ where: { attemptId: fresh.id } });
     return {
       attempt: { id: fresh.id, status: fresh.status, startedAt: fresh.startedAt, deadlineAt: fresh.deadlineAt, clientEpoch: fresh.clientEpoch },
-      serverNow: await this.prisma.dbNow(),
+      serverNow: now,
       exam: { id: exam.id, code: exam.code, title: exam.title, durationMin: exam.durationMin, totalMarks: exam.totalMarks, instructions: exam.instructions, negativeMarking: exam.negativeMarking },
       questions: fresh.questionOrder.map((id, i) => ({ ...byId.get(id)!, number: i + 1 })),
       answers: answers.map((a) => ({ examQuestionId: a.examQuestionId, selectedLabel: a.selectedLabel, state: a.state, markedForReview: a.markedForReview, visited: a.visited, revision: a.revision })),
@@ -185,18 +193,19 @@ export class DeliveryService {
 
   async heartbeat(u: AuthUser, attemptId: string, clientId: string, online = true) {
     const studentId = this.studentIdOf(u);
-    const a = await this.prisma.attempt.findUnique({ where: { id: attemptId }, select: { id: true, examId: true, studentId: true, status: true, deadlineAt: true, activeClientId: true } });
+    const rows = await this.prisma.$queryRaw<{ id: string; examId: string; studentId: string; status: string; deadlineAt: Date; activeClientId: string | null; now: Date }[]>`
+      SELECT id, "examId", "studentId", status, "deadlineAt", "activeClientId", clock_timestamp() AS now FROM attempts WHERE id = ${attemptId}::uuid`;
+    const a = rows[0];
     if (!a || a.studentId !== studentId) throw notFound('Attempt');
-    const now = await this.prisma.dbNow();
+    const now = a.now;
     if (a.status === 'IN_PROGRESS' && now.getTime() > a.deadlineAt.getTime() + SAVE_GRACE_SECONDS * 1000) {
       await this.finalize(a.id, { mode: 'AUTO' });
       return { status: 'AUTO_SUBMITTED', serverNow: now, deadlineAt: a.deadlineAt, superseded: false };
     }
     if (a.activeClientId === clientId && a.status === 'IN_PROGRESS') {
-      try { await this.redis.client.hset(`hb:${a.examId}`, a.id, JSON.stringify({ t: now.getTime(), online })); await this.redis.client.expire(`hb:${a.examId}`, 86400); } catch { /* coordination only */ }
+      try { await this.redis.client.pipeline().hset(`hb:${a.examId}`, a.id, JSON.stringify({ t: now.getTime(), online })).expire(`hb:${a.examId}`, 86400).exec(); } catch { /* coordination only */ }
     }
-    const fresh = a.status === 'IN_PROGRESS' ? await this.prisma.attempt.findUniqueOrThrow({ where: { id: a.id }, select: { deadlineAt: true } }) : a;
-    return { status: a.status, serverNow: now, deadlineAt: fresh.deadlineAt, superseded: a.activeClientId !== clientId };
+    return { status: a.status, serverNow: now, deadlineAt: a.deadlineAt, superseded: a.activeClientId !== clientId };
   }
 
   async recordEvent(u: AuthUser, attemptId: string, clientId: string, kind: string, detail?: Record<string, unknown>) {
@@ -266,11 +275,13 @@ export class DeliveryService {
       const code = receiptCode(this.cfg.RECEIPT_SECRET, attemptId, digest, submittedAt);
       const status = o.mode === 'MANUAL' && !late ? 'SUBMITTED' : 'AUTO_SUBMITTED';
       await tx.attempt.update({ where: { id: attemptId }, data: { status, submittedAt, submitKey: o.submitKey ?? null, receiptCode: code, answerDigest: digest } });
-      if (o.mode !== 'MANUAL') await tx.attemptEvent.create({ data: { attemptId, kind: o.mode === 'FORCED' ? 'FORCE_SUBMITTED' : 'AUTO_SUBMITTED', actorId: o.actor?.id, detail: { reason: o.reason ?? 'deadline' } } });
+      await tx.attemptEvent.create({ data: { attemptId, kind: o.mode === 'FORCED' ? 'FORCE_SUBMITTED' : o.mode === 'AUTO' ? 'AUTO_SUBMITTED' : 'SUBMITTED', actorId: o.actor?.id, detail: { reason: o.reason ?? (o.mode === 'AUTO' ? 'deadline' : undefined), receipt: code } } });
       return { receiptCode: code, submittedAt, answered: answers.filter((x) => x.state === 'ANSWERED').length, total, digest, status, replayed: false, late, examId: a.examId, studentId: a.studentId, fresh: true };
     });
     if (out.fresh) {
-      await this.audit.log({ actor: o.actor ?? null, action: `attempt.${o.mode === 'MANUAL' ? 'submit' : o.mode === 'FORCED' ? 'force_submit' : 'auto_submit'}`, entity: 'attempt', entityId: attemptId, meta: { examId: out.examId, receipt: out.receiptCode, answered: out.answered, total: out.total, reason: o.reason }, ip: o.ip });
+      // Candidate submits / deadline auto-submits are recorded on the attempt itself (status, receipt, digest, attempt_events).
+      // Only staff-initiated seals go to the (globally serialised) audit chain.
+      if (o.mode === 'FORCED') await this.audit.log({ actor: o.actor ?? null, action: 'attempt.force_submit', entity: 'attempt', entityId: attemptId, meta: { examId: out.examId, receipt: out.receiptCode, answered: out.answered, total: out.total, reason: o.reason }, ip: o.ip });
       await this.queues.add(QUEUES.grade, 'grade', { attemptId }, { jobId: `grade-${attemptId}` }).catch((e) => this.log.warn(`grade enqueue failed (sweeper will recover): ${e.message}`));
     }
     const { fresh: _f, examId: _e, studentId: _s, ...pub } = out;

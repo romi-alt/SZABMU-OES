@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { expect, test, type Page } from '@playwright/test';
 import { login } from './helpers';
 
@@ -118,12 +119,20 @@ test.describe.serial('student examination — real API and database', () => {
     await ctx.close();
   });
 
-  test('timer is server-controlled: a candidate whose deadline passed is auto-submitted', async ({ page }) => {
+  test('server clock rules: when the deadline passes the open page settles into an auto-submitted receipt with the saved answer', async ({ page }) => {
+    test.setTimeout(120_000);
     await login(page, 'student.a006');
     await beginExam(page);
     await page.getByTestId('opt-A').click();
     await expect(saveState(page)).toHaveText('✓ Saved');
-    const rem = await page.getByTestId('remaining').innerText();
-    expect(rem).toMatch(/^4[0-5]:\d\d$/); // 45-minute exam, seconds in
+    expect(await page.getByTestId('remaining').innerText()).toMatch(/^4[0-5]:\d\d$/); // 45-minute exam, seconds in
+    // The server is the authority: move this attempt's deadline to ~2 s from now directly in the database.
+    execSync(`psql "${process.env.DATABASE_URL ?? 'postgresql://oes:oes_dev_password@localhost:5433/szabmu_oes'}" -c "UPDATE attempts SET \\"startedAt\\" = now() - interval '44 minutes', \\"deadlineAt\\" = now() + interval '2 seconds' WHERE \\"studentId\\" = (SELECT id FROM students WHERE \\"regNo\\" = 'DMC-A-2024-0006')"`, { stdio: 'pipe' });
+    // next heartbeat (≤15 s) syncs the new deadline; the page then finishes the attempt itself
+    await expect(page.getByTestId('receipt')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText('Submitted automatically', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('receipt-code')).toHaveText(/^RC-/);
+    const stored = execSync(`psql -At "${process.env.DATABASE_URL ?? 'postgresql://oes:oes_dev_password@localhost:5433/szabmu_oes'}" -c "SELECT a.status || ':' || aa.\\"selectedLabel\\" FROM attempts a JOIN attempt_answers aa ON aa.\\"attemptId\\" = a.id WHERE a.\\"studentId\\" = (SELECT id FROM students WHERE \\"regNo\\" = 'DMC-A-2024-0006') AND aa.\\"selectedLabel\\" IS NOT NULL"`, { encoding: 'utf8' }).trim();
+    expect(stored).toBe('AUTO_SUBMITTED:A');
   });
 });

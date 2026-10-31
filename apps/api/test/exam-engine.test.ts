@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Client, as, boot, cid, save, startExam, type Ctx } from './helpers';
+import { as, boot, cid, save, startExam, type Ctx } from './helpers';
 
 let ctx: Ctx;
 beforeAll(async () => { ctx = await boot(); });

@@ -55,7 +55,7 @@ export async function loadSession(prisma: PrismaService, redis: RedisService, to
     sessionHash: hash,
     mustChangePw: u.mustChangePw,
   };
-  await redis.setJson(`sess:${hash}`, user, 30);
+  await redis.setJson(`sess:${hash}`, user, 120); // invalidated explicitly on logout, deactivation, password reset and scope changes
   await redis.client.sadd(`usess:${u.id}`, hash).catch(() => undefined);
   return user;
 }
