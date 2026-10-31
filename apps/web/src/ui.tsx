@@ -1,5 +1,6 @@
 'use client';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import { ApiError } from './api';
 
 /* ── toasts ── */
@@ -45,9 +46,34 @@ export const Status = ({ s }: { s: string }) => <Badge tone={STATUS_TONE[s] ?? '
 export function Notice({ tone, children }: { tone?: 'warn' | 'bad' | 'ok'; children: ReactNode }) { return <div className={`notice ${tone ?? ''}`} role={tone === 'bad' ? 'alert' : undefined}>{children}</div>; }
 export const Empty = ({ children }: { children: ReactNode }) => <div className="empty">{children}</div>;
 export function Loading() { return <div className="stack" aria-busy="true" aria-label="Loading"><div className="skeleton" style={{ width: '40%' }} /><div className="skeleton" /><div className="skeleton" style={{ width: '80%' }} /></div>; }
-export function ErrorBox({ error }: { error: unknown }) { return <Notice tone="bad">{errMsg(error)}</Notice>; }
-export function Async({ state, children }: { state: { data: any; error: any; loading: boolean }; children: (d: any) => ReactNode }) {
-  if (state.error) return <ErrorBox error={state.error} />;
+/** What kind of failure is this? Drives the title, the wording and the recovery action; never exposes stack traces or internals. */
+export function classifyError(e: unknown): { kind: 'network' | 'unavailable' | 'forbidden' | 'notfound' | 'server' | 'other'; title: string } {
+  if (!(e instanceof ApiError)) return { kind: 'other', title: '' };
+  if (e.status === 0) return { kind: 'network', title: 'You appear to be offline' };
+  if (e.status === 403) return { kind: 'forbidden', title: 'You do not have access to this' };
+  if (e.status === 404) return { kind: 'notfound', title: 'We could not find that' };
+  const apiJson = e.body && typeof e.body === 'object' && 'code' in e.body;   // our API always answers JSON with a code; anything else is the proxy/gateway
+  if (e.status === 502 || e.status === 503 || e.status === 504 || (e.status >= 500 && !apiJson)) return { kind: 'unavailable', title: 'The service is temporarily unavailable' };
+  if (e.status >= 500) return { kind: 'server', title: 'Something went wrong on our side' };
+  return { kind: 'other', title: '' };
+}
+export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+  const c = classifyError(error);
+  if (c.kind === 'other') return <Notice tone="bad">{errMsg(error)}</Notice>;   // validation / conflict messages stay inline
+  const body = c.kind === 'unavailable' ? 'The examination service could not be reached just now. Nothing you have already saved is lost. Please try again in a moment.'
+    : c.kind === 'server' ? 'The request could not be completed. Please try again; if it keeps happening, tell the examination office.' : errMsg(error);
+  return (
+    <div className="card" role="alert" data-testid={`error-${c.kind}`}><div className="card-b stack">
+      <h2>{c.title}</h2><p className="muted" style={{ margin: 0 }}>{body}</p>
+      <div className="row">
+        {onRetry && c.kind !== 'forbidden' && c.kind !== 'notfound' && <button className="btn btn-primary" onClick={onRetry}>Try again</button>}
+        <Link className="btn" href="/dashboard">Go to dashboard</Link>
+      </div>
+    </div></div>
+  );
+}
+export function Async({ state, children }: { state: { data: any; error: any; loading: boolean; reload?: () => void }; children: (d: any) => ReactNode }) {
+  if (state.error) return <ErrorBox error={state.error} onRetry={state.reload} />;
   if (state.loading && !state.data) return <Loading />;
   return <>{children(state.data)}</>;
 }
