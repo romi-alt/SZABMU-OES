@@ -16,6 +16,18 @@ export interface AuditEntry {
 
 const GENESIS = '0'.repeat(64);
 
+/** Key-order-independent JSON: Postgres jsonb does not preserve key order, so the hash must not depend on it. */
+export function canonical(v: unknown): string {
+  if (v === undefined) return 'null';
+  const norm = (x: unknown): unknown => {
+    if (x instanceof Date) return x.toISOString();
+    if (Array.isArray(x)) return x.map(norm);
+    if (x && typeof x === 'object') return Object.fromEntries(Object.entries(x as Record<string, unknown>).filter(([, val]) => val !== undefined).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, val]) => [k, norm(val)]));
+    return x;
+  };
+  return JSON.stringify(norm(v));
+}
+
 /** Hash-chained audit trail. Rows are serialised with an advisory lock so the chain is linear. */
 @Injectable()
 export class AuditService {
@@ -27,7 +39,7 @@ export class AuditService {
       const last = await tx.auditLog.findFirst({ orderBy: { seq: 'desc' }, select: { hash: true } });
       const prevHash = last?.hash ?? GENESIS;
       const at = new Date();
-      const payload = JSON.stringify([prevHash, at.toISOString(), e.actor?.id ?? null, e.action, e.entity, e.entityId ?? null, e.institutionId ?? null, e.meta ?? null]);
+      const payload = canonical([prevHash, at.toISOString(), e.actor?.id ?? null, e.action, e.entity, e.entityId ?? null, e.institutionId ?? null, e.meta ?? null]);
       const hash = createHash('sha256').update(payload).digest('hex');
       await tx.auditLog.create({
         data: {
@@ -43,7 +55,7 @@ export class AuditService {
     const rows = await this.prisma.auditLog.findMany({ orderBy: { seq: 'asc' }, take: limit });
     let prev = GENESIS;
     for (const r of rows) {
-      const payload = JSON.stringify([prev, r.at.toISOString(), r.actorId, r.action, r.entity, r.entityId, r.institutionId, r.meta ?? null]);
+      const payload = canonical([prev, r.at.toISOString(), r.actorId, r.action, r.entity, r.entityId, r.institutionId, r.meta ?? null]);
       const h = createHash('sha256').update(payload).digest('hex');
       if (r.prevHash !== prev || r.hash !== h) return { checked: rows.length, brokenAt: r.seq.toString() };
       prev = r.hash;

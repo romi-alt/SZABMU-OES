@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Patch, Post, Req, Res } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AllowMustChange, CurrentUser, Perm, Public, SESSION_COOKIE, type AuthUser } from '../../common/auth';
@@ -34,6 +34,9 @@ export class AuthController {
 
   @Perm('program.read') @AllowMustChange() @Get('me')
   me(@CurrentUser() u: AuthUser) { return this.auth.me(u); }
+
+  @Perm('program.read') @Patch('profile')
+  profile(@CurrentUser() u: AuthUser, @Body() b: unknown, @Req() req: FastifyRequest) { return this.auth.updateProfile(u, parse(z.object({ phone: z.string().max(30).optional(), address: z.string().max(300).optional(), guardianPhone: z.string().max(30).optional() }), b), req.ip); }
 
   @Public() @Post('forgot') @HttpCode(200)
   forgot(@Body() body: unknown, @Req() req: FastifyRequest) { return this.auth.forgot(parse(forgotDto, body).email, req.ip); }

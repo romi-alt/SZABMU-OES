@@ -74,6 +74,16 @@ export class AuthService {
     return { ...this.profile(u), phone: u.phone, lastLoginAt: u.lastLoginAt, institutions: u.institutions.map((i) => i.institution), student: u.student && { id: u.student.id, regNo: u.student.regNo, semester: u.student.semester, program: u.student.program.code, programName: u.student.program.name, institution: u.student.institution, address: u.student.address, dateOfBirth: u.student.dateOfBirth, guardianPhone: u.student.guardianPhone } };
   }
 
+  /** Self-service profile edit. Identity fields (name, email, DOB, registration number) are institution-managed and not editable here. */
+  async updateProfile(user: AuthUser, d: { phone?: string; address?: string; guardianPhone?: string }, ip?: string) {
+    await this.prisma.$transaction(async (tx) => {
+      if (d.phone !== undefined) await tx.user.update({ where: { id: user.id }, data: { phone: d.phone } });
+      if (user.studentId && (d.address !== undefined || d.guardianPhone !== undefined)) await tx.student.update({ where: { id: user.studentId }, data: { address: d.address, guardianPhone: d.guardianPhone } });
+    });
+    await this.audit.log({ actor: user, action: 'auth.profile_updated', entity: 'user', entityId: user.id, meta: { fields: Object.keys(d) }, ip });
+    return this.me(user);
+  }
+
   async logout(user: AuthUser) {
     await this.prisma.session.updateMany({ where: { tokenHash: user.sessionHash, revokedAt: null }, data: { revokedAt: new Date() } });
     await this.redis.del(`sess:${user.sessionHash}`);
