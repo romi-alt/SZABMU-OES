@@ -54,6 +54,7 @@ describe('authorization coverage', () => {
     expect(pub.sort()).toMatchInlineSnapshot(`
       [
         "GET /api/health",
+        "GET /api/metrics",
         "GET /api/public/verify",
         "POST /api/auth/forgot",
         "POST /api/auth/login",

@@ -27,6 +27,8 @@ const schema = z.object({
   MFA_ENFORCE: z.enum(['true', 'false']).default('false'),
   /** Key material for encrypting TOTP seeds at rest. Required in production; in development it is derived from COOKIE_SECRET. */
   MFA_KEY: z.string().min(32).optional(),
+  /** Bearer token for GET /api/metrics. Unset ⇒ the endpoint is disabled (404). Mandatory in production: you cannot run an exam blind. */
+  METRICS_TOKEN: z.string().min(24).optional(),
 });
 
 export type Config = z.infer<typeof schema>;
@@ -57,6 +59,8 @@ export function productionProblems(cfg: Config, env: NodeJS.ProcessEnv = process
   if (cfg.MFA_ENFORCE !== 'true') p.push('MFA_ENFORCE=true is required in production (TOTP for CCE, Super Admin, Examiner and Campus Admin)');
   if (!cfg.MFA_KEY) p.push('MFA_KEY (≥32 random characters) is required in production to encrypt TOTP seeds');
   else if (WEAK_SECRET.test(cfg.MFA_KEY) || cfg.MFA_KEY === cfg.COOKIE_SECRET || cfg.MFA_KEY === cfg.RECEIPT_SECRET) p.push('MFA_KEY must be a distinct, non-example secret');
+  if (!cfg.METRICS_TOKEN) p.push('METRICS_TOKEN (≥24 random characters) is required in production so that monitoring and alerting can scrape /api/metrics');
+  else if (WEAK_SECRET.test(cfg.METRICS_TOKEN)) p.push('METRICS_TOKEN looks like an example value');
   if (cfg.SESSION_TTL_HOURS > 24) p.push('SESSION_TTL_HOURS must be ≤ 24 in production');
   return p;
 }

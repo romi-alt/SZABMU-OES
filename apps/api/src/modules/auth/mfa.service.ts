@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
+import { MetricsService } from '../../infra/metrics.service';
 import { PrismaService } from '../../infra/prisma.service';
 import { RedisService } from '../../infra/redis.service';
 import { AuditService } from '../audit/audit.service';
@@ -16,7 +17,7 @@ const normRecovery = (c: string) => c.replace(/[\s-]/g, '').toUpperCase();
 /** TOTP second factor for privileged staff. Secrets encrypted at rest; recovery codes hashed and single-use; codes cannot be replayed. */
 @Injectable()
 export class MfaService {
-  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly audit: AuditService, @Inject(CONFIG) private readonly cfg: Config) {}
+  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly audit: AuditService, private readonly metrics: MetricsService, @Inject(CONFIG) private readonly cfg: Config) {}
   private get material() { return this.cfg.MFA_KEY ?? this.cfg.COOKIE_SECRET; }
   required(role: AuthUser['role']) { return this.cfg.MFA_ENFORCE === 'true' && MFA_ROLES.includes(role); }
   private async refresh(userSessionHash?: string) { if (userSessionHash) await this.redis.del(`sess:${userSessionHash}`); }
@@ -36,11 +37,12 @@ export class MfaService {
     const failed = cur.failedLogins + 1;
     await this.prisma.user.update({ where: { id: userId }, data: { failedLogins: failed, lockedUntil: failed >= MAX_FAILED ? new Date(Date.now() + LOCK_MIN * 60000) : null } });
     await this.audit.log({ actor, action: 'mfa.verify_failed', entity: 'user', entityId: userId, meta: { why, failed }, ip });
+    this.metrics.authFailures.inc({ kind: 'mfa_invalid' });
     throw new AppError(401, 'INVALID_MFA_CODE', 'That code is not valid');
   }
   private async assertNotLocked(userId: string) {
     const r = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { lockedUntil: true } });
-    if (r.lockedUntil && r.lockedUntil > new Date()) throw new AppError(423, 'ACCOUNT_LOCKED', 'Too many failed attempts. Try again later or contact the helpdesk.');
+    if (r.lockedUntil && r.lockedUntil > new Date()) { this.metrics.authFailures.inc({ kind: 'mfa_locked' }); throw new AppError(423, 'ACCOUNT_LOCKED', 'Too many failed attempts. Try again later or contact the helpdesk.'); }
   }
 
   /** Step 2: confirm the first code, activate, issue one-time recovery codes, sign out all other sessions. */
@@ -86,6 +88,7 @@ export class MfaService {
     await this.prisma.session.updateMany({ where: { tokenHash: u.sessionHash }, data: { mfaVerifiedAt: new Date() } });
     await this.refresh(u.sessionHash);
     const remaining = usedRecovery ? await this.prisma.mfaRecoveryCode.count({ where: { userId: u.id, usedAt: null } }) : undefined;
+    this.metrics.authSuccess.inc({ kind: usedRecovery ? 'mfa_recovery' : 'mfa' });
     await this.audit.log({ actor: u, action: usedRecovery ? 'mfa.recovery_used' : 'mfa.verified', entity: 'user', entityId: u.id, meta: usedRecovery ? { remaining } : undefined, ip });
     return { ok: true, ...(usedRecovery ? { recoveryCodesRemaining: remaining } : {}) };
   }

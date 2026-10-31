@@ -5,6 +5,8 @@ import { PrismaService } from './infra/prisma.service';
 import { RedisService } from './infra/redis.service';
 import { QueuesService } from './infra/queues.service';
 import { MailService } from './infra/mail.service';
+import { MetricsService } from './infra/metrics.service';
+import { MetricsController } from './modules/metrics.controller';
 import { AuthGuard } from './common/auth';
 import { AllExceptionsFilter } from './common/errors';
 import { AuditService } from './modules/audit/audit.service';
@@ -31,10 +33,10 @@ import { HealthController } from './modules/health.controller';
 import { JobsService } from './modules/jobs.service';
 
 @Module({
-  controllers: [AuthController, OrgController, CourseAssignmentsController, ExamsController, DeliveryController, ResultsController, InvigilationController, ReportsController, HealthController],
+  controllers: [AuthController, OrgController, CourseAssignmentsController, ExamsController, DeliveryController, ResultsController, InvigilationController, ReportsController, HealthController, MetricsController],
   providers: [
     { provide: CONFIG, useFactory: () => loadConfig() },
-    PrismaService, RedisService, QueuesService, MailService, AuditService, NotificationsService,
+    PrismaService, RedisService, QueuesService, MailService, MetricsService, AuditService, NotificationsService,
     AuthService, MfaService, OrgService, CourseAccessService, QuestionsService, ExamsService, DeliveryService, ResultsService, InvigilationService, ReportsService, JobsService,
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
