@@ -9,7 +9,7 @@ export default function MonitorExam() {
   const { examId } = useParams<{ examId: string }>(); const { me, can } = useMe(); const { run } = useAction();
   const st = useGet<any>(`/invigilation/exams/${examId}/monitor`); const [q, setQ] = useState(''); const [act, setAct] = useState<{ kind: 'extend' | 'force' | 'incident'; row: any } | null>(null);
   const [minutes, setMinutes] = useState(10); const [reason, setReason] = useState(''); const [sev, setSev] = useState('LOW'); const [type, setType] = useState('TECHNICAL');
-  useEffect(() => { const t = setInterval(() => st.reload(), 5000); return () => clearInterval(t); }, [st.reload]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const t = setInterval(() => st.reload(), 5000); return () => clearInterval(t); }, [st.reload]);
   const close = () => { setAct(null); setReason(''); };
   return (
     <>
