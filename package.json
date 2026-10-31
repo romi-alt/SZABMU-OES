@@ -41,5 +41,8 @@
     "msgpackr-extract@3.0.4": true,
     "@prisma/engines@7.10.1": true,
     "esbuild@0.28.2": true
+  },
+  "overrides": {
+    "fastify": "^5.12.7"
   }
 }

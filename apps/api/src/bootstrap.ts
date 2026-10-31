@@ -8,7 +8,7 @@ import { loadConfig } from './config';
 
 export async function createApp(): Promise<NestFastifyApplication> {
   const cfg = loadConfig();
-  const adapter = new FastifyAdapter({ trustProxy: process.env.TRUST_PROXY === 'true', bodyLimit: 2 * 1024 * 1024 });
+  const adapter = new FastifyAdapter({ trustProxy: cfg.TRUST_PROXY === 'true', bodyLimit: 2 * 1024 * 1024 });
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, { logger: cfg.NODE_ENV === 'test' ? ['error'] : ['log', 'warn', 'error'] });
   app.setGlobalPrefix('api');
   await app.register(fastifyCookie as never, { secret: cfg.COOKIE_SECRET });

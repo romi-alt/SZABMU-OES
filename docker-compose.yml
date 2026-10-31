@@ -31,6 +31,7 @@ services:
     build: { context: ., dockerfile: infra/Dockerfile.api }
     env_file: .env
     environment:
+      NODE_ENV: development   # this compose file is a LOCAL dev stack with dev credentials; production config validation would (rightly) refuse it
       DATABASE_URL: postgresql://oes:oes_dev_password@postgres:5432/szabmu_oes
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
