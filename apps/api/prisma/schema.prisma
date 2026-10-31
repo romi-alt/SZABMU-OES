@@ -1,0 +1,729 @@
+// SZABMU Online Examination System — PostgreSQL schema.
+// Conventions: uuid PKs, timestamptz everywhere, enum-typed states, snake_case tables via @@map.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  STUDENT
+  LECTURER
+  EXAMINER
+  CAMPUS_ADMIN
+  INVIGILATOR
+  CCE
+  SUPER_ADMIN
+}
+
+enum InstitutionType {
+  MEDICAL_COLLEGE
+  DENTAL_COLLEGE
+  NURSING_COLLEGE
+  ALLIED_HEALTH
+  TEACHING_HOSPITAL
+  AFFILIATED_INSTITUTE
+}
+
+enum Affiliation {
+  CONSTITUENT
+  AFFILIATED
+}
+
+enum QuestionType {
+  MCQ
+  CLINICAL_MCQ
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum QuestionStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  RETIRED
+}
+
+enum PaperStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum ExamStatus {
+  DRAFT
+  PAPER_PENDING
+  APPROVED
+  SCHEDULED
+  LIVE
+  CLOSED
+  RESULT_PENDING
+  PUBLISHED
+  CANCELLED
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  AUTO_SUBMITTED
+  VOID
+}
+
+enum AnswerState {
+  ANSWERED
+  SKIPPED
+  CLEARED
+}
+
+enum EnrollmentStatus {
+  ENROLLED
+  WITHDRAWN
+  COMPLETED
+}
+
+enum EligibilityStatus {
+  ELIGIBLE
+  INELIGIBLE
+  CONDONED
+}
+
+enum ResultBatchStatus {
+  GRADED
+  LECTURER_REVIEWED
+  EXAMINER_APPROVED
+  PUBLISHED
+}
+
+enum ResultStatus {
+  PASS
+  FAIL
+  ABSENT
+  WITHHELD
+}
+
+enum IncidentType {
+  CONNECTIVITY
+  TECHNICAL
+  IDENTITY
+  MISCONDUCT
+  ENVIRONMENT
+  OTHER
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum IncidentStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
+enum KeyActionKind {
+  VOID
+  CHANGE_KEY
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+// ───────────────────────── Organisation ─────────────────────────
+
+model Institution {
+  id          String          @id @default(uuid()) @db.Uuid
+  code        String          @unique
+  name        String
+  type        InstitutionType
+  affiliation Affiliation     @default(CONSTITUENT)
+  city        String?
+  active      Boolean         @default(true)
+  createdAt   DateTime        @default(now()) @db.Timestamptz
+  updatedAt   DateTime        @updatedAt @db.Timestamptz
+
+  departments Department[]
+  users       UserInstitution[]
+  students    Student[]
+  questions   Question[]
+  exams       ExamInstitution[]
+  candidates  ExamCandidate[]
+  incidents   Incident[]
+
+  @@map("institutions")
+}
+
+model Department {
+  id            String      @id @default(uuid()) @db.Uuid
+  institutionId String      @db.Uuid
+  code          String
+  name          String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+  createdAt     DateTime    @default(now()) @db.Timestamptz
+
+  @@unique([institutionId, code])
+  @@map("departments")
+}
+
+model Program {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  level       String   @default("UNDERGRADUATE")
+  durationYrs Int      @default(5)
+  active      Boolean  @default(true)
+  courses     Course[]
+  students    Student[]
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  @@map("programs")
+}
+
+/// A university-level subject/paper within a program and academic year/semester.
+model Course {
+  id        String    @id @default(uuid()) @db.Uuid
+  programId String    @db.Uuid
+  code      String    @unique
+  title     String
+  semester  Int
+  credits   Int       @default(3)
+  program   Program   @relation(fields: [programId], references: [id])
+  questions Question[]
+  exams     Exam[]
+  enrollments Enrollment[]
+  createdAt DateTime  @default(now()) @db.Timestamptz
+
+  @@index([programId, semester])
+  @@map("courses")
+}
+
+// ───────────────────────── Identity ─────────────────────────
+
+model User {
+  id              String    @id @default(uuid()) @db.Uuid
+  email           String    @unique
+  fullName        String
+  phone           String?
+  role            Role
+  passwordHash    String
+  mustChangePw    Boolean   @default(false)
+  active          Boolean   @default(true)
+  failedLogins    Int       @default(0)
+  lockedUntil     DateTime? @db.Timestamptz
+  lastLoginAt     DateTime? @db.Timestamptz
+  passwordChangedAt DateTime @default(now()) @db.Timestamptz
+  createdAt       DateTime  @default(now()) @db.Timestamptz
+  updatedAt       DateTime  @updatedAt @db.Timestamptz
+
+  institutions    UserInstitution[]
+  sessions        Session[]
+  resets          PasswordReset[]
+  passwordHistory PasswordHistory[]
+  student         Student?
+  notifications   Notification[]
+
+  @@index([role])
+  @@map("users")
+}
+
+/// Institution assignments. Campus-scoped roles may only act within these.
+model UserInstitution {
+  userId        String      @db.Uuid
+  institutionId String      @db.Uuid
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  @@id([userId, institutionId])
+  @@index([institutionId])
+  @@map("user_institutions")
+}
+
+model Session {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now()) @db.Timestamptz
+  expiresAt  DateTime  @db.Timestamptz
+  revokedAt  DateTime? @db.Timestamptz
+  ip         String?
+  userAgent  String?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model PasswordReset {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  codeHash  String
+  expiresAt DateTime  @db.Timestamptz
+  attempts  Int       @default(0)
+  usedAt    DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("password_resets")
+}
+
+model PasswordHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  hash      String
+  createdAt DateTime @default(now()) @db.Timestamptz
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("password_history")
+}
+
+// ───────────────────────── Students & enrolment ─────────────────────────
+
+model Student {
+  id            String      @id @default(uuid()) @db.Uuid
+  userId        String      @unique @db.Uuid
+  institutionId String      @db.Uuid
+  programId     String      @db.Uuid
+  regNo         String      @unique
+  semester      Int
+  batchYear     Int
+  dateOfBirth   DateTime?   @db.Date
+  guardianPhone String?
+  address       String?
+  status        String      @default("ACTIVE")
+  user          User        @relation(fields: [userId], references: [id])
+  institution   Institution @relation(fields: [institutionId], references: [id])
+  program       Program     @relation(fields: [programId], references: [id])
+  enrollments   Enrollment[]
+  candidacies   ExamCandidate[]
+  attempts      Attempt[]
+  results       Result[]
+  createdAt     DateTime    @default(now()) @db.Timestamptz
+
+  @@index([institutionId, programId, semester])
+  @@map("students")
+}
+
+model Enrollment {
+  id          String            @id @default(uuid()) @db.Uuid
+  studentId   String            @db.Uuid
+  courseId    String            @db.Uuid
+  term        String
+  status      EnrollmentStatus  @default(ENROLLED)
+  eligibility EligibilityStatus @default(ELIGIBLE)
+  attendancePct Float?
+  eligibilityNote String?
+  decidedBy   String?           @db.Uuid
+  createdAt   DateTime          @default(now()) @db.Timestamptz
+  student     Student           @relation(fields: [studentId], references: [id])
+  course      Course            @relation(fields: [courseId], references: [id])
+
+  @@unique([studentId, courseId, term])
+  @@index([courseId, term])
+  @@map("enrollments")
+}
+
+// ───────────────────────── Question bank ─────────────────────────
+
+model Question {
+  id            String         @id @default(uuid()) @db.Uuid
+  courseId      String         @db.Uuid
+  institutionId String         @db.Uuid
+  authorId      String         @db.Uuid
+  type          QuestionType   @default(MCQ)
+  /// Clinical scenario text (history, examination, investigations) for CLINICAL_MCQ.
+  vignette      String?
+  stem          String
+  explanation   String?
+  difficulty    Difficulty     @default(MEDIUM)
+  tags          String[]       @default([])
+  status        QuestionStatus @default(DRAFT)
+  version       Int            @default(1)
+  usedCount     Int            @default(0)
+  reviewNote    String?
+  reviewedBy    String?        @db.Uuid
+  reviewedAt    DateTime?      @db.Timestamptz
+  createdAt     DateTime       @default(now()) @db.Timestamptz
+  updatedAt     DateTime       @updatedAt @db.Timestamptz
+
+  course        Course         @relation(fields: [courseId], references: [id])
+  institution   Institution    @relation(fields: [institutionId], references: [id])
+  options       QuestionOption[]
+  paperUses     ExamQuestion[]
+
+  @@index([courseId, status])
+  @@index([institutionId, status])
+  @@map("questions")
+}
+
+model QuestionOption {
+  id         String   @id @default(uuid()) @db.Uuid
+  questionId String   @db.Uuid
+  label      String   // A..E
+  text       String
+  isCorrect  Boolean  @default(false)
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, label])
+  @@map("question_options")
+}
+
+// ───────────────────────── Exams ─────────────────────────
+
+model Exam {
+  id               String      @id @default(uuid()) @db.Uuid
+  code             String      @unique
+  title            String
+  courseId         String      @db.Uuid
+  createdBy        String      @db.Uuid
+  status           ExamStatus  @default(DRAFT)
+  paperStatus      PaperStatus @default(DRAFT)
+  term             String      @default("2026-SPRING")
+  paperSubmittedBy String?     @db.Uuid
+  paperApprovedBy  String?     @db.Uuid
+  paperApprovedAt  DateTime?   @db.Timestamptz
+  paperReviewNote  String?
+  opensAt          DateTime    @db.Timestamptz
+  closesAt         DateTime    @db.Timestamptz
+  durationMin      Int
+  totalMarks       Float       @default(0)
+  passPercent      Float       @default(50)
+  negativeMarking  Float       @default(0)
+  shuffleQuestions Boolean     @default(true)
+  instructions     String?
+  createdAt        DateTime    @default(now()) @db.Timestamptz
+  updatedAt        DateTime    @updatedAt @db.Timestamptz
+
+  course        Course            @relation(fields: [courseId], references: [id])
+  institutions  ExamInstitution[]
+  questions     ExamQuestion[]
+  candidates    ExamCandidate[]
+  invigilators  ExamInvigilator[]
+  attempts      Attempt[]
+  incidents     Incident[]
+  keyActions    KeyAction[]
+  resultBatch   ResultBatch?
+  results       Result[]
+
+  @@index([status, opensAt])
+  @@map("exams")
+}
+
+model ExamInstitution {
+  examId        String      @db.Uuid
+  institutionId String      @db.Uuid
+  venue         String?
+  exam          Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  @@id([examId, institutionId])
+  @@index([institutionId])
+  @@map("exam_institutions")
+}
+
+/// A question placed on a paper. `snapshot` + `correctLabel` are frozen at paper approval;
+/// later edits to the bank never alter an approved paper.
+model ExamQuestion {
+  id           String    @id @default(uuid()) @db.Uuid
+  examId       String    @db.Uuid
+  questionId   String    @db.Uuid
+  position     Int
+  marks        Float     @default(1)
+  snapshot     Json?
+  correctLabel String?
+  exam         Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  question     Question  @relation(fields: [questionId], references: [id])
+  answers      AttemptAnswer[]
+  keyActions   KeyAction[]
+
+  @@unique([examId, questionId])
+  @@unique([examId, position])
+  @@map("exam_questions")
+}
+
+model ExamCandidate {
+  id            String      @id @default(uuid()) @db.Uuid
+  examId        String      @db.Uuid
+  studentId     String      @db.Uuid
+  institutionId String      @db.Uuid
+  extraTimeMin  Int         @default(0)
+  accommodation String?
+  createdAt     DateTime    @default(now()) @db.Timestamptz
+  exam          Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student       Student     @relation(fields: [studentId], references: [id])
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  @@unique([examId, studentId])
+  @@index([institutionId, examId])
+  @@map("exam_candidates")
+}
+
+model ExamInvigilator {
+  examId        String @db.Uuid
+  userId        String @db.Uuid
+  institutionId String @db.Uuid
+  exam          Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@id([examId, userId, institutionId])
+  @@index([userId])
+  @@map("exam_invigilators")
+}
+
+// ───────────────────────── Live attempt ─────────────────────────
+
+model Attempt {
+  id             String        @id @default(uuid()) @db.Uuid
+  examId         String        @db.Uuid
+  studentId      String        @db.Uuid
+  status         AttemptStatus @default(IN_PROGRESS)
+  startedAt      DateTime      @db.Timestamptz
+  /// Authoritative server-computed deadline (includes accommodations, capped at window end).
+  deadlineAt     DateTime      @db.Timestamptz
+  extraTimeMin   Int           @default(0)
+  submittedAt    DateTime?     @db.Timestamptz
+  submitKey      String?
+  receiptCode    String?       @unique
+  answerDigest   String?
+  questionOrder  String[]
+  /// Single active browser session claim; older tabs are rejected (stale-tab protection).
+  activeClientId String?
+  clientEpoch    Int           @default(0)
+  lastHeartbeatAt DateTime?    @db.Timestamptz
+  integrityFlags Int           @default(0)
+  ip             String?
+  userAgent      String?
+  exam           Exam          @relation(fields: [examId], references: [id])
+  student        Student       @relation(fields: [studentId], references: [id])
+  answers        AttemptAnswer[]
+  events         AttemptEvent[]
+  incidents      Incident[]
+
+  @@unique([examId, studentId])
+  @@index([examId, status])
+  @@index([status, deadlineAt])
+  @@map("attempts")
+}
+
+/// Authoritative current answer per question. `revision` is a client-monotonic counter;
+/// writes with revision <= stored revision are rejected or treated as idempotent replays.
+model AttemptAnswer {
+  attemptId      String       @db.Uuid
+  examQuestionId String       @db.Uuid
+  selectedLabel  String?
+  state          AnswerState  @default(SKIPPED)
+  markedForReview Boolean     @default(false)
+  visited        Boolean      @default(true)
+  revision       Int
+  savedAt        DateTime     @default(now()) @db.Timestamptz
+  attempt        Attempt      @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  examQuestion   ExamQuestion @relation(fields: [examQuestionId], references: [id])
+
+  @@id([attemptId, examQuestionId])
+  @@map("attempt_answers")
+}
+
+/// Append-only journal of every accepted answer write — evidence for disputes and recovery.
+model AnswerEvent {
+  id             BigInt   @id @default(autoincrement())
+  attemptId      String   @db.Uuid
+  examQuestionId String   @db.Uuid
+  revision       Int
+  selectedLabel  String?
+  state          AnswerState
+  markedForReview Boolean
+  at             DateTime @default(now()) @db.Timestamptz
+
+  @@index([attemptId, examQuestionId, revision])
+  @@map("answer_events")
+}
+
+model AttemptEvent {
+  id        BigInt   @id @default(autoincrement())
+  attemptId String   @db.Uuid
+  kind      String   // TAB_HIDDEN, FULLSCREEN_EXIT, OFFLINE, ONLINE, PASTE_BLOCKED, TIME_EXTENDED, SESSION_CLAIMED, FORCE_SUBMITTED
+  detail    Json?
+  actorId   String?  @db.Uuid
+  at        DateTime @default(now()) @db.Timestamptz
+  attempt   Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId, at])
+  @@map("attempt_events")
+}
+
+// ───────────────────────── Incidents ─────────────────────────
+
+model Incident {
+  id            String           @id @default(uuid()) @db.Uuid
+  examId        String           @db.Uuid
+  institutionId String           @db.Uuid
+  attemptId     String?          @db.Uuid
+  studentId     String?          @db.Uuid
+  type          IncidentType
+  severity      IncidentSeverity @default(LOW)
+  description   String
+  status        IncidentStatus   @default(OPEN)
+  resolution    String?
+  reportedBy    String           @db.Uuid
+  resolvedBy    String?          @db.Uuid
+  createdAt     DateTime         @default(now()) @db.Timestamptz
+  resolvedAt    DateTime?        @db.Timestamptz
+  exam          Exam             @relation(fields: [examId], references: [id])
+  institution   Institution      @relation(fields: [institutionId], references: [id])
+  attempt       Attempt?         @relation(fields: [attemptId], references: [id])
+  notes         IncidentNote[]
+
+  @@index([examId, status])
+  @@index([institutionId, status])
+  @@map("incidents")
+}
+
+model IncidentNote {
+  id         String   @id @default(uuid()) @db.Uuid
+  incidentId String   @db.Uuid
+  authorId   String   @db.Uuid
+  body       String
+  createdAt  DateTime @default(now()) @db.Timestamptz
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@map("incident_notes")
+}
+
+// ───────────────────────── Grading & results ─────────────────────────
+
+/// Lecturer/examiner review actions on a paper after the sitting: void a defective question
+/// (full marks to all) or correct the answer key. Triggers a regrade.
+model KeyAction {
+  id             String        @id @default(uuid()) @db.Uuid
+  examId         String        @db.Uuid
+  examQuestionId String        @db.Uuid
+  kind           KeyActionKind
+  newLabel       String?
+  reason         String
+  actorId        String        @db.Uuid
+  createdAt      DateTime      @default(now()) @db.Timestamptz
+  exam           Exam          @relation(fields: [examId], references: [id])
+  examQuestion   ExamQuestion  @relation(fields: [examQuestionId], references: [id])
+
+  @@index([examId])
+  @@map("key_actions")
+}
+
+model ResultBatch {
+  id                 String            @id @default(uuid()) @db.Uuid
+  examId             String            @unique @db.Uuid
+  status             ResultBatchStatus @default(GRADED)
+  gradedAt           DateTime          @default(now()) @db.Timestamptz
+  reviewedBy         String?           @db.Uuid
+  reviewedAt         DateTime?         @db.Timestamptz
+  examinerApprovedBy String?           @db.Uuid
+  examinerApprovedAt DateTime?         @db.Timestamptz
+  publishedBy        String?           @db.Uuid
+  publishedAt        DateTime?         @db.Timestamptz
+  reviewNote         String?
+  exam               Exam              @relation(fields: [examId], references: [id])
+
+  @@map("result_batches")
+}
+
+model Result {
+  id          String       @id @default(uuid()) @db.Uuid
+  examId      String       @db.Uuid
+  studentId   String       @db.Uuid
+  attemptId   String?      @db.Uuid
+  rawScore    Float
+  adjustment  Float        @default(0)
+  totalMarks  Float
+  percent     Float
+  status      ResultStatus
+  gradedAt    DateTime     @default(now()) @db.Timestamptz
+  exam        Exam         @relation(fields: [examId], references: [id])
+  student     Student      @relation(fields: [studentId], references: [id])
+  certificate Certificate?
+
+  @@unique([examId, studentId])
+  @@index([studentId])
+  @@map("results")
+}
+
+model Certificate {
+  id         String    @id @default(uuid()) @db.Uuid
+  resultId   String    @unique @db.Uuid
+  serial     String    @unique
+  verifyCode String    @unique
+  issuedAt   DateTime  @default(now()) @db.Timestamptz
+  issuedBy   String    @db.Uuid
+  revokedAt  DateTime? @db.Timestamptz
+  result     Result    @relation(fields: [resultId], references: [id])
+
+  @@map("certificates")
+}
+
+// ───────────────────────── Cross-cutting ─────────────────────────
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  title     String
+  body      String
+  link      String?
+  readAt    DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+model OutboundMessage {
+  id        String        @id @default(uuid()) @db.Uuid
+  toEmail   String
+  subject   String
+  body      String
+  kind      String
+  status    MessageStatus @default(PENDING)
+  attempts  Int           @default(0)
+  lastError String?
+  createdAt DateTime      @default(now()) @db.Timestamptz
+  sentAt    DateTime?     @db.Timestamptz
+
+  @@index([status, createdAt])
+  @@map("outbound_messages")
+}
+
+/// Tamper-evident audit trail: each row's hash covers the previous row's hash.
+model AuditLog {
+  seq           BigInt   @id @default(autoincrement())
+  at            DateTime @default(now()) @db.Timestamptz
+  actorId       String?  @db.Uuid
+  actorRole     Role?
+  action        String
+  entity        String
+  entityId      String?
+  institutionId String?  @db.Uuid
+  meta          Json?
+  ip            String?
+  prevHash      String
+  hash          String
+
+  @@index([entity, entityId])
+  @@index([institutionId, at])
+  @@index([actorId, at])
+  @@map("audit_logs")
+}
