@@ -1,0 +1,15 @@
+FROM node:26-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY packages/shared packages/shared
+COPY apps/api apps/api
+RUN npm ci --workspace @oes/shared --workspace @oes/api --include-workspace-root && npm run build:shared && npm run build -w @oes/api
+
+FROM node:26-slim
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=build /app /app
+RUN npm prune --omit=dev --workspace @oes/api --include-workspace-root || true
+EXPOSE 4000
+# Migrations are applied by a release step (`npm run db:migrate`), never implicitly on boot.
+CMD ["node", "apps/api/dist/main.js"]

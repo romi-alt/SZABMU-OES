@@ -1,7 +1,7 @@
 'use client';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
-import { post, put, del, useGet } from '@/api';
+import { post, put, useGet } from '@/api';
 import { useMe } from '@/session';
 import { Async, Badge, Card, Field, Modal, PageHead, Pager, Status, Table, useAction, Confirm } from '@/ui';
 

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { percent, scoreQuestion, sumScores } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
-import { QUEUES, QueuesService } from '../../infra/queues.service';
+import { QueuesService } from '../../infra/queues.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { scope, type AuthUser } from '../../common/auth';
