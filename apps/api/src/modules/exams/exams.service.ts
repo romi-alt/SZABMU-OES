@@ -1,3 +1,4 @@
+import { LINKS } from '@oes/shared';
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../../infra/prisma.service';
@@ -104,7 +105,7 @@ export class ExamsService {
     if (exam._count.questions < 1) throw badRequest('The paper has no questions');
     await this.prisma.exam.update({ where: { id: examId }, data: { paperStatus: 'SUBMITTED', status: 'PAPER_PENDING', paperSubmittedBy: u.id } });
     await this.audit.log({ actor: u, action: 'paper.submit', entity: 'exam', entityId: examId, ip });
-    await this.notifications.notifyRole('CCE', 'Question paper awaiting approval', `${exam.code} — ${exam.title}`, `/cce/exams/${examId}`);
+    await this.notifications.notifyRole('CCE', 'Question paper awaiting approval', `${exam.code} — ${exam.title}`, LINKS.exam(examId));
     return { status: 'PAPER_PENDING' };
   }
 
@@ -146,7 +147,7 @@ export class ExamsService {
     await this.prisma.exam.update({ where: { id: examId }, data: { status: 'SCHEDULED' } });
     await this.audit.log({ actor: u, action: 'exam.schedule', entity: 'exam', entityId: examId, meta: r, ip });
     const studentUsers = await this.prisma.examCandidate.findMany({ where: { examId, status: 'ADMITTED' }, select: { student: { select: { userId: true } } } });
-    await this.notifications.notify(studentUsers.map((c) => c.student.userId), `Exam scheduled: ${exam.title}`, `Opens ${exam.opensAt.toISOString()}. Duration ${exam.durationMin} minutes.`, '/student/schedule');
+    await this.notifications.notify(studentUsers.map((c) => c.student.userId), `Exam scheduled: ${exam.title}`, `Opens ${exam.opensAt.toISOString()}. Duration ${exam.durationMin} minutes.`, LINKS.schedule);
     return { status: 'SCHEDULED', ...r };
   }
 
@@ -272,7 +273,7 @@ export class ExamsService {
     if (!inv) throw badRequest('User is not an active invigilator of that institution');
     await this.prisma.examInvigilator.upsert({ where: { examId_userId_institutionId: { examId, userId: d.userId, institutionId: d.institutionId } }, create: { examId, userId: d.userId, institutionId: d.institutionId }, update: {} });
     await this.audit.log({ actor: u, action: 'invigilator.assign', entity: 'exam', entityId: examId, institutionId: d.institutionId, meta: { userId: d.userId }, ip });
-    await this.notifications.notify([d.userId], 'Invigilation duty assigned', `${exam.code} — ${exam.title}`, '/invigilator');
+    await this.notifications.notify([d.userId], 'Invigilation duty assigned', `${exam.code} — ${exam.title}`, LINKS.monitor);
     return { ok: true };
   }
 

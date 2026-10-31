@@ -1,3 +1,4 @@
+import { LINKS } from '@oes/shared';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -93,7 +94,7 @@ export class QuestionsService {
     if (!['DRAFT', 'REJECTED'].includes(q.status)) throw conflict('BAD_STATE', `Cannot submit a ${q.status} question`);
     await this.prisma.question.update({ where: { id }, data: { status: 'SUBMITTED', reviewNote: null } });
     await this.audit.log({ actor: u, action: 'question.submit', entity: 'question', entityId: id, institutionId: q.institutionId, ip });
-    await this.notifications.notifyRole('EXAMINER', 'Question awaiting review', `${q.course.code}: a new question was submitted for approval.`, '/examiner/questions');
+    await this.notifications.notifyRole('EXAMINER', 'Question awaiting review', `${q.course.code}: a new question was submitted for approval.`, LINKS.questions);
     return { status: 'SUBMITTED' };
   }
 
@@ -105,7 +106,7 @@ export class QuestionsService {
     const status = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
     await this.prisma.question.update({ where: { id }, data: { status, reviewNote: note, reviewedBy: u.id, reviewedAt: new Date() } });
     await this.audit.log({ actor: u, action: `question.${decision.toLowerCase()}`, entity: 'question', entityId: id, institutionId: q.institutionId, meta: { note }, ip });
-    await this.notifications.notify([q.authorId], `Question ${status.toLowerCase()}`, note ?? `Your ${q.course.code} question was ${status.toLowerCase()}.`, '/lecturer/questions');
+    await this.notifications.notify([q.authorId], `Question ${status.toLowerCase()}`, note ?? `Your ${q.course.code} question was ${status.toLowerCase()}.`, LINKS.questions);
     return { status };
   }
 

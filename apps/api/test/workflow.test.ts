@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client, as, boot, cid, save, startExam, type Ctx } from './helpers';
 import { JobsService } from '../src/modules/jobs.service';
 import { DOMAIN } from '../src/seed/seed';
+import { routeExists } from './web-routes';
 
 let ctx: Ctx; let examId: string;
 const sat: Record<string, { c: Client; attemptId: string; clientId: string }> = {};
@@ -266,5 +267,20 @@ describe('database constraints', () => {
     await expect(ctx.prisma.$executeRaw`UPDATE question_options SET "isCorrect" = true WHERE "questionId" = ${q.id}::uuid`).rejects.toThrow(/one_correct|duplicate key/);
     await expect(ctx.prisma.exam.update({ where: { id: examId }, data: { durationMin: 1 } })).rejects.toThrow();
     await expect(ctx.prisma.$executeRaw`UPDATE users SET email = 'UPPER@CASE.TEST' WHERE email = ${`cce@${DOMAIN}`}`).rejects.toThrow();
+  });
+});
+
+describe('notifications created by the whole workflow', () => {
+  it('every stored link resolves to a real page of the web app (no dead deep-links)', async () => {
+    const rows = await ctx.prisma.notification.findMany({ select: { title: true, link: true } });
+    expect(rows.length).toBeGreaterThan(5);                                   // the flows above really produced notifications
+    const withLink = rows.filter((r) => r.link);
+    expect(withLink.length).toBeGreaterThan(5);
+    const dead = withLink.filter((r) => !routeExists(r.link!));
+    expect(dead.map((r) => `${r.title} → ${r.link}`)).toEqual([]);
+  });
+  it('the "results ready" notification names the exam, not its internal id', async () => {
+    const r = await ctx.prisma.notification.findMany({ where: { title: 'Results ready for review' }, select: { body: true } });
+    for (const n of r) expect(n.body).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
   });
 });
