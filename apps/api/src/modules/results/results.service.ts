@@ -1,3 +1,4 @@
+import { CourseAccessService } from '../org/course-access.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { percent, scoreQuestion, sumScores } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
@@ -11,7 +12,7 @@ import { randomBytes } from 'node:crypto';
 @Injectable()
 export class ResultsService {
   private readonly log = new Logger('Results');
-  constructor(private readonly prisma: PrismaService, private readonly queues: QueuesService, private readonly audit: AuditService, private readonly notifications: NotificationsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly queues: QueuesService, private readonly audit: AuditService, private readonly notifications: NotificationsService, private readonly access: CourseAccessService) {}
 
   // ───────────── automatic MCQ grading (idempotent) ─────────────
   async gradeAttempt(attemptId: string) {
@@ -82,8 +83,9 @@ export class ResultsService {
 
   // ───────────── analysis & review ─────────────
   private async loadExam(u: AuthUser, examId: string) {
-    const exam = await this.prisma.exam.findFirst({ where: { id: examId, ...(u.institutionIds === null ? {} : { institutions: { some: { institutionId: { in: u.institutionIds } } } }) }, include: { resultBatch: true, course: { select: { code: true, title: true } } } });
+    const exam = await this.prisma.exam.findFirst({ where: { id: examId, ...(u.institutionIds === null ? {} : { institutions: { some: { institutionId: { in: u.institutionIds } } } }) }, include: { resultBatch: true, institutions: { select: { institutionId: true } }, course: { select: { code: true, title: true } } } });
     if (!exam) throw notFound('Exam');
+    await this.access.assertExam(u, exam); // lecturers: only exams of their assigned courses
     return exam;
   }
 
@@ -188,8 +190,9 @@ export class ResultsService {
   }
 
   async gradingQueue(u: AuthUser) {
+    const courseIds = await this.access.courseIds(u);
     return this.prisma.exam.findMany({
-      where: { status: { in: ['RESULT_PENDING', 'CLOSED', 'PUBLISHED'] }, ...(u.institutionIds === null ? {} : { institutions: { some: { institutionId: { in: u.institutionIds } } } }) },
+      where: { ...(courseIds === null ? {} : { courseId: { in: courseIds } }), status: { in: ['RESULT_PENDING', 'CLOSED', 'PUBLISHED'] }, ...(u.institutionIds === null ? {} : { institutions: { some: { institutionId: { in: u.institutionIds } } } }) },
       include: { course: { select: { code: true, title: true } }, resultBatch: true, _count: { select: { attempts: true, candidates: true } } }, orderBy: { closesAt: 'desc' }, take: 100,
     });
   }

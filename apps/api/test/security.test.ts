@@ -108,8 +108,11 @@ describe('institution scope (campus isolation)', () => {
     expect((await lecB.get(`/questions/${q.id}`)).status).toBe(404);
     expect((await lecB.post(`/questions/${q.id}/submit`)).status).toBe(404);
     expect((await lecB.del(`/questions/${q.id}`)).status).toBe(404);
-    const lecA2 = await as(ctx, 'lecturer.a2'); // same campus, different author
-    expect((await lecA2.post(`/questions/${q.id}/submit`)).status).toBe(403);
+    const lecA2 = await as(ctx, 'lecturer.a2'); // same campus, assigned to PHARM only
+    const pharmQ = await ctx.prisma.question.findFirstOrThrow({ where: { institutionId: A, courseId: ctx.seeded.courses.pharm.id, status: 'DRAFT' } }).catch(() => ctx.prisma.question.findFirstOrThrow({ where: { institutionId: A, courseId: ctx.seeded.courses.pharm.id } }));
+    expect((await lecA2.post(`/questions/${pharmQ.id}/submit`)).status).toBe(403); // assigned course, but not the author
+    const pathQ = await ctx.prisma.question.findFirstOrThrow({ where: { institutionId: A, courseId: ctx.seeded.courses.path.id } });
+    expect((await lecA2.post(`/questions/${pathQ.id}/submit`)).status).toBe(404); // not assigned to PATH: indistinguishable from absent
   });
 
   it('invigilators monitor only the campus they are assigned to and cannot act on other campuses\' candidates', async () => {

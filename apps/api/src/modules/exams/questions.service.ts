@@ -4,6 +4,7 @@ import { AuditService } from '../audit/audit.service';
 import { scope, type AuthUser } from '../../common/auth';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import type { Prisma } from '../../generated/prisma/client';
+import { CourseAccessService } from '../org/course-access.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
 export interface QuestionInput {
@@ -30,17 +31,18 @@ export function validateQuestion(q: QuestionInput) {
 
 @Injectable()
 export class QuestionsService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly notifications: NotificationsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly notifications: NotificationsService, private readonly access: CourseAccessService) {}
 
   private async load(u: AuthUser, id: string) {
     const q = await this.prisma.question.findUnique({ where: { id }, include: { options: { orderBy: { label: 'asc' } }, course: { select: { code: true, title: true } } } });
-    if (!q || !scope.allows(u, q.institutionId)) throw notFound('Question');
+    if (!q || !scope.allows(u, q.institutionId) || !(await this.access.allows(u, q.courseId, q.institutionId))) throw notFound('Question'); // unassigned lecturer ⇒ indistinguishable from absent
     return q;
   }
 
   async list(u: AuthUser, f: { courseId?: string; status?: string; difficulty?: string; type?: string; search?: string; institutionId?: string; page: number; pageSize: number }) {
     if (f.institutionId) scope.assert(u, f.institutionId);
     const where: Prisma.QuestionWhereInput = {
+      AND: [await this.access.questionWhere(u)],
       institutionId: f.institutionId ?? scope.filter(u),
       courseId: f.courseId, status: f.status as never, difficulty: f.difficulty as never, type: f.type as never,
       ...(f.search ? { OR: [{ stem: { contains: f.search, mode: 'insensitive' } }, { vignette: { contains: f.search, mode: 'insensitive' } }] } : {}),
@@ -59,6 +61,8 @@ export class QuestionsService {
     const institutionId = d.institutionId ?? u.institutionIds?.[0];
     if (!institutionId) throw badRequest('institutionId is required');
     scope.assert(u, institutionId);
+    if (!(await this.prisma.course.findUnique({ where: { id: d.courseId }, select: { id: true } }))) throw badRequest('Unknown course');
+    await this.access.assert(u, d.courseId, institutionId);
     const q = await this.prisma.question.create({
       data: { courseId: d.courseId, institutionId, authorId: u.id, type: d.type, vignette: d.vignette, stem: d.stem, explanation: d.explanation, difficulty: d.difficulty, tags: d.tags ?? [], options: { create: d.options } },
     });

@@ -173,6 +173,7 @@ model Institution {
   incidents   Incident[]
 
   @@map("institutions")
+  courseAssignments CourseAssignment[]
 }
 
 model Department {
@@ -217,6 +218,7 @@ model Course {
 
   @@index([programId, semester])
   @@map("courses")
+  courseAssignments CourseAssignment[]
 }
 
 // ───────────────────────── Identity ─────────────────────────
@@ -246,6 +248,7 @@ model User {
 
   @@index([role])
   @@map("users")
+  courseAssignments CourseAssignment[]
 }
 
 /// Institution assignments. Campus-scoped roles may only act within these.
@@ -784,4 +787,26 @@ model EligibilityOverride {
 
   @@index([examId, studentId])
   @@map("eligibility_overrides")
+}
+
+// ───────────────────────── Lecturer ↔ course assignment ─────────────────────────
+
+/// A lecturer may author/manage questions, build papers and review grading ONLY for courses explicitly assigned
+/// to them at a given institution. Revocation is a soft delete so history is kept.
+model CourseAssignment {
+  id            String      @id @default(uuid()) @db.Uuid
+  userId        String      @db.Uuid
+  courseId      String      @db.Uuid
+  institutionId String      @db.Uuid
+  assignedById  String      @db.Uuid
+  createdAt     DateTime    @default(now()) @db.Timestamptz
+  revokedAt     DateTime?   @db.Timestamptz
+  revokedById   String?     @db.Uuid
+  user          User        @relation(fields: [userId], references: [id])
+  course        Course      @relation(fields: [courseId], references: [id])
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  @@index([userId, revokedAt])
+  @@index([courseId, institutionId])
+  @@map("course_assignments")
 }
