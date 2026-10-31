@@ -1,5 +1,7 @@
 // Load & integrity test for the live examination path.
 //   node tests/load/exam-load.mjs --candidates 2000 --questions 50 --think 3000 --concurrency 400
+//   multiple API processes (round-robin per candidate):  --api http://localhost:4000,http://localhost:4001,http://localhost:4002
+//   server-side cross-check from /api/metrics:            --metrics-token <METRICS_TOKEN>
 // Provisions SYNTHETIC candidates directly in the database (bypassing argon2 login), drives the real HTTP API,
 // then verifies against PostgreSQL that every answer the server acknowledged is stored, and every submit is sealed.
 import pg from 'pg';
@@ -7,7 +9,8 @@ import { Pool as HttpPool, Agent, setGlobalDispatcher, request } from 'undici';
 import { createHash, randomUUID } from 'node:crypto';
 
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
-const N = +arg('candidates', 2000), M = +arg('questions', 50), THINK = +arg('think', 3000), RAMP = +arg('ramp', 20), API = arg('api', 'http://localhost:4000'), CONC = +arg('concurrency', 512);
+const N = +arg('candidates', 2000), M = +arg('questions', 50), THINK = +arg('think', 3000), RAMP = +arg('ramp', 20), APIS = arg('api', 'http://localhost:4000').split(','), CONC = +arg('concurrency', 512), MTOKEN = arg('metrics-token', '');
+const API_OF = new Map(); // session token -> API base URL (round-robin per candidate)
 const DB = process.env.DATABASE_URL ?? 'postgresql://oes:oes_dev_password@localhost:5433/szabmu_oes';
 const sha = (s) => createHash('sha256').update(s).digest('hex');
 setGlobalDispatcher(new Agent({ connections: CONC, pipelining: 1, keepAliveTimeout: 30_000, headersTimeout: 30_000, bodyTimeout: 30_000 }));
@@ -49,6 +52,8 @@ async function provision(db) {
     await db.query(`INSERT INTO user_institutions ("userId","institutionId") SELECT u, $1::uuid FROM unnest($2::uuid[]) u`, [inst, uids]);
     await db.query(`INSERT INTO students (id,"userId","institutionId","programId","regNo",semester,"batchYear") VALUES ${sp.join(',')}`, sv);
     await db.query(`INSERT INTO exam_candidates (id,"examId","studentId","institutionId") VALUES ${cp.join(',')}`, cv);
+    // admission re-validates local enrolment at start (policy P-26), so synthetic candidates need a real enrolment
+    await db.query(`INSERT INTO enrollments (id,"studentId","courseId",term,status,eligibility) SELECT gen_random_uuid(), x, $1::uuid, '2026-SPRING', 'ENROLLED', 'ELIGIBLE' FROM unnest($2::uuid[]) x`, [course, sids]);
     await db.query(`INSERT INTO sessions (id,"userId","tokenHash","expiresAt") VALUES ${ssp.join(',')}`, sess);
   }
   return { exam, inst, cands, eqs };
@@ -57,7 +62,7 @@ async function provision(db) {
 async function call(kind, method, path, token, body) {
   const t0 = performance.now();
   try {
-    const r = await request(API + path, { method, headers: { cookie: `oes_session=${token}`, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    const r = await request((API_OF.get(token) ?? APIS[0]) + path, { method, headers: { cookie: `oes_session=${token}`, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
     const text = await r.body.text(); const ms = performance.now() - t0; lat[kind].push(ms);
     if (r.statusCode >= 400) { note(`${kind}:${r.statusCode}:${(() => { try { return JSON.parse(text).code; } catch { return '?'; } })()}`); return { status: r.statusCode, json: null }; }
     return { status: r.statusCode, json: JSON.parse(text) };
@@ -92,10 +97,16 @@ const ctx = {};
 const db = new pg.Client({ connectionString: DB }); await db.connect();
 console.log(`Provisioning ${N} synthetic candidates × ${M} questions…`);
 Object.assign(ctx, await provision(db));
-console.log(`Running: ramp ${RAMP}s, think ≈${THINK}ms/question, max ${CONC} connections`);
+for (const c of ctx.cands) API_OF.set(c.token, APIS[c.i % APIS.length]);
+console.log(`Running: ramp ${RAMP}s, think ≈${THINK}ms/question, max ${CONC} connections, ${APIS.length} API process(es)`);
+// host CPU sampler (whole machine, shared with PostgreSQL/Redis/APIs/this generator)
+import { readFileSync } from 'node:fs';
+const cpuSnap = () => { const [, ...f] = readFileSync('/proc/stat', 'utf8').split('\n')[0].trim().split(/\s+/).map(Number); const idle = f[3] + f[4]; return { idle, total: f.reduce((a, b) => a + b, 0) }; };
+const cpuSamples = []; let prevCpu = cpuSnap();
+const cpuTimer = setInterval(() => { const c = cpuSnap(); cpuSamples.push(100 * (1 - (c.idle - prevCpu.idle) / (c.total - prevCpu.total))); prevCpu = c; }, 5000);
 const t0 = Date.now();
 await Promise.all(ctx.cands.map((c) => candidate(c, (c.i / N) * RAMP * 1000)));
-const secs = (Date.now() - t0) / 1000;
+const secs = (Date.now() - t0) / 1000; clearInterval(cpuTimer);
 
 console.log('\nVerifying against PostgreSQL…');
 const rows = (await db.query(`SELECT a.id, a.status, a."receiptCode", aa."examQuestionId", aa."selectedLabel", aa.revision FROM attempts a LEFT JOIN attempt_answers aa ON aa."attemptId" = a.id WHERE a."examId" = $1`, [ctx.exam])).rows;
@@ -112,6 +123,18 @@ console.log(`\nDuration ${secs.toFixed(1)}s · ${total} requests · ${(total / s
 console.log('endpoint      count       p50       p95       p99       max');
 for (const [k, a] of Object.entries(lat)) console.log(`${k.padEnd(10)} ${String(a.length).padStart(8)} ${f(pct(a, 0.5))} ${f(pct(a, 0.95))} ${f(pct(a, 0.99))} ${f(Math.max(0, ...a.slice(0, 1e6)))}  ms`);
 console.log('errors:', Object.keys(errs).length ? errs : 'none');
+if (cpuSamples.length) console.log(`host CPU busy (all 4 vCPU, 5 s samples): mean ${(cpuSamples.reduce((a, b) => a + b, 0) / cpuSamples.length).toFixed(0)}% · peak ${Math.max(...cpuSamples).toFixed(0)}% · samples ≥95%: ${cpuSamples.filter((x) => x >= 95).length}/${cpuSamples.length}`);
+if (MTOKEN) {
+  const sum = {}; const buckets = new Map();
+  for (const base of APIS) { const t = await (await request(base + '/api/metrics', { headers: { authorization: `Bearer ${MTOKEN}` } })).body.text();
+    for (const l of t.split('\n')) { let m;
+      if ((m = l.match(/^oes_answer_save_total\{result="(\w+)"\} (\S+)/))) sum['saves.' + m[1]] = (sum['saves.' + m[1]] ?? 0) + +m[2];
+      else if ((m = l.match(/^oes_submit_total\{result="(\w+)"\} (\S+)/))) sum['submits.' + m[1]] = (sum['submits.' + m[1]] ?? 0) + +m[2];
+      else if ((m = l.match(/^oes_db_errors_total\{kind="(\w+)"\} (\S+)/))) sum['db_errors.' + m[1]] = (sum['db_errors.' + m[1]] ?? 0) + +m[2];
+      else if ((m = l.match(/^oes_answer_save_duration_seconds_bucket\{le="([^"]+)"\} (\S+)/))) buckets.set(m[1], (buckets.get(m[1]) ?? 0) + +m[2]); } }
+  const inf = buckets.get('+Inf') ?? 0; const q = (p) => { for (const [le, n] of [...buckets].filter(([k]) => k !== '+Inf').sort((a, b) => +a[0] - +b[0])) if (n >= inf * p) return `≤${+le * 1000} ms`; return '>10000 ms'; };
+  console.log('server-side (from /api/metrics, summed over processes):', JSON.stringify(sum), `· save latency histogram: p50 ${q(0.5)} · p95 ${q(0.95)} · p99 ${q(0.99)} (bucket upper bounds)`);
+}
 console.log(`\nINTEGRITY  acknowledged answers: ${ackedTotal} · missing in DB: ${missing} · stale/wrong in DB: ${wrong} · acked submits not sealed: ${unsealed} · receipt mismatches: ${noReceipt}`);
 const ok = missing === 0 && wrong === 0 && unsealed === 0 && noReceipt === 0 && !errs['submit:replay-mismatch'];
 console.log(ok ? 'RESULT: PASS — no acknowledged answer was lost or altered.' : 'RESULT: FAIL');
