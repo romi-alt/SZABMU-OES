@@ -234,7 +234,10 @@ describe('invigilation', () => {
     expect(fs.body.receiptCode).toMatch(/^RC-/);
     expect((await inv.post(`/invigilation/attempts/${attemptId}/extend`, { minutes: 5, reason: 'after the fact' })).status).toBe(409);
     const audit = await ctx.prisma.auditLog.findMany({ where: { entityId: attemptId } });
-    expect(audit.map((a) => a.action)).toEqual(expect.arrayContaining(['attempt.start', 'attempt.extend_time', 'attempt.force_submit']));
+    expect(audit.map((a) => a.action)).toEqual(expect.arrayContaining(['attempt.extend_time', 'attempt.force_submit']));
+    // candidate lifecycle is journalled on the attempt itself (not in the serialised audit chain)
+    const ev = await ctx.prisma.attemptEvent.findMany({ where: { attemptId }, orderBy: { id: 'asc' } });
+    expect(ev.map((e) => e.kind)).toEqual(expect.arrayContaining(['STARTED', 'TIME_EXTENDED', 'FORCE_SUBMITTED']));
   });
 });
 
