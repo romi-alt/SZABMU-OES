@@ -121,7 +121,7 @@ const total = Object.values(lat).reduce((a, b) => a + b.length, 0);
 const f = (n) => n.toFixed(1).padStart(8);
 console.log(`\nDuration ${secs.toFixed(1)}s · ${total} requests · ${(total / secs).toFixed(0)} req/s overall`);
 console.log('endpoint      count       p50       p95       p99       max');
-for (const [k, a] of Object.entries(lat)) console.log(`${k.padEnd(10)} ${String(a.length).padStart(8)} ${f(pct(a, 0.5))} ${f(pct(a, 0.95))} ${f(pct(a, 0.99))} ${f(Math.max(0, ...a.slice(0, 1e6)))}  ms`);
+for (const [k, a] of Object.entries(lat)) console.log(`${k.padEnd(10)} ${String(a.length).padStart(8)} ${f(pct(a, 0.5))} ${f(pct(a, 0.95))} ${f(pct(a, 0.99))} ${f(a.reduce((m, x) => (x > m ? x : m), 0))}  ms`);
 console.log('errors:', Object.keys(errs).length ? errs : 'none');
 if (cpuSamples.length) console.log(`host CPU busy (all 4 vCPU, 5 s samples): mean ${(cpuSamples.reduce((a, b) => a + b, 0) / cpuSamples.length).toFixed(0)}% · peak ${Math.max(...cpuSamples).toFixed(0)}% · samples ≥95%: ${cpuSamples.filter((x) => x >= 95).length}/${cpuSamples.length}`);
 if (MTOKEN) {
