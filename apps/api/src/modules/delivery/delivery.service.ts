@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { SAVE_GRACE_SECONDS, answerDigest, computeDeadline, receiptCode, seededOrder } from '@oes/shared';
+import { SAVE_GRACE_SECONDS, computeDeadline, seededOrder } from '@oes/shared';
+import { answerDigest, receiptCode } from '@oes/shared/server';
 import { PrismaService } from '../../infra/prisma.service';
 import { RedisService } from '../../infra/redis.service';
 import { QUEUES, QueuesService } from '../../infra/queues.service';
