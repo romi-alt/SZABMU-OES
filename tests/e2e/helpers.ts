@@ -20,3 +20,14 @@ export function totp(secretBase32: string, atMs = Date.now()): string {
   const h = createHmac('sha1', Buffer.from(bytes)).update(msg).digest(); const o = h[h.length - 1]! & 15;
   return String((((h[o]! & 0x7f) << 24) | (h[o + 1]! << 16) | (h[o + 2]! << 8) | h[o + 3]!) % 1_000_000).padStart(6, '0');
 }
+
+/**
+ * Collects Content-Security-Policy violations for a page: both the browser's console report and the securitypolicyviolation event.
+ * A test that drives a real flow asserts the returned list is empty, so a policy that breaks rendering fails loudly.
+ */
+export function watchCsp(page: Page): string[] {
+  const seen: string[] = [];
+  page.on('console', (m) => { if (/violates the following Content Security Policy|CSPVIOLATION/i.test(m.text())) seen.push(m.text().slice(0, 240)); });
+  void page.addInitScript(() => document.addEventListener('securitypolicyviolation', (e) => console.error(`CSPVIOLATION ${e.violatedDirective} ${e.blockedURI}`)));
+  return seen;
+}
