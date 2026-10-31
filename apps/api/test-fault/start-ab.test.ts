@@ -18,7 +18,7 @@ describe.skipIf(process.env.RUN_BENCH !== '1')('start path A/B', () => {
     execFileSync('npm', ['run', 'build:shared'], { cwd: REPO_DIR, stdio: 'pipe' }); execFileSync('npm', ['run', 'build', '-w', '@oes/api'], { cwd: REPO_DIR, stdio: 'pipe' });
     db = new DisposablePg(); await db.init(); redis = new DisposableRedis(); await redis.start(); migrateAndSeed({ DATABASE_URL: db.url, REDIS_URL: redis.url });
   }, 300_000);
-  afterAll(() => { redis?.kill(); db?.destroy(); });
+  afterAll(async () => { await redis?.kill(); db?.destroy(); });
 
   it(`${ROUNDS}× alternating, ${N} candidates, ramp ${RAMP}s, start only`, async () => {
     const infra = { DATABASE_URL: db.url, REDIS_URL: redis.url };

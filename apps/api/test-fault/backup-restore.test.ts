@@ -27,7 +27,10 @@ beforeAll(async () => {
   pool = src.pool();
 }, 300_000);
 
-afterAll(async () => { await pool?.end(); await apiB?.kill(); await apiA?.kill(); redisA?.kill(); redisB?.kill(); src?.destroy(); if (work) rmSync(work, { recursive: true, force: true }); });
+afterAll(async () => {
+  try { await src?.closePools(); await apiB?.kill(); await apiA?.kill(); await redisA?.kill(); await redisB?.kill(); src?.destroy(); if (work) rmSync(work, { recursive: true, force: true }); }
+  finally { src?.errors.assertClean(); }
+});
 
 describe('backup → isolated restore → verification', () => {
   let dump = ''; let attemptId = ''; let receipt = ''; let stu: Student; let ackedBeforeBackup = 0;

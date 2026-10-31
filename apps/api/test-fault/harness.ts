@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import pg from 'pg';
 import Redis from 'ioredis';
+import { PoolErrorPolicy } from './pool-errors';
 
 export const API_DIR = path.resolve(__dirname, '..');
 export const REPO_DIR = path.resolve(API_DIR, '../..');
@@ -35,6 +36,9 @@ function asPg(cmd: string, args: string[], opts: { input?: string } = {}) {
 export class DisposablePg {
   readonly dir = mkdtempSync(path.join(os.tmpdir(), 'oes-fault-'));
   port = 0; readonly db = 'fault_oes';
+  /** Classifies errors from pools handed out by `pool()`: connection loss is expected only inside a declared outage. */
+  readonly errors = new PoolErrorPolicy();
+  private readonly pools = new Set<pg.Pool>();
   private get data() { return path.join(this.dir, 'data'); }
   get url() { return `postgresql://oes@127.0.0.1:${this.port}/${this.db}`; }
   get adminUrl() { return `postgresql://oes@127.0.0.1:${this.port}/postgres`; }
@@ -52,11 +56,14 @@ export class DisposablePg {
   async start() {
     asPg(`${PG_BIN}/pg_ctl`, ['-D', this.data, '-l', path.join(this.dir, 'pg.log'), '-w', '-t', '60', '-o',
       `-p ${this.port} -c listen_addresses=127.0.0.1 -c unix_socket_directories=${path.join(this.dir, 'sock')} -c max_connections=100 -c fsync=on -c synchronous_commit=on -c full_page_writes=on`, 'start']);
+    this.errors.endOutage();
   }
   /** Simulates a server crash: no shutdown checkpoint; the next start performs WAL crash recovery. */
-  crash() { asPg(`${PG_BIN}/pg_ctl`, ['-D', this.data, '-m', 'immediate', '-w', '-t', '60', 'stop']); }
+  crash() { this.errors.beginOutage(); asPg(`${PG_BIN}/pg_ctl`, ['-D', this.data, '-m', 'immediate', '-w', '-t', '60', 'stop']); }
   stop() { try { asPg(`${PG_BIN}/pg_ctl`, ['-D', this.data, '-m', 'fast', '-w', '-t', '60', 'stop']); } catch { /* already stopped */ } }
-  pool() { return new pg.Pool({ connectionString: this.url, max: 4 }); }
+  pool() { const p = new pg.Pool({ connectionString: this.url, max: 4 }); p.on('error', this.errors.handler); this.pools.add(p); return p; }
+  /** Ends every pool handed out by `pool()`; a pool that is already broken must not mask the real test result. */
+  async closePools() { await Promise.all([...this.pools].map((p) => p.end().catch(() => undefined))); this.pools.clear(); }
   destroy() { this.stop(); rmSync(this.dir, { recursive: true, force: true }); }
 }
 
@@ -69,7 +76,11 @@ export class DisposableRedis {
     await until('redis', async () => { const r = new Redis(this.url, { lazyConnect: true, maxRetriesPerRequest: 0 }); r.on('error', () => undefined); try { await r.connect(); return (await r.ping()) === 'PONG'; } finally { r.disconnect(); } });
   }
   async flushAll() { const r = new Redis(this.url, { maxRetriesPerRequest: 0 }); r.on('error', () => undefined); try { await r.flushall(); } finally { r.disconnect(); } }
-  kill() { this.proc?.kill('SIGKILL'); this.proc = undefined; }
+  /** SIGKILL and wait for the process to be gone (no leaked redis-server). */
+  async kill() {
+    const p = this.proc; this.proc = undefined; if (!p || p.exitCode !== null || p.signalCode) return;
+    await new Promise<void>((resolve) => { p.once('exit', () => resolve()); p.kill('SIGKILL'); });
+  }
 }
 
 export interface InfraEnv { DATABASE_URL: string; REDIS_URL: string }
