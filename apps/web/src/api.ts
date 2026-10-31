@@ -5,12 +5,24 @@ export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public body: any) { super(message); }
 }
 
+export const SESSION_EXPIRED_EVENT = 'oes:session-expired';
+
 export async function api<T = any>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`/api${path}`, { method, credentials: 'same-origin', headers: body !== undefined ? { 'content-type': 'application/json' } : undefined, body: body !== undefined ? JSON.stringify(body) : undefined, signal });
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, { method, credentials: 'same-origin', headers: body !== undefined ? { 'content-type': 'application/json' } : undefined, body: body !== undefined ? JSON.stringify(body) : undefined, signal });
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') throw e;                       // caller cancelled: not an error to show
+    throw new ApiError(0, 'NETWORK', 'Cannot reach the server. Check your internet connection and try again.', null);
+  }
   const text = await res.text();
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-  if (!res.ok) throw new ApiError(res.status, data?.code ?? 'ERROR', data?.message ?? `Request failed (${res.status})`, data);
+  if (!res.ok) {
+    // A signed-in user whose session ended (expiry, sign-out elsewhere, deactivation) is told so and returned to sign-in.
+    if (res.status === 401 && data?.code === 'UNAUTHENTICATED' && path !== '/auth/me' && typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+    throw new ApiError(res.status, data?.code ?? 'ERROR', data?.message ?? `Request failed (${res.status})`, data);
+  }
   return data as T;
 }
 export const get = <T = any>(p: string) => api<T>('GET', p);
