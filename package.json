@@ -1,0 +1,41 @@
+{
+  "name": "szabmu-oes",
+  "private": true,
+  "version": "0.1.0",
+  "description": "SZABMU / PIMS Online Examination System",
+  "engines": {
+    "node": ">=26"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @oes/shared",
+    "build": "npm run build:shared && npm run build -w @oes/api && npm run build -w @oes/web",
+    "typecheck": "npm run build:shared && npm run typecheck -w @oes/api && npm run typecheck -w @oes/web",
+    "lint": "eslint .",
+    "db:migrate": "npm run db:migrate -w @oes/api",
+    "db:seed": "npm run db:seed -w @oes/api",
+    "dev:api": "npm run dev -w @oes/api",
+    "dev:web": "npm run dev -w @oes/web",
+    "test": "npm run build:shared && npm run test -w @oes/shared && npm run test -w @oes/api",
+    "test:e2e": "playwright test",
+    "test:load": "node --experimental-strip-types tests/load/exam-load.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@playwright/test": "^1.64.1",
+    "eslint": "^9.0.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.0.0"
+  },
+  "allowScripts": {
+    "@swc/core@1.16.21": true,
+    "argon2@0.45.1": true,
+    "prisma@7.10.1": true,
+    "msgpackr-extract@3.0.4": true,
+    "@prisma/engines@7.10.1": true,
+    "esbuild@0.28.2": true
+  }
+}
