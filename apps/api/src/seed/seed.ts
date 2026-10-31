@@ -22,7 +22,7 @@ const LAST = ['Qureshi', 'Ali', 'Khan', 'Akhtar', 'Bukhari', 'Raza', 'Malik', 'A
 export async function asUser(prisma: PrismaService, email: string): Promise<AuthUser> {
   const u = await prisma.user.findUniqueOrThrow({ where: { email }, include: { institutions: true, student: { select: { id: true } } } });
   const campus = ['STUDENT', 'LECTURER', 'CAMPUS_ADMIN', 'INVIGILATOR'].includes(u.role);
-  return { id: u.id, email: u.email, fullName: u.fullName, role: u.role, institutionIds: campus ? u.institutions.map((i) => i.institutionId) : null, studentId: u.student?.id, sessionHash: 'seed', mustChangePw: false };
+  return { id: u.id, email: u.email, fullName: u.fullName, role: u.role, institutionIds: campus ? u.institutions.map((i) => i.institutionId) : null, studentId: u.student?.id, sessionHash: 'seed', mustChangePw: false, mfa: 'ok' };
 }
 
 export async function resetDatabase(prisma: PrismaService) {

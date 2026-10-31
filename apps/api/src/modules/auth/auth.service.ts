@@ -7,7 +7,7 @@ import { RedisService } from '../../infra/redis.service';
 import { MailService } from '../../infra/mail.service';
 import { AppError, badRequest } from '../../common/errors';
 import { AuditService } from '../audit/audit.service';
-import { dropUserSessions, sha256, type AuthUser } from '../../common/auth';
+import { MFA_ROLES, dropUserSessions, sha256, type AuthUser } from '../../common/auth';
 import { CONFIG, type Config } from '../../config';
 
 const MAX_FAILED = 5;
@@ -59,7 +59,8 @@ export class AuthService {
       this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: 0, lockedUntil: null, lastLoginAt: now } }),
     ]);
     await this.audit.log({ actor: user, action: 'auth.login', entity: 'user', entityId: user.id, ip });
-    return { token, expiresAt: new Date(now.getTime() + this.cfg.SESSION_TTL_HOURS * 3600_000), user: this.profile(user) };
+    const mfa = user.totpEnabledAt ? 'pending' : this.cfg.MFA_ENFORCE === 'true' && MFA_ROLES.includes(user.role) ? 'enroll' : 'ok';
+    return { token, expiresAt: new Date(now.getTime() + this.cfg.SESSION_TTL_HOURS * 3600_000), user: { ...this.profile(user), mfa } };
   }
 
   profile(u: { id: string; email: string; fullName: string; role: AuthUser['role']; mustChangePw: boolean; institutions?: { institutionId: string }[]; student?: { id: string } | null }) {
@@ -71,7 +72,7 @@ export class AuthService {
       where: { id: user.id },
       include: { institutions: { include: { institution: { select: { id: true, code: true, name: true } } } }, student: { include: { program: true, institution: { select: { id: true, name: true, code: true } } } } },
     });
-    return { ...this.profile(u), phone: u.phone, lastLoginAt: u.lastLoginAt, institutions: u.institutions.map((i) => i.institution), student: u.student && { id: u.student.id, regNo: u.student.regNo, semester: u.student.semester, program: u.student.program.code, programName: u.student.program.name, institution: u.student.institution, address: u.student.address, dateOfBirth: u.student.dateOfBirth, guardianPhone: u.student.guardianPhone } };
+    return { ...this.profile(u), mfa: { enabled: !!u.totpEnabledAt, state: user.mfa, required: this.cfg.MFA_ENFORCE === 'true' && MFA_ROLES.includes(u.role) }, phone: u.phone, lastLoginAt: u.lastLoginAt, institutions: u.institutions.map((i) => i.institution), student: u.student && { id: u.student.id, regNo: u.student.regNo, semester: u.student.semester, program: u.student.program.code, programName: u.student.program.name, institution: u.student.institution, address: u.student.address, dateOfBirth: u.student.dateOfBirth, guardianPhone: u.student.guardianPhone } };
   }
 
   /** Self-service profile edit. Identity fields (name, email, DOB, registration number) are institution-managed and not editable here. */

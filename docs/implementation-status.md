@@ -10,8 +10,8 @@ Definitions — **Complete**: frontend + backend + persistence + permissions + a
 | Typecheck (`tsc` api, web, shared) | ✅ clean |
 | Lint (`eslint .`) | ✅ clean |
 | Shared unit tests | ✅ 15 / 15 |
-| API integration + security tests (real PostgreSQL 16 + Redis, via Fastify inject) | ✅ 147 / 147 (incl. eligibility 15, course-access 13, config 18, route inventory 3, key confidentiality 2) |
-| Browser tests (Playwright/Chromium → Next.js → Nest → PostgreSQL/Redis) | ✅ 16 / 16 (16th = manipulated device clock; 15 re-run after checkpoint 4 changes, the 16th run on its own) |
+| API integration + security tests (real PostgreSQL 16 + Redis, via Fastify inject) | ✅ 160 / 160 (incl. eligibility 15, course-access 13, config 21, route inventory 3, key confidentiality 2, MFA 10) |
+| Browser tests (Playwright/Chromium → Next.js → Nest → PostgreSQL/Redis) | ✅ 17 / 17 (full suite re-run after checkpoint 7) |
 | Fault injection (`npm run test:fault`; disposable PG 16 cluster + Redis + real API processes) | ✅ 10 / 10 (7 durability + 3 backup/restore) — not part of `npm test` |
 | Load + integrity (2,000 synthetic candidates × 50 questions) | ✅ integrity PASS — see *Load test results* |
 | Production build (`next build`, `tsc`) | ✅ |
@@ -107,6 +107,8 @@ Candidate lifecycle is now recorded on the attempt itself (`attempts`, `attempt_
 | 3 | 2026-10-31 | `3c4f6ea` | **P0-A lecturer ↔ course authorization** | ✅ implemented + tested (below) |
 | 4 | 2026-10-31 | `b4d2813` | **P0-B answer durability fault injection** (+ Redis-outage defect fixed) | ✅ 7 fault scenarios pass on disposable infra (below) |
 | 5 | 2026-10-31 | `2f002c0` | **P0-C backup & verified restore** | ✅ logical backup + isolated-restore verification; ❌ PITR/encryption/scheduling (below) |
+| 6 | 2026-10-31 | `6f2093f` | **P0-D (1)** config validation, route manifest, key-confidentiality sweep, dependency upgrades | ✅ (below) |
+| 7 | 2026-10-31 | see git log | **P0-D (2)** TOTP MFA for privileged staff | ✅ API + browser-tested opt-in path; enforced-enrol path API-tested only |
 
 ### Checkpoint 2 — eligibility admission, roster versions, overrides
 **Defects found before the change:** `refreshRoster` hard-deleted candidates (history lost) and kept no version/approver; `start` only checked that a roster row existed (no account/student status, revocation, institution assignment or local enrolment re-check); no override record; no frozen per-attempt decision.
@@ -151,3 +153,9 @@ Candidate lifecycle is now recorded on the attempt itself (`attempts`, `attempt_
 - **Dependencies:** 17 → 11 advisories (0 critical/high); see `docs/security-triage.md` (fastify, nodemailer, vitest upgraded; remaining 11 moderate are dev lint tooling).
 - **Rate limiting (decision recorded, unchanged):** login/OTP counters live in Redis and **fail open** during a Redis outage (otherwise nobody could sign in); brute force remains bounded by the database-backed account lockout (5 failures/15 min). IP-level limiting is therefore absent during a Redis outage.
 **Still open in P0-D:** MFA for staff (next), staff session hardening (idle timeout, concurrent-session policy), CSP for the web app, DB-level key protection, Origin-header requirement on mutations.
+
+### Checkpoint 7 — P0-D (2) staff multi-factor authentication (TOTP)
+**Gap (from the audit):** no second factor for CCE / Super Admin / Examiner / Campus Admin, who can schedule exams, approve papers, publish results and see keys.
+**Built:** RFC 6238 TOTP in `node:crypto` (no new dependency; verified against the RFC 4226 and RFC 6238 published vectors) · seeds encrypted at rest with AES-256-GCM (`MFA_KEY`; derived from `COOKIE_SECRET` only outside production) · per-session `mfaVerifiedAt`; the global guard returns 403 `MFA_REQUIRED` for **every** route except `me`/`logout`/the MFA endpoints while a session is `pending` (enrolled, not verified) or `enroll` (role requires MFA, none set up) · replay protection (code step must exceed the stored last step, compare-and-set so two concurrent requests with the same code cannot both succeed) · ±1 step clock tolerance · wrong codes share the 5-failure/15-minute lockout · 10 single-use recovery codes stored as SHA-256 · enabling signs out every other session · required roles cannot self-disable · Super Admin reset (lost device) revokes all sessions · all events audited (`mfa.setup_started/enabled/verified/verify_failed/recovery_used/disabled/reset`). `MFA_ENFORCE=true` and `MFA_KEY` are mandatory in production (config validation). Lecturers/invigilators/students: optional opt-in (profile → *Set up two-factor authentication*); students are not offered it.
+**Tests:** `mfa.test.ts` (10: RFC vectors, drift/replay window, secret-box tamper, enrol-only access for an unenrolled CCE across 6 endpoints, enrol flow with revocation of other sessions, pending→verify, replay across sessions, lockout, recovery code once-only + hashed storage + audit, required-role cannot disable, SA reset signs out, opt-in/opt-out) + Playwright (opt-in enrol with wrong then right code, recovery codes shown, fresh browser forced to `/mfa`, URL bypass impossible, wrong code refused, next-step code accepted).
+**Not done / caveats:** the *forced* `enroll` screen is exercised via the same component only through the opt-in path in the browser (the enforced state is API-tested, since Playwright runs with enforcement off); no WebAuthn/FIDO2 or SMS; no "trusted device" memory (every session needs a code); no idle-timeout/absolute re-auth for sensitive actions; recovery-code regeneration UI not built; MFA reset requires a Super Administrator who can themselves still sign in (break-glass procedure for the last Super Admin is undefined — policy P-29).

@@ -23,6 +23,10 @@ const schema = z.object({
   RUN_WORKERS: z.enum(['true', 'false']).default('true'),
   /** Must be 'true' behind a load balancer/reverse proxy so req.ip (rate limits, audit) is the client's, not the proxy's. */
   TRUST_PROXY: z.enum(['true', 'false']).default('false'),
+  /** Require TOTP for privileged staff roles (see MFA_ROLES). Mandatory in production. */
+  MFA_ENFORCE: z.enum(['true', 'false']).default('false'),
+  /** Key material for encrypting TOTP seeds at rest. Required in production; in development it is derived from COOKIE_SECRET. */
+  MFA_KEY: z.string().min(32).optional(),
 });
 
 export type Config = z.infer<typeof schema>;
@@ -50,6 +54,9 @@ export function productionProblems(cfg: Config, env: NodeJS.ProcessEnv = process
   try { const r = new URL(cfg.REDIS_URL); if (!r.password && r.protocol !== 'rediss:' && env.REDIS_ALLOW_NOAUTH !== 'true') p.push('REDIS_URL must carry a password (or use rediss://); set REDIS_ALLOW_NOAUTH=true only for an isolated network'); } catch { p.push('REDIS_URL is not a valid URL'); }
   if (cfg.S3_SECRET_KEY && /oes_dev_minio/.test(cfg.S3_SECRET_KEY + (cfg.S3_ACCESS_KEY ?? ''))) p.push('S3 credentials are the development MinIO defaults');
   if (cfg.TRUST_PROXY !== 'true' && env.ALLOW_NO_PROXY !== 'true') p.push('TRUST_PROXY=true is required behind a load balancer (otherwise every client shares the proxy IP for rate limiting and audit); set ALLOW_NO_PROXY=true if the API is directly exposed');
+  if (cfg.MFA_ENFORCE !== 'true') p.push('MFA_ENFORCE=true is required in production (TOTP for CCE, Super Admin, Examiner and Campus Admin)');
+  if (!cfg.MFA_KEY) p.push('MFA_KEY (≥32 random characters) is required in production to encrypt TOTP seeds');
+  else if (WEAK_SECRET.test(cfg.MFA_KEY) || cfg.MFA_KEY === cfg.COOKIE_SECRET || cfg.MFA_KEY === cfg.RECEIPT_SECRET) p.push('MFA_KEY must be a distinct, non-example secret');
   if (cfg.SESSION_TTL_HOURS > 24) p.push('SESSION_TTL_HOURS must be ≤ 24 in production');
   return p;
 }

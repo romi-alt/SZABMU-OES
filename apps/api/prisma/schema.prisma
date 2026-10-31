@@ -231,6 +231,10 @@ model User {
   role            Role
   passwordHash    String
   mustChangePw    Boolean   @default(false)
+  /// TOTP (RFC 6238). Secret is AES-256-GCM encrypted at rest; totpLastStep prevents code replay.
+  totpSecretEnc   String?
+  totpEnabledAt   DateTime? @db.Timestamptz
+  totpLastStep    Int?
   active          Boolean   @default(true)
   failedLogins    Int       @default(0)
   lockedUntil     DateTime? @db.Timestamptz
@@ -249,6 +253,7 @@ model User {
   @@index([role])
   @@map("users")
   courseAssignments CourseAssignment[]
+  mfaRecoveryCodes MfaRecoveryCode[]
 }
 
 /// Institution assignments. Campus-scoped roles may only act within these.
@@ -270,6 +275,8 @@ model Session {
   createdAt  DateTime  @default(now()) @db.Timestamptz
   expiresAt  DateTime  @db.Timestamptz
   revokedAt  DateTime? @db.Timestamptz
+  /// Set when the second factor was satisfied for THIS session.
+  mfaVerifiedAt DateTime? @db.Timestamptz
   ip         String?
   userAgent  String?
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -809,4 +816,17 @@ model CourseAssignment {
   @@index([userId, revokedAt])
   @@index([courseId, institutionId])
   @@map("course_assignments")
+}
+
+/// Single-use MFA recovery codes (only SHA-256 hashes are stored).
+model MfaRecoveryCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  codeHash  String
+  usedAt    DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, codeHash])
+  @@map("mfa_recovery_codes")
 }
