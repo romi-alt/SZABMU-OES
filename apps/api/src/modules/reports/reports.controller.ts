@@ -17,7 +17,9 @@ export class ReportsController {
   @Perm('report.read') @Get('reports/exams/:id') exam(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.reports.examReport(u, id); }
   @Perm('report.read') @Get('reports/exams/:id/csv') @Header('Content-Type', 'text/csv; charset=utf-8') @Header('Content-Disposition', 'attachment; filename="results.csv"')
   csv(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.reports.examCsv(u, id); }
-  @Perm('report.read') @Get('reports/institutions') inst() { return this.reports.institutionSummary(); }
+  /** Institution headcounts. Scoped to the caller's assigned institutions; naming an institution outside that set is a 403. */
+  @Perm('report.read') @Get('reports/institutions')
+  inst(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) { return this.reports.institutionSummary(u, parse(z.object({ institutionId: uuid.optional() }), q).institutionId); }
 
   @Perm('audit.read') @Get('audit')
   async auditList(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) {

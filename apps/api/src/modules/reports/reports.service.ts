@@ -111,9 +111,15 @@ export class ReportsService {
     return ['regNo,name,institution,rawScore,totalMarks,percent,status', ...rows.map((r) => [r.student.regNo, r.student.user.fullName, r.student.institution.code, r.rawScore, r.totalMarks, r.percent, r.status].map(cell).join(','))].join('\n');
   }
 
-  async institutionSummary() {
+  /**
+   * Per-institution headcounts. Deny by default: only institutions in the caller's scope are ever selected in SQL
+   * (university-wide roles have `institutionIds === null`). Naming an institution outside the scope is rejected, not filtered.
+   */
+  async institutionSummary(u: AuthUser, institutionId?: string) {
+    if (institutionId) scope.assert(u, institutionId);
+    const ids = institutionId ? [institutionId] : u.institutionIds;       // null = university-wide
     return this.prisma.$queryRaw<{ code: string; name: string; students: number; users: number }[]>`
       SELECT i.code, i.name, (SELECT count(*)::int FROM students s WHERE s."institutionId" = i.id) AS students, (SELECT count(*)::int FROM user_institutions ui WHERE ui."institutionId" = i.id) AS users
-      FROM institutions i ORDER BY i.name`;
+      FROM institutions i WHERE (${ids === null ? 1 : 0}::int = 1 OR i.id = ANY(${ids ?? []}::uuid[])) ORDER BY i.name`;
   }
 }

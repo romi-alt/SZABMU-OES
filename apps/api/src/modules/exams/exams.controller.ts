@@ -37,7 +37,7 @@ export class ExamsController {
 
   // ── exams ──
   @Perm('exam.read') @Get('exams') listE(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) { return this.exams.list(u, parse(page.extend({ status: z.string().max(20).optional(), courseId: uuid.optional() }), q)); }
-  @Perm('exam.read') @Get('exams/:id') getE(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.exams.load(u, id); }
+  @Perm('exam.read') @Get('exams/:id') getE(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.exams.detail(u, id); }
   @Perm('exam.schedule') @Post('exams') createE(@CurrentUser() u: AuthUser, @Body() b: unknown, @Ip() ip: string) { return this.exams.create(u, parse(examDto, b), ip); }
   @Perm('question.read') @Get('exams/:id/paper') paper(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.exams.paper(u, id, true); }
   @Perm('paper.build') @Put('exams/:id/paper') setPaper(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) {

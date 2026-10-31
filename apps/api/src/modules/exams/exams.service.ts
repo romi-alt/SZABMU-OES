@@ -33,10 +33,29 @@ export class ExamsService {
     return e;
   }
 
+  /**
+   * What a caller may see of an exam. `load()` stays unfiltered for internal logic; anything returned over HTTP goes through here so a
+   * campus-scoped user receives neither the other participating campuses nor candidate/attempt counts for campuses outside their scope.
+   */
+  async detail(u: AuthUser, id: string) {
+    const e = await this.load(u, id);
+    const sf = scope.filter(u);
+    if (!sf) return e;
+    const [candidates, attempts] = await Promise.all([
+      this.prisma.examCandidate.count({ where: { examId: id, institutionId: sf } }),
+      this.prisma.attempt.count({ where: { examId: id, student: { institutionId: sf } } }),
+    ]);
+    return { ...e, institutions: e.institutions.filter((i) => scope.allows(u, i.institutionId)), _count: { ...e._count, candidates, attempts } };
+  }
+
   async list(u: AuthUser, q: { status?: string; courseId?: string; page: number; pageSize: number }) {
     const where: Prisma.ExamWhereInput = { ...this.examScope(u), status: q.status as never, courseId: q.courseId };
+    const sf = scope.filter(u);
     const [items, total] = await Promise.all([
-      this.prisma.exam.findMany({ where, orderBy: { opensAt: 'desc' }, skip: (q.page - 1) * q.pageSize, take: q.pageSize, include: { course: { select: { code: true, title: true } }, institutions: { select: { institutionId: true } }, _count: { select: { questions: true, candidates: true, attempts: true } } } }),
+      this.prisma.exam.findMany({ where, orderBy: { opensAt: 'desc' }, skip: (q.page - 1) * q.pageSize, take: q.pageSize, include: {
+        course: { select: { code: true, title: true } },
+        institutions: { where: sf ? { institutionId: sf } : undefined, select: { institutionId: true } },
+        _count: { select: { questions: true, candidates: sf ? { where: { institutionId: sf } } : true, attempts: sf ? { where: { student: { institutionId: sf } } } : true } } } }),
       this.prisma.exam.count({ where }),
     ]);
     return { items, total };
