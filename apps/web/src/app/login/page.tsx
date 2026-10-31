@@ -23,7 +23,7 @@ export default function Login() {
         <label className="f">University email<input className="in" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus /></label>
         <label className="f">Password<input className="in" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
         {err && <div className="notice bad" role="alert">{err}</div>}
-        <div className="row between"><span className="small faint">Accounts lock for 15 minutes after 5 failed attempts.</span><Link href="/forgot" className="small">Forgot password?</Link></div>
+        <div className="row between"><span className="small faint">Accounts lock for 15 minutes after 5 failed attempts.</span><Link href="/forgot" className="small" style={{ whiteSpace: "nowrap" }}>Forgot password?</Link></div>
         <button className="btn btn-primary" disabled={busy || !email || !password} style={{ justifyContent: 'center', padding: '10px' }}>{busy ? 'Signing in…' : 'Sign in →'}</button>
       </form>
       <div className="small faint">Trouble signing in? Contact your campus administrator or the university IT helpdesk.</div>
