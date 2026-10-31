@@ -1,6 +1,6 @@
 import { CourseAccessService } from '../org/course-access.service';
 import { Injectable, Logger } from '@nestjs/common';
-import { percent, scoreQuestion, sumScores } from '@oes/shared';
+import { LINKS, percent, scoreQuestion, sumScores } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
 import { QueuesService } from '../../infra/queues.service';
 import { AuditService } from '../audit/audit.service';
@@ -65,7 +65,7 @@ export class ResultsService {
       UPDATE exams e SET status = 'CLOSED' WHERE e.status IN ('SCHEDULED','LIVE') AND e."closesAt" <= clock_timestamp()
         AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a."examId" = e.id AND a.status = 'IN_PROGRESS')`;
     // CLOSED and fully graded → mark absentees, move to RESULT_PENDING
-    const closed = await this.prisma.exam.findMany({ where: { status: 'CLOSED' }, select: { id: true, totalMarks: true } });
+    const closed = await this.prisma.exam.findMany({ where: { status: 'CLOSED' }, select: { id: true, code: true, title: true, totalMarks: true } });
     for (const ex of closed) {
       const pendingGrade = await this.prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM attempts a LEFT JOIN results r ON r."examId" = a."examId" AND r."studentId" = a."studentId" WHERE a."examId" = ${ex.id}::uuid AND a.status IN ('SUBMITTED','AUTO_SUBMITTED') AND r.id IS NULL`;
       if (pendingGrade[0]!.n > 0) continue;
@@ -76,7 +76,7 @@ export class ResultsService {
         this.prisma.exam.update({ where: { id: ex.id }, data: { status: 'RESULT_PENDING' } }),
       ]);
       stats.pending++;
-      await this.notifications.notifyRole('EXAMINER', 'Results ready for review', `Exam ${ex.id} has been graded.`, `/examiner/results`);
+      await this.notifications.notifyRole('EXAMINER', 'Results ready for review', `${ex.code} — ${ex.title} has been graded.`, LINKS.results);
     }
     return stats;
   }
@@ -149,7 +149,7 @@ export class ResultsService {
     if (open) throw conflict('OPEN_INCIDENTS', `${open} incident(s) remain unresolved; resolve them before approval`, { open });
     await this.prisma.resultBatch.update({ where: { examId }, data: { status: 'EXAMINER_APPROVED', examinerApprovedBy: u.id, examinerApprovedAt: new Date() } });
     await this.audit.log({ actor: u, action: 'results.examiner_approve', entity: 'exam', entityId: examId, ip });
-    await this.notifications.notifyRole('CCE', 'Results awaiting publication', `${exam.code} — ${exam.title}`, '/cce/results');
+    await this.notifications.notifyRole('CCE', 'Results awaiting publication', `${exam.code} — ${exam.title}`, LINKS.results);
     return { status: 'EXAMINER_APPROVED' };
   }
 
@@ -169,7 +169,7 @@ export class ResultsService {
     });
     await this.audit.log({ actor: u, action: 'results.publish', entity: 'exam', entityId: examId, meta: { certificates: passes.length }, ip });
     const studs = await this.prisma.result.findMany({ where: { examId }, select: { student: { select: { userId: true } } } });
-    await this.notifications.notify(studs.map((s) => s.student.userId), `Results published: ${exam.title}`, 'Your result is now available in the Results section.', '/student/results');
+    await this.notifications.notify(studs.map((s) => s.student.userId), `Results published: ${exam.title}`, 'Your result is now available in the Results section.', LINKS.results);
     return { status: 'PUBLISHED', certificates: passes.length };
   }
 

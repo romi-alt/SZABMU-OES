@@ -7,7 +7,7 @@ import { useMe } from '@/session';
 import { NAV } from '@/nav';
 import { get, post, fmtDT } from '@/api';
 import { Loading } from '@/ui';
-import { ROLE_LABEL } from '@oes/shared';
+import { ROLE_LABEL, isSafeAppLink } from '@oes/shared';
 
 function Bell() {
   const [open, setOpen] = useState(false); const [data, setData] = useState<{ unread: number; items: any[] } | null>(null);
@@ -21,7 +21,7 @@ function Bell() {
           <div className="card-h"><h3>Notifications</h3>{!!data?.unread && <button className="btn-link small" onClick={async () => { await post('/notifications/read-all'); await load(); }}>Mark all read</button>}</div>
           {!data?.items.length ? <div className="empty">No notifications.</div> : data.items.map((n) => (
             <div key={n.id} style={{ padding: '10px 16px', borderBottom: '1px solid #F0E7E3', background: n.readAt ? 'transparent' : '#FDF6F4' }} onClick={async () => { if (!n.readAt) { await post(`/notifications/${n.id}/read`); await load(); } }}>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{n.title}</div><div className="small muted">{n.body}</div><div className="small faint">{fmtDT(n.createdAt)}</div>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{isSafeAppLink(n.link) ? <Link href={n.link} data-testid="notification-link" onClick={() => setOpen(false)}>{n.title}</Link> : n.title}</div><div className="small muted">{n.body}</div><div className="small faint">{fmtDT(n.createdAt)}</div>
             </div>))}
         </div>)}
     </div>

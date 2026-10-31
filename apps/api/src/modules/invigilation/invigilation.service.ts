@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { HEARTBEAT_STALE_SECONDS } from '@oes/shared';
+import { HEARTBEAT_STALE_SECONDS, LINKS } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
 import { RedisService } from '../../infra/redis.service';
 import { AuditService } from '../audit/audit.service';
@@ -83,7 +83,7 @@ export class InvigilationService {
   async forceSubmit(u: AuthUser, attemptId: string, reason: string, ip?: string) {
     const a = await this.loadAttempt(u, attemptId);
     const r = await this.delivery.finalize(a.id, { mode: 'FORCED', actor: u, reason, ip });
-    await this.notifications.notify([a.student.userId], 'Examination ended by invigilator', reason, '/student/schedule');
+    await this.notifications.notify([a.student.userId], 'Examination ended by invigilator', reason, LINKS.schedule);
     return r;
   }
 
@@ -99,7 +99,7 @@ export class InvigilationService {
     }
     const inc = await this.prisma.incident.create({ data: { examId: d.examId, institutionId: d.institutionId, attemptId: d.attemptId, studentId: d.studentId, type: d.type as never, severity: d.severity as never, description: d.description, reportedBy: u.id } });
     await this.audit.log({ actor: u, action: 'incident.report', entity: 'incident', entityId: inc.id, institutionId: d.institutionId, meta: { type: d.type, severity: d.severity }, ip });
-    if (d.severity === 'HIGH') await this.notifications.notifyRole('CCE', 'High-severity exam incident', `${exam.code}: ${d.description.slice(0, 140)}`, '/cce/incidents');
+    if (d.severity === 'HIGH') await this.notifications.notifyRole('CCE', 'High-severity exam incident', `${exam.code}: ${d.description.slice(0, 140)}`, LINKS.incidents);
     return inc;
   }
 
@@ -126,7 +126,7 @@ export class InvigilationService {
     if (status !== 'INVESTIGATING' && !resolution) throw badRequest('A resolution statement is required');
     await this.prisma.incident.update({ where: { id }, data: { status, resolution, resolvedBy: status === 'INVESTIGATING' ? null : u.id, resolvedAt: status === 'INVESTIGATING' ? null : new Date() } });
     await this.audit.log({ actor: u, action: `incident.${status.toLowerCase()}`, entity: 'incident', entityId: id, institutionId: i.institutionId, meta: { resolution }, ip });
-    await this.notifications.notify([i.reportedBy], `Incident ${status.toLowerCase()}`, resolution ?? 'Under investigation', '/invigilator');
+    await this.notifications.notify([i.reportedBy], `Incident ${status.toLowerCase()}`, resolution ?? 'Under investigation', LINKS.incidents);
     return { status };
   }
 }
