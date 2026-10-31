@@ -29,7 +29,7 @@ export class MailService {
       return;
     }
     try {
-      const t = nodemailer.createTransport({ host: this.cfg.SMTP_HOST, port: this.cfg.SMTP_PORT, secure: false, tls: { rejectUnauthorized: this.cfg.NODE_ENV === 'production' } });
+      const t = nodemailer.createTransport({ host: this.cfg.SMTP_HOST, port: this.cfg.SMTP_PORT, secure: false, requireTLS: this.cfg.NODE_ENV === 'production', tls: { rejectUnauthorized: this.cfg.NODE_ENV === 'production' } });
       await t.sendMail({ from: this.cfg.MAIL_FROM, to: m.toEmail, subject: m.subject, text: m.body });
       await this.prisma.outboundMessage.update({ where: { id }, data: { status: 'SENT', sentAt: new Date(), attempts: { increment: 1 } } });
     } catch (e) {

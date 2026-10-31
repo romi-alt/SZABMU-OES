@@ -20,6 +20,7 @@ export const PERMISSIONS = {
   'enrollment.manage': ['SUPER_ADMIN', 'CAMPUS_ADMIN'],
   'eligibility.override': ['SUPER_ADMIN', 'CCE'],
   // question bank & papers
+  'course.assign': ['SUPER_ADMIN', 'CAMPUS_ADMIN'],
   'question.read': ['SUPER_ADMIN', 'EXAMINER', 'CCE', 'LECTURER'],
   'question.write': ['LECTURER', 'EXAMINER', 'SUPER_ADMIN'],
   'question.approve': ['EXAMINER', 'CCE', 'SUPER_ADMIN'],
