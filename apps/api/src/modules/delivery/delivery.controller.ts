@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { CurrentUser, Perm, type AuthUser } from '../../common/auth';
 import { parse } from '../../common/validate';
 import { RedisService } from '../../infra/redis.service';
+import { MetricsService } from '../../infra/metrics.service';
 import { AppError } from '../../common/errors';
 import { DeliveryService } from './delivery.service';
 
@@ -22,7 +23,7 @@ const eventDto = z.object({ clientId, kind: z.enum(['TAB_HIDDEN', 'TAB_VISIBLE',
 
 @Controller()
 export class DeliveryController {
-  constructor(private readonly svc: DeliveryService, private readonly redis: RedisService) {}
+  constructor(private readonly svc: DeliveryService, private readonly redis: RedisService, private readonly metrics: MetricsService) {}
 
   @Perm('exam.sit') @Get('me/exams') myExams(@CurrentUser() u: AuthUser) { return this.svc.myExams(u); }
 
@@ -31,10 +32,18 @@ export class DeliveryController {
 
   @Perm('exam.sit') @Put('attempts/:id/answers/:qid')
   async save(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Param('qid', ParseUUIDPipe) qid: string, @Body() b: unknown) {
-    const d = parse(saveDto, b);
-    // Abuse guard only: a human cannot legitimately exceed this; a bug-loop client is throttled instead of hammering the DB.
-    if ((await this.redis.hit(`rl:save:${id}`, 10)) > 100) throw new AppError(429, 'RATE_LIMITED', 'Saving too quickly; retry shortly');
-    return this.svc.saveAnswer(u, id, qid, d);
+    const t0 = process.hrtime.bigint();
+    try {
+      const d = parse(saveDto, b);
+      // Abuse guard only: a human cannot legitimately exceed this; a bug-loop client is throttled instead of hammering the DB.
+      if ((await this.redis.hit(`rl:save:${id}`, 10)) > 100) throw new AppError(429, 'RATE_LIMITED', 'Saving too quickly; retry shortly');
+      const r = await this.svc.saveAnswer(u, id, qid, d);
+      this.metrics.saves.inc({ result: (r as { duplicate?: boolean }).duplicate ? 'duplicate' : 'ok' });
+      return r;
+    } catch (e) {
+      this.metrics.saves.inc({ result: MetricsService.outcome(e) });
+      throw e;
+    } finally { this.metrics.saveDuration.observe({}, Number(process.hrtime.bigint() - t0) / 1e9); }
   }
 
   @Perm('exam.sit') @Post('attempts/:id/heartbeat') @HttpCode(200)
@@ -46,7 +55,17 @@ export class DeliveryController {
   @Perm('exam.sit') @Get('attempts/:id/sheet') sheet(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.svc.sheet(u, id); }
 
   @Perm('exam.sit') @Post('attempts/:id/submit') @HttpCode(200)
-  submit(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Req() req: FastifyRequest) { return this.svc.submit(u, id, parse(submitDto, b), req.ip); }
+  async submit(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Req() req: FastifyRequest) {
+    const t0 = process.hrtime.bigint();
+    try {
+      const r = await this.svc.submit(u, id, parse(submitDto, b), req.ip);
+      this.metrics.submits.inc({ result: (r as { replayed?: boolean }).replayed ? 'replayed' : 'ok' });
+      return r;
+    } catch (e) {
+      this.metrics.submits.inc({ result: MetricsService.outcome(e) });
+      throw e;
+    } finally { this.metrics.submitDuration.observe({}, Number(process.hrtime.bigint() - t0) / 1e9); }
+  }
 
   @Perm('exam.sit') @Get('attempts/:id/receipt') receipt(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.svc.receipt(u, id); }
 }

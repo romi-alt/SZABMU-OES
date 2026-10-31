@@ -4,7 +4,7 @@ import { loadConfig, productionProblems } from '../src/config';
 const GOOD: NodeJS.ProcessEnv = {
   NODE_ENV: 'production', DATABASE_URL: 'postgresql://oes:Xk9fQ2mV7pLr4TzWb8Nc@db.internal:5432/oes?sslmode=require', REDIS_URL: 'rediss://:h7Qm2Zp9Xv4Lk8Wt@cache.internal:6380',
   WEB_ORIGIN: 'https://exams.example-university.test', COOKIE_SECRET: 'q8R!vK2#mZp9$Lw4Xc7&Tb5Nj3^Hd6Fg', RECEIPT_SECRET: 'W3t@Yp8*Ke1%Ua6+Os9=Ij2~Gb5?Vn4Rz', TRUST_PROXY: 'true', DEV_EXPOSE_CODES: 'false',
-  MFA_ENFORCE: 'true', MFA_KEY: 'M7!kR2$vXq9&Lp4#Wz6^Tb8*Nc3@Hd5Y',
+  MFA_ENFORCE: 'true', MFA_KEY: 'M7!kR2$vXq9&Lp4#Wz6^Tb8*Nc3@Hd5Y', METRICS_TOKEN: 'Zt4#nQ8@vLw2$Xb6&Hk9!Ps3^Rc7*Df5',
 };
 const with_ = (o: NodeJS.ProcessEnv) => ({ ...GOOD, ...o });
 
@@ -28,6 +28,7 @@ describe('production configuration validation', () => {
     ['MFA not enforced', { MFA_ENFORCE: 'false' }, /MFA_ENFORCE=true is required/],
     ['MFA key missing', { MFA_KEY: undefined }, /MFA_KEY .* is required/],
     ['MFA key reused from another secret', { MFA_KEY: GOOD.COOKIE_SECRET }, /MFA_KEY must be a distinct/],
+    ['metrics token missing', { METRICS_TOKEN: undefined }, /METRICS_TOKEN .* is required/],
     ['very long sessions', { SESSION_TTL_HOURS: '72' }, /SESSION_TTL_HOURS/],
   ])('refuses to boot with %s', (_name, override, re) => {
     expect(() => loadConfig(with_(override))).toThrow(re);

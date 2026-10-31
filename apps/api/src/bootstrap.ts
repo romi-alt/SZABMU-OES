@@ -5,6 +5,7 @@ import fastifyCookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import { AppModule } from './app.module';
 import { loadConfig } from './config';
+import { MetricsService } from './infra/metrics.service';
 
 export async function createApp(): Promise<NestFastifyApplication> {
   const cfg = loadConfig();
@@ -19,6 +20,12 @@ export async function createApp(): Promise<NestFastifyApplication> {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return;
     const origin = req.headers.origin;
     if (origin && !allowed.includes(origin)) return reply.status(403).send({ code: 'FORBIDDEN', message: 'Cross-origin request rejected' });
+  });
+  const metrics = app.get(MetricsService);
+  app.getHttpAdapter().getInstance().addHook('onResponse', (req, reply, done) => {
+    const route = req.routeOptions?.url ?? 'unmatched'; // pattern, never the raw URL: bounded cardinality
+    if (route !== '/api/metrics') { metrics.http.inc({ method: req.method, route, status: String(reply.statusCode) }); metrics.httpDuration.observe({ method: req.method, route }, reply.elapsedTime / 1000); }
+    done();
   });
   app.enableShutdownHooks();
   return app;

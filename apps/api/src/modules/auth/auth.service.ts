@@ -7,6 +7,7 @@ import { RedisService } from '../../infra/redis.service';
 import { MailService } from '../../infra/mail.service';
 import { AppError, badRequest } from '../../common/errors';
 import { AuditService } from '../audit/audit.service';
+import { MetricsService } from '../../infra/metrics.service';
 import { MFA_ROLES, dropUserSessions, sha256, type AuthUser } from '../../common/auth';
 import { CONFIG, type Config } from '../../config';
 
@@ -25,6 +26,7 @@ export class AuthService {
     private readonly mail: MailService,
     private readonly audit: AuditService,
     @Inject(CONFIG) private readonly cfg: Config,
+    private readonly metrics: MetricsService,
   ) {}
 
   private async dummy() {
@@ -35,12 +37,13 @@ export class AuthService {
     const email = emailRaw.trim().toLowerCase();
     const ipHits = await this.redis.hit(`rl:login:ip:${ip}`, 900);
     const idHits = await this.redis.hit(`rl:login:id:${email}`, 900);
-    if (ipHits > 60 || idHits > 20) throw new AppError(429, 'RATE_LIMITED', 'Too many sign-in attempts. Try again later.');
+    if (ipHits > 60 || idHits > 20) { this.metrics.authFailures.inc({ kind: 'login_rate_limited' }); throw new AppError(429, 'RATE_LIMITED', 'Too many sign-in attempts. Try again later.'); }
 
     const user = await this.prisma.user.findUnique({ where: { email }, include: { institutions: true, student: { select: { id: true } } } });
     const now = new Date();
     if (user?.lockedUntil && user.lockedUntil > now) {
       await argon2.verify(await this.dummy(), password).catch(() => false);
+      this.metrics.authFailures.inc({ kind: 'login_locked' });
       throw new AppError(423, 'ACCOUNT_LOCKED', 'Account temporarily locked after repeated failures. Try again later or contact the helpdesk.');
     }
     const ok = user ? await argon2.verify(user.passwordHash, password).catch(() => false) : await argon2.verify(await this.dummy(), password).catch(() => false) && false;
@@ -50,6 +53,7 @@ export class AuthService {
         await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: failed, lockedUntil: failed >= MAX_FAILED ? new Date(now.getTime() + LOCK_MIN * 60000) : null } });
       }
       await this.audit.log({ actor: user ? { id: user.id, role: user.role } : null, action: 'auth.login_failed', entity: 'user', entityId: user?.id, meta: { email }, ip });
+      this.metrics.authFailures.inc({ kind: 'login_invalid' });
       throw new AppError(401, 'INVALID_CREDENTIALS', 'Incorrect email or password');
     }
 
@@ -58,6 +62,7 @@ export class AuthService {
       this.prisma.session.create({ data: { userId: user.id, tokenHash: sha256(token), expiresAt: new Date(now.getTime() + this.cfg.SESSION_TTL_HOURS * 3600_000), ip, userAgent: ua?.slice(0, 300) } }),
       this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: 0, lockedUntil: null, lastLoginAt: now } }),
     ]);
+    this.metrics.authSuccess.inc({ kind: 'login' });
     await this.audit.log({ actor: user, action: 'auth.login', entity: 'user', entityId: user.id, ip });
     const mfa = user.totpEnabledAt ? 'pending' : this.cfg.MFA_ENFORCE === 'true' && MFA_ROLES.includes(user.role) ? 'enroll' : 'ok';
     return { token, expiresAt: new Date(now.getTime() + this.cfg.SESSION_TTL_HOURS * 3600_000), user: { ...this.profile(user), mfa } };
