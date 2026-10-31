@@ -1,7 +1,6 @@
 /**
  * Pure exam-engine rules shared by API and tests. No I/O here.
  */
-import { createHash, createHmac } from 'node:crypto';
 
 export type AnswerState = 'ANSWERED' | 'SKIPPED' | 'CLEARED';
 export type PaletteState = 'ANSWERED' | 'SKIPPED' | 'NOT_VISITED' | 'UNANSWERED';
@@ -53,22 +52,6 @@ export function sumScores(parts: number[], total: number): number {
 export function percent(score: number, total: number): number {
   if (total <= 0) return 0;
   return Math.round((score / total) * 10000) / 100;
-}
-
-/** Digest of the final answer sheet; order-independent on input, canonical on output. */
-export function answerDigest(answers: { examQuestionId: string; selectedLabel: string | null; revision: number }[]): string {
-  const canon = [...answers]
-    .sort((a, b) => (a.examQuestionId < b.examQuestionId ? -1 : 1))
-    .map((a) => `${a.examQuestionId}:${a.selectedLabel ?? '-'}:${a.revision}`)
-    .join('|');
-  return createHash('sha256').update(canon).digest('hex');
-}
-
-/** Human-readable submission receipt code bound to attempt, digest and time via HMAC. */
-export function receiptCode(secret: string, attemptId: string, digest: string, submittedAt: Date): string {
-  const mac = createHmac('sha256', secret).update(`${attemptId}.${digest}.${submittedAt.toISOString()}`).digest('hex');
-  const body = mac.slice(0, 16).toUpperCase();
-  return `RC-${body.slice(0, 4)}-${body.slice(4, 8)}-${body.slice(8, 12)}-${body.slice(12, 16)}`;
 }
 
 /** Deterministic per-candidate shuffle (seeded) so reloads never reorder questions. */

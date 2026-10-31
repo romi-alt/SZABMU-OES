@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeDeadline, paletteState, scoreQuestion, sumScores, answerDigest, receiptCode, seededOrder, percent } from './exam-rules';
+import { computeDeadline, paletteState, scoreQuestion, sumScores, seededOrder, percent } from './exam-rules';
+import { answerDigest, receiptCode } from './server';
 import { can, PERMISSIONS } from './permissions';
 import { checkPassword } from './password';
 import { ROLES } from './roles';
