@@ -28,7 +28,11 @@ beforeAll(async () => {
   expect(qids.length).toBe(12);
 }, 300_000);
 
-afterAll(async () => { await pool?.end(); proxy?.stop(); await api?.kill(); redis?.kill(); db?.destroy(); });
+afterAll(async () => {
+  // Clean up everything deterministically first, THEN let an unexpected connection error fail the run.
+  try { await db?.closePools(); proxy?.stop(); await api?.kill(); await redis?.kill(); db?.destroy(); }
+  finally { db?.errors.assertClean(); }
+});
 
 /** A simulated browser: one attempt, strictly ordered revisions per question, single in-flight save (like the real engine). */
 class Candidate {
@@ -219,7 +223,7 @@ describe('E. Redis loss during an examination', () => {
     await until('30 acks', async () => total(cs) >= 30, 60_000, 50);
     await redis.flushAll();                                               // session cache, paper cache, heartbeats, counters gone
     await until('60 acks', async () => total(cs) >= 60, 60_000, 50);
-    redis.kill();                                                         // full outage
+    await redis.kill();                                                   // full outage
     const outageStart = Date.now();
     // a brand-new candidate does everything while Redis is DOWN
     const t1 = Date.now(); const late = await Candidate.begin('student.b011', 1); const startMs = Date.now() - t1;
