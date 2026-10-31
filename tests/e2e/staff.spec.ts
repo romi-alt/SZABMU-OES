@@ -78,4 +78,29 @@ test.describe('staff workflows', () => {
     await page.getByRole('button', { name: 'Verify chain integrity' }).click();
     await expect(page.getByText(/Chain intact/)).toBeVisible();
   });
+
+  test('CCE withdraws a candidate admission with a mandatory reason; campus admin has no override control', async ({ page, browser }) => {
+    await login(page, 'cce');
+    await page.goto('/exams');
+    await page.getByRole('link', { name: /MBBS-PATH-MT|Pathology Mid-term/ }).first().click();
+    const row = page.locator('tbody tr', { hasText: 'DMC-B-2024-0006' });
+    await expect(row).toBeVisible();
+    await expect(row.getByText('Admitted')).toBeVisible();
+    await row.getByRole('button', { name: 'Withdraw…' }).click();
+    const dlg = page.getByRole('dialog', { name: /Withdraw admission of DMC-B-2024-0006/ });
+    const submit = dlg.getByRole('button', { name: 'Record decision' });
+    await expect(submit).toBeDisabled(); // reason required
+    await dlg.getByLabel(/Reason/).fill('Synthetic test: examination-office instruction');
+    await submit.click();
+    await expect(row.getByText('Revoked')).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Admit…' })).toBeVisible();
+
+    const ctx2 = await browser.newContext(); const p2 = await ctx2.newPage();
+    await login(p2, 'admin.a');
+    await p2.goto('/exams');
+    await p2.getByRole('link', { name: /MBBS-PATH-MT|Pathology Mid-term/ }).first().click();
+    await expect(p2.locator('tbody tr').first()).toBeVisible();
+    await expect(p2.getByRole('button', { name: /Withdraw…|Admit…/ })).toHaveCount(0);
+    await ctx2.close();
+  });
 });

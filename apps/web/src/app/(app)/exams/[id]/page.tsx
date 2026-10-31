@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import { post, put, patch, fmtDT, useGet } from '@/api';
 import { useMe } from '@/session';
-import { Async, Badge, Card, Confirm, Field, Notice, PageHead, Stat, Status, Table, useAction } from '@/ui';
+import { Async, Badge, Card, Confirm, Field, Modal, Notice, PageHead, Stat, Status, Table, useAction } from '@/ui';
 
 function PaperBuilder({ exam, reload }: { exam: any; reload: () => void }) {
   const { run, busy } = useAction(); const cur = useGet<any[]>(`/exams/${exam.id}/paper`); const bank = useGet<any>(`/questions?status=APPROVED&courseId=${exam.courseId}&pageSize=200`);
@@ -37,14 +37,32 @@ function PaperReview({ exam, reload }: { exam: any; reload: () => void }) {
   );
 }
 
-function Roster({ exam, canAccommodate }: { exam: any; canAccommodate: boolean }) {
-  const { run } = useAction(); const roster = useGet<any[]>(`/exams/${exam.id}/roster`); const [extra, setExtra] = useState<Record<string, string>>({});
+function OverrideDialog({ exam, row, onClose, done }: { exam: any; row: any; onClose: () => void; done: () => void }) {
+  const { run, busy } = useAction(); const [reason, setReason] = useState(''); const [force, setForce] = useState(false);
+  const decision = row.admission === 'REVOKED' ? 'GRANT' : 'REVOKE'; const live = row.attempt === 'IN_PROGRESS';
+  return (
+    <Modal title={`${decision === 'GRANT' ? 'Admit' : 'Withdraw admission of'} ${row.regNo}`} onClose={onClose} footer={<>
+      <button className="btn" onClick={onClose}>Cancel</button>
+      <button className="btn btn-primary" disabled={busy || reason.trim().length < 10 || (live && decision === 'REVOKE' && !force)} onClick={() => run(async () => { await post(`/exams/${exam.id}/candidates/${row.studentId}/override`, { decision, reason: reason.trim(), forceSubmit: force || undefined }); done(); onClose(); }, 'Eligibility decision recorded')}>Record decision</button></>}>
+      <div className="stack">
+        <Notice tone="warn">This manual decision is permanent in the audit record: your name, the time, the old and new decision and your reason are stored and cannot be edited.</Notice>
+        <Field label="Reason (at least 10 characters)"><textarea className="in" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} /></Field>
+        {live && decision === 'REVOKE' && <label className="row"><input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} /> This candidate is sitting now. Seal their attempt immediately (answers saved so far are kept).</label>}
+      </div>
+    </Modal>
+  );
+}
+
+function Roster({ exam, canAccommodate, canOverride }: { exam: any; canAccommodate: boolean; canOverride: boolean }) {
+  const { run } = useAction(); const [ov, setOv] = useState<any>(null); const roster = useGet<any[]>(`/exams/${exam.id}/roster`); const [extra, setExtra] = useState<Record<string, string>>({});
   return (
     <Card title={`Roster${roster.data ? ` (${roster.data.length})` : ''}`} flush><Async state={roster}>{(rows: any[]) => <Table rowKey={(r: any) => r.studentId} empty="No candidates on the roster." rows={rows} cols={[
       { h: 'Reg. no.', cell: (r: any) => <span className="code">{r.regNo}</span> }, { h: 'Name', cell: (r: any) => r.fullName }, { h: 'Campus', cell: (r: any) => r.institution },
       { h: 'Extra time', num: true, cell: (r: any) => canAccommodate && !r.attempt && ['SCHEDULED', 'LIVE'].includes(exam.status) ? <span className="row" style={{ justifyContent: 'flex-end' }}><input className="in mono" style={{ width: 64 }} type="number" min={0} max={120} value={extra[r.studentId] ?? r.extraTimeMin} onChange={(e) => setExtra({ ...extra, [r.studentId]: e.target.value })} aria-label={`Extra minutes for ${r.regNo}`} /><button className="btn btn-sm" onClick={() => run(async () => { await patch(`/exams/${exam.id}/candidates/${r.studentId}`, { extraTimeMin: +(extra[r.studentId] ?? 0) }); roster.reload(); }, 'Accommodation saved')}>Set</button></span> : `${r.extraTimeMin} min` },
+      { h: 'Admission', cell: (r: any) => <span title={r.statusReason ?? ''}><Badge tone={r.admission === 'REVOKED' ? 'bad' : 'green'}>{r.admission === 'REVOKED' ? 'Revoked' : 'Admitted'}</Badge>{r.decisionSource === 'OVERRIDE' && <span className="small faint"> manual</span>}</span> },
       { h: 'Attempt', cell: (r: any) => r.attempt ? <Status s={r.attempt} /> : <span className="faint">—</span> },
-    ]} />}</Async></Card>
+      ...(canOverride && ['SCHEDULED', 'LIVE'].includes(exam.status) ? [{ h: '', cell: (r: any) => !r.attempt || r.attempt === 'IN_PROGRESS' ? <button className="btn btn-sm" onClick={() => setOv(r)}>{r.admission === 'REVOKED' ? 'Admit…' : 'Withdraw…'}</button> : null }] : []),
+    ]} />}</Async>{ov && <OverrideDialog exam={exam} row={ov} onClose={() => setOv(null)} done={roster.reload} />}</Card>
   );
 }
 
@@ -106,7 +124,7 @@ export default function ExamDetail() {
           {e.status === 'DRAFT' && can('paper.build') && <PaperBuilder exam={e} reload={st.reload} />}
           {e.status === 'PAPER_PENDING' && can('paper.approve') && <PaperReview exam={e} reload={st.reload} />}
           {['APPROVED', 'SCHEDULED', 'LIVE', 'CLOSED', 'RESULT_PENDING', 'PUBLISHED'].includes(e.status) && can('question.read') && <Card title="Approved paper (frozen)"><span className="muted small">{e._count.questions} questions · {e.totalMarks} marks. Content is immutable after approval.</span></Card>}
-          {['SCHEDULED', 'LIVE', 'CLOSED', 'RESULT_PENDING', 'PUBLISHED'].includes(e.status) && <Roster exam={e} canAccommodate={can('enrollment.manage')} />}
+          {['SCHEDULED', 'LIVE', 'CLOSED', 'RESULT_PENDING', 'PUBLISHED'].includes(e.status) && <Roster exam={e} canAccommodate={can('enrollment.manage')} canOverride={can('eligibility.override')} />}
           {['SCHEDULED', 'LIVE'].includes(e.status) && can('invigilator.assign') && can('user.manage') && <Invigilators exam={e} />}
           {['CLOSED', 'RESULT_PENDING', 'PUBLISHED'].includes(e.status) && can('result.read_scoped') && <Results exam={e} reload={st.reload} />}
         </div>

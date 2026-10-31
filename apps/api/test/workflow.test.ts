@@ -69,7 +69,7 @@ describe('question bank → paper → schedule', () => {
     await adminA.patch(`/enrollments/${e.id}/attendance`, { attendancePct: 60 });
     expect((await cce.post(`/enrollments/${e.id}/condone`, { note: 'Medical leave certified' })).body.eligibility).toBe('CONDONED');
     const { ExamsService } = await import('../src/modules/exams/exams.service');
-    expect((await ctx.app.get(ExamsService).refreshRoster(examId)).candidatesAdded).toBe(1);
+    expect((await ctx.app.get(ExamsService).refreshRoster(examId, (await ctx.prisma.user.findFirstOrThrow({ where: { email: { startsWith: 'cce@' } } })).id)).candidatesAdded).toBe(1);
   });
 });
 

@@ -65,7 +65,9 @@ export class DeliveryService {
       items: cands.map((c) => {
         const a = am.get(c.examId) ?? null;
         const open = ['SCHEDULED', 'LIVE'].includes(c.exam.status) && now >= c.exam.opensAt && now < c.exam.closesAt;
-        const canStart = (open && (!a || a.status === 'IN_PROGRESS')) || (a?.status === 'IN_PROGRESS' && now < new Date(a.deadlineAt.getTime() + SAVE_GRACE_SECONDS * 1000));
+        const inProgress = a?.status === 'IN_PROGRESS';
+        // A new attempt needs an ADMITTED roster decision; resuming an in-progress attempt never re-evaluates eligibility.
+        const canStart = (c.status === 'ADMITTED' && open && !a) || (open && inProgress) || (inProgress && now < new Date(a!.deadlineAt.getTime() + SAVE_GRACE_SECONDS * 1000));
         return {
           examId: c.examId, code: c.exam.code, title: c.exam.title, course: c.exam.course, status: c.exam.status, opensAt: c.exam.opensAt, closesAt: c.exam.closesAt,
           durationMin: c.exam.durationMin + c.extraTimeMin, totalMarks: c.exam.totalMarks, questionCount: c.exam._count.questions, instructions: c.exam.instructions, negativeMarking: c.exam.negativeMarking,
@@ -73,6 +75,24 @@ export class DeliveryService {
         };
       }),
     };
+  }
+
+  /**
+   * Admission gate for a NEW attempt, from authoritative local records only (no external calls).
+   * The result is stored on the attempt and is never re-evaluated afterwards (not on resume, not per save).
+   */
+  private async admit(u: AuthUser, cand: { studentId: string; institutionId: string; status: string; decisionSource: string; rosterVersion: number }, exam: { id: string; courseId: string; term: string }, now: Date) {
+    if (cand.status !== 'ADMITTED') throw new AppError(403, 'ADMISSION_REVOKED', 'Your admission to this examination has been withdrawn. Please contact your campus examinations office.');
+    const [student, enr, parts] = await Promise.all([
+      this.prisma.student.findUnique({ where: { id: cand.studentId }, select: { userId: true, status: true, institutionId: true, user: { select: { active: true } } } }),
+      this.prisma.enrollment.findUnique({ where: { studentId_courseId_term: { studentId: cand.studentId, courseId: exam.courseId, term: exam.term } }, select: { id: true, status: true, eligibility: true } }),
+      this.prisma.examInstitution.findMany({ where: { examId: exam.id }, select: { institutionId: true } }),
+    ]);
+    if (!student || student.userId !== u.id) throw forbidden('This candidate record does not belong to your account');
+    if (!student.user.active || student.status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', 'Your account is currently restricted. Please contact your campus examinations office.');
+    if (student.institutionId !== cand.institutionId || !parts.some((p) => p.institutionId === student.institutionId)) throw forbidden('You are not assigned to sit this examination at your institution');
+    if (cand.decisionSource !== 'OVERRIDE' && (!enr || enr.status !== 'ENROLLED' || enr.eligibility === 'INELIGIBLE')) throw new AppError(403, 'NOT_ELIGIBLE', 'You are not currently eligible for this examination. Please contact your campus examinations office.');
+    return { decision: 'ADMITTED', source: cand.decisionSource, rosterVersion: cand.rosterVersion, enrollmentId: enr?.id ?? null, enrolmentEligibility: enr?.eligibility ?? null, at: now.toISOString() };
   }
 
   // ───────────── start / resume ─────────────
@@ -93,6 +113,7 @@ export class DeliveryService {
       if (!['SCHEDULED', 'LIVE'].includes(exam.status) || exam.paperStatus !== 'APPROVED') throw conflict('NOT_AVAILABLE', 'This examination is not available');
       if (now < exam.opensAt) throw conflict('NOT_OPEN', 'The examination has not opened yet', { opensAt: exam.opensAt, serverNow: now });
       if (now >= exam.closesAt) throw conflict('CLOSED', 'The examination window has closed');
+      const admission = await this.admit(u, cand, exam, now);
       const paper = await this.paperFor(examId);
       if (!paper.length) throw conflict('NOT_AVAILABLE', 'This examination has no questions');
       const deadline = computeDeadline({ startedAt: now, durationMin: exam.durationMin, extraTimeMin: cand.extraTimeMin, windowEndsAt: exam.closesAt });
@@ -103,7 +124,7 @@ export class DeliveryService {
         // One insert: order, deadline and the active-client claim are fixed atomically.
         // Per-candidate lifecycle lives in `attempts`/`attempt_events` (authoritative); the globally
         // serialised hash-chained audit log is reserved for staff/administrative actions.
-        attempt = await this.prisma.attempt.create({ data: { id, examId, studentId, startedAt: now, deadlineAt: deadline, extraTimeMin: cand.extraTimeMin, questionOrder: order, activeClientId: clientId, clientEpoch: 1, ip, userAgent: ua?.slice(0, 300), events: { create: [{ kind: 'STARTED', detail: { clientId } }] } } });
+        attempt = await this.prisma.attempt.create({ data: { id, examId, studentId, startedAt: now, deadlineAt: deadline, extraTimeMin: cand.extraTimeMin, questionOrder: order, activeClientId: clientId, clientEpoch: 1, admission, ip, userAgent: ua?.slice(0, 300), events: { create: [{ kind: 'STARTED', detail: { clientId } }] } } });
       } catch (e) {
         if (e.code !== 'P2002') throw e; // concurrent double-start: fall through and resume the winner
         attempt = await this.prisma.attempt.findUniqueOrThrow({ where: { examId_studentId: { examId, studentId } } });

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { DIFFICULTIES, QUESTION_TYPES } from '@oes/shared';
 import { CurrentUser, Ip, Perm, type AuthUser } from '../../common/auth';
@@ -48,6 +48,12 @@ export class ExamsController {
   @Perm('exam.schedule') @Post('exams/:id/schedule') schedule(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Ip() ip: string) { return this.exams.schedule(u, id, ip); }
   @Perm('exam.schedule') @Post('exams/:id/cancel') cancel(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.exams.cancel(u, id, parse(z.object({ reason: z.string().min(5).max(500) }), b).reason, ip); }
   @Perm('exam.read') @Get('exams/:id/roster') roster(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.exams.roster(u, id); }
+  @Perm('exam.read') @Get('exams/:id/roster-versions') rosterVersions(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.exams.rosterVersions(u, id); }
+  @Perm('eligibility.override') @Get('exams/:id/eligibility-overrides') overrides(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.exams.overrides(u, id); }
+  @Perm('eligibility.override') @Post('exams/:id/candidates/:studentId/override') @HttpCode(200)
+  override(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Param('studentId', ParseUUIDPipe) sid: string, @Body() b: unknown, @Ip() ip: string) {
+    return this.exams.overrideEligibility(u, id, sid, parse(z.object({ decision: z.enum(['GRANT', 'REVOKE']), reason: z.string().trim().min(10).max(500), forceSubmit: z.boolean().optional() }), b), ip);
+  }
   @Perm('enrollment.manage') @Patch('exams/:id/candidates/:studentId') accommodation(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Param('studentId', ParseUUIDPipe) sid: string, @Body() b: unknown, @Ip() ip: string) {
     return this.exams.setAccommodation(u, id, sid, parse(z.object({ extraTimeMin: z.number().int().min(0).max(120), accommodation: z.string().max(300).optional() }), b), ip);
   }

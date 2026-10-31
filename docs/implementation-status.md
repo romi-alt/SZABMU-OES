@@ -10,8 +10,8 @@ Definitions — **Complete**: frontend + backend + persistence + permissions + a
 | Typecheck (`tsc` api, web, shared) | ✅ clean |
 | Lint (`eslint .`) | ✅ clean |
 | Shared unit tests | ✅ 15 / 15 |
-| API integration + security tests (real PostgreSQL 16 + Redis, via Fastify inject) | ✅ 96 / 96 |
-| Browser tests (Playwright/Chromium → Next.js → Nest → PostgreSQL/Redis) | ✅ 13 / 13 |
+| API integration + security tests (real PostgreSQL 16 + Redis, via Fastify inject) | ✅ 111 / 111 (incl. 15 eligibility tests, checkpoint 2) |
+| Browser tests (Playwright/Chromium → Next.js → Nest → PostgreSQL/Redis) | ✅ staff.spec 5 / 5 re-run after checkpoint 2; auth (6) + exam (3) specs last passed before it — full re-run pending |
 | Load + integrity (2,000 synthetic candidates × 50 questions) | ✅ integrity PASS — see *Load test results* |
 | Production build (`next build`, `tsc`) | ✅ |
 | `docker compose` stack | ⚠️ **written but not run** — no Docker daemon in the build sandbox; PostgreSQL 16 and Redis were run natively instead |
@@ -96,3 +96,17 @@ Candidate lifecycle is now recorded on the attempt itself (`attempts`, `attempt_
 5. System settings, materials (object storage adapter), global search, question bulk import.
 6. Accessibility audit (axe + manual screen-reader), Urdu localisation decision, mobile test matrix.
 7. Real SMTP/SMS integration tests, backup/restore drills, observability (metrics, tracing, alerting).
+
+
+## Checkpoint log (resumable)
+| # | Date | Commit(s) | What | State |
+| --- | --- | --- | --- | --- |
+| 1 | 2026-10-31 | `61aa53e` `ea60a21` `c521f28` `c11db08` `c1458fa` | Baseline pushed: docs+audit, infra/CI, load tooling, delivery optimisation, web polish. Secret scan clean; no destructive DB change | ✅ pushed to `claude/oes-platform-foundation`; CI/compose still never executed |
+| 2 | 2026-10-31 | see git log | **Eligibility policy (Decision 2)** | ✅ implemented + tested (below) |
+
+### Checkpoint 2 — eligibility admission, roster versions, overrides
+**Defects found before the change:** `refreshRoster` hard-deleted candidates (history lost) and kept no version/approver; `start` only checked that a roster row existed (no account/student status, revocation, institution assignment or local enrolment re-check); no override record; no frozen per-attempt decision.
+**Now:** (A) every roster build creates an immutable, SHA-256-stamped `exam_roster_versions` row approved by the scheduling actor; candidates who lose eligibility before starting are `REVOKED`, never deleted; manual (`OVERRIDE`) decisions and started candidates are never touched by refreshes. (B) A *new* attempt is admitted only if: candidate `ADMITTED`; student record belongs to the account, student `ACTIVE`, user active; student's institution participates and matches the roster row; local enrolment is `ENROLLED` and not `INELIGIBLE` (unless an override admitted them); exam window/state as before. All from local DB — no external calls. (C) The decision is stored in `attempts.admission` and is **not** re-evaluated on resume or on any save (a test asserts the save path references no enrolment/candidate data). (D) `POST /exams/:id/candidates/:studentId/override` (CCE/Super Admin only) records reason (≥10 chars), approver, timestamp, old/new decision and affected attempt in append-only `eligibility_overrides`, plus an audit-chain entry. Revoking a live attempt requires explicit `forceSubmit` (seals the attempt through the existing audited path). Granting is refused once an attempt exists (no re-entry by roster override).
+**UI:** exam detail roster shows Admission + manual marker; CCE/Super Admin get Withdraw…/Admit… dialog (reason required).
+**Tests:** `apps/api/test/eligibility.test.ts` (15: admission, revocation without deletion, local re-check, restricted account, frozen decision, override authorization for 5 roles + anonymous, validation, grant/revoke/not-on-roster, forceSubmit, re-entry refusal, scoping, append-only, audit) + Playwright staff spec.
+**Limits / not done:** approval of a roster version is by the same actor who scheduled (single-actor — see P-24); no separate roster-approval screen or roster-version viewer in the UI; no automatic roster refresh before the exam opens (refresh occurs on *Schedule*; stale roster is mitigated by the start-time local enrolment check); suspending an in-progress attempt other than force-submit is not implemented (awaiting policy P-25); the "no academic reads on save" test is a static source check, not a runtime query counter.

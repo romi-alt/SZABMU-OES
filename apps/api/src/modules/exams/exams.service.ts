@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { PrismaService } from '../../infra/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { scope, type AuthUser } from '../../common/auth';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import type { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
+import { DeliveryService } from '../delivery/delivery.service';
 
 export interface ExamInput {
   code: string; title: string; courseId: string; term: string;
@@ -14,7 +16,7 @@ export interface ExamInput {
 
 @Injectable()
 export class ExamsService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly notifications: NotificationsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly notifications: NotificationsService, private readonly delivery: DeliveryService) {}
 
   /** An exam is visible to campus-scoped users only if one of their institutions participates in it. */
   examScope(u: AuthUser): Prisma.ExamWhereInput {
@@ -118,29 +120,105 @@ export class ExamsService {
     const exam = await this.load(u, examId);
     if (!['APPROVED', 'SCHEDULED'].includes(exam.status)) throw conflict('BAD_STATE', 'The paper must be approved before scheduling');
     if (exam.closesAt <= new Date()) throw badRequest('The exam window has already closed');
-    const r = await this.refreshRoster(examId);
+    const r = await this.refreshRoster(examId, u.id);
     await this.prisma.exam.update({ where: { id: examId }, data: { status: 'SCHEDULED' } });
     await this.audit.log({ actor: u, action: 'exam.schedule', entity: 'exam', entityId: examId, meta: r, ip });
-    const studentUsers = await this.prisma.examCandidate.findMany({ where: { examId }, select: { student: { select: { userId: true } } } });
+    const studentUsers = await this.prisma.examCandidate.findMany({ where: { examId, status: 'ADMITTED' }, select: { student: { select: { userId: true } } } });
     await this.notifications.notify(studentUsers.map((c) => c.student.userId), `Exam scheduled: ${exam.title}`, `Opens ${exam.opensAt.toISOString()}. Duration ${exam.durationMin} minutes.`, '/student/schedule');
     return { status: 'SCHEDULED', ...r };
   }
 
-  async refreshRoster(examId: string) {
+  /**
+   * Builds/refreshes the candidate roster from authoritative local enrolment data and records an immutable,
+   * hash-stamped roster version approved by the acting scheduler (`actorId`).
+   * Candidates are never deleted: those who lose eligibility before starting are REVOKED (history kept).
+   * Manual overrides (`decisionSource = OVERRIDE`) and candidates who already started are never touched.
+   */
+  async refreshRoster(examId: string, actorId: string) {
     const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: examId }, include: { institutions: true } });
     const enr = await this.prisma.enrollment.findMany({
       where: { courseId: exam.courseId, term: exam.term, status: 'ENROLLED', student: { institutionId: { in: exam.institutions.map((i) => i.institutionId) }, status: 'ACTIVE' } },
       select: { eligibility: true, student: { select: { id: true, institutionId: true } } },
     });
-    const eligible = enr.filter((e) => e.eligibility !== 'INELIGIBLE');
-    const created = await this.prisma.examCandidate.createMany({ data: eligible.map((e) => ({ examId, studentId: e.student.id, institutionId: e.student.institutionId })), skipDuplicates: true });
-    // withdraw candidates who lost eligibility, provided they have not started
-    const keep = new Set(eligible.map((e) => e.student.id));
-    const current = await this.prisma.examCandidate.findMany({ where: { examId }, select: { studentId: true } });
-    const started = new Set((await this.prisma.attempt.findMany({ where: { examId }, select: { studentId: true } })).map((a) => a.studentId));
-    const drop = current.filter((c) => !keep.has(c.studentId) && !started.has(c.studentId)).map((c) => c.studentId);
-    if (drop.length) await this.prisma.examCandidate.deleteMany({ where: { examId, studentId: { in: drop } } });
-    return { candidatesAdded: created.count, candidatesRemoved: drop.length, ineligibleExcluded: enr.length - eligible.length };
+    const eligible = new Map(enr.filter((e) => e.eligibility !== 'INELIGIBLE').map((e) => [e.student.id, e.student.institutionId]));
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'roster:' + examId}))`;
+      const current = await tx.examCandidate.findMany({ where: { examId } });
+      const started = new Set((await tx.attempt.findMany({ where: { examId }, select: { studentId: true } })).map((a) => a.studentId));
+      const version = ((await tx.examRosterVersion.aggregate({ where: { examId }, _max: { version: true } }))._max.version ?? 0) + 1;
+      const byStudent = new Map(current.map((c) => [c.studentId, c]));
+      const now = new Date();
+      const toAdd: { examId: string; studentId: string; institutionId: string; rosterVersion: number }[] = [];
+      const toReadmit: string[] = [];
+      for (const [sid, inst] of eligible) {
+        const c = byStudent.get(sid);
+        if (!c) toAdd.push({ examId, studentId: sid, institutionId: inst, rosterVersion: version });
+        else if (c.status === 'REVOKED' && c.decisionSource === 'ENROLMENT' && !started.has(sid)) toReadmit.push(sid);
+      }
+      const toRevoke = current.filter((c) => !eligible.has(c.studentId) && c.status === 'ADMITTED' && c.decisionSource === 'ENROLMENT' && !started.has(c.studentId)).map((c) => c.studentId);
+      if (toAdd.length) await tx.examCandidate.createMany({ data: toAdd, skipDuplicates: true });
+      if (toReadmit.length) await tx.examCandidate.updateMany({ where: { examId, studentId: { in: toReadmit } }, data: { status: 'ADMITTED', statusReason: null, statusChangedAt: now, rosterVersion: version } });
+      if (toRevoke.length) await tx.examCandidate.updateMany({ where: { examId, studentId: { in: toRevoke } }, data: { status: 'REVOKED', statusReason: 'Eligibility lost: no longer eligible per enrolment records', statusChangedAt: now, rosterVersion: version } });
+      const finalRows = await tx.examCandidate.findMany({ where: { examId }, select: { studentId: true, status: true, decisionSource: true }, orderBy: { studentId: 'asc' } });
+      const snapshot = finalRows.map((c) => [c.studentId, c.status, c.decisionSource]);
+      const digest = createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
+      await tx.examRosterVersion.create({ data: { examId, version, createdById: actorId, approvedById: actorId, candidateCount: finalRows.filter((c) => c.status === 'ADMITTED').length, revokedCount: finalRows.filter((c) => c.status === 'REVOKED').length, digest, snapshot } });
+      return { rosterVersion: version, rosterDigest: digest, candidatesAdded: toAdd.length, candidatesReadmitted: toReadmit.length, candidatesRevoked: toRevoke.length, ineligibleExcluded: enr.length - eligible.size };
+    });
+  }
+
+  async rosterVersions(u: AuthUser, examId: string) {
+    await this.load(u, examId);
+    // Roster versions list student ids across campuses; campus-scoped users see counts and digests only.
+    const rows = await this.prisma.examRosterVersion.findMany({ where: { examId }, orderBy: { version: 'desc' }, select: { version: true, createdById: true, approvedById: true, candidateCount: true, revokedCount: true, digest: true, createdAt: true } });
+    return rows;
+  }
+
+  /**
+   * Authorised manual eligibility decision. Records reason, approver, timestamp, old and new decision and the
+   * affected attempt (append-only). An in-progress attempt is only touched when `forceSubmit` is explicit; the
+   * attempt's frozen admission decision is never rewritten.
+   */
+  async overrideEligibility(u: AuthUser, examId: string, studentId: string, d: { decision: 'GRANT' | 'REVOKE'; reason: string; forceSubmit?: boolean }, ip?: string) {
+    const exam = await this.load(u, examId);
+    const student = await this.prisma.student.findUnique({ where: { id: studentId }, select: { institutionId: true } });
+    if (!student || !scope.allows(u, student.institutionId)) throw notFound('Student');
+    if (!exam.institutions.some((i) => i.institutionId === student.institutionId)) throw badRequest("The student's institution does not participate in this examination");
+    if (!['SCHEDULED', 'LIVE'].includes(exam.status)) throw conflict('BAD_STATE', 'Eligibility can only be overridden for scheduled or live examinations');
+    const reason = d.reason.trim();
+    const newDecision = d.decision === 'GRANT' ? 'ADMITTED' : 'REVOKED';
+    const out = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'roster:' + examId}))`;
+      const cand = await tx.examCandidate.findUnique({ where: { examId_studentId: { examId, studentId } } });
+      const attempt = await tx.attempt.findUnique({ where: { examId_studentId: { examId, studentId } }, select: { id: true, status: true } });
+      const oldDecision = cand ? cand.status : 'NOT_ON_ROSTER';
+      const retrySeal = d.decision === 'REVOKE' && attempt?.status === 'IN_PROGRESS' && d.forceSubmit === true;
+      if (attempt) {
+        if (d.decision === 'GRANT') throw conflict('ATTEMPT_EXISTS', 'An attempt already exists for this candidate; re-entry is not granted by roster override');
+        if (attempt.status !== 'IN_PROGRESS') throw conflict('ATTEMPT_FINISHED', 'The attempt is already finished');
+        if (!d.forceSubmit) throw conflict('ATTEMPT_IN_PROGRESS', 'The candidate has an attempt in progress; revoking requires forceSubmit=true, which seals the attempt');
+      }
+      const changed = oldDecision !== newDecision;
+      if (!changed && !retrySeal) throw conflict('NO_CHANGE', `The candidate is already ${newDecision}`);
+      let overrideId: string | null = null;
+      if (changed) {
+        const now = new Date();
+        if (cand) await tx.examCandidate.update({ where: { id: cand.id }, data: { status: newDecision, decisionSource: 'OVERRIDE', statusReason: reason, statusChangedAt: now } });
+        else await tx.examCandidate.create({ data: { examId, studentId, institutionId: student.institutionId, status: newDecision, decisionSource: 'OVERRIDE', statusReason: reason, statusChangedAt: now } });
+        const o = await tx.eligibilityOverride.create({ data: { examId, studentId, attemptId: attempt?.id ?? null, oldDecision, newDecision, reason, approvedById: u.id } });
+        overrideId = o.id;
+      }
+      return { overrideId, attemptId: attempt?.id ?? null, oldDecision, newDecision };
+    });
+    if (out.attemptId && d.forceSubmit) await this.delivery.finalize(out.attemptId, { mode: 'FORCED', actor: u, reason: `Eligibility revoked: ${reason}`, ip });
+    await this.audit.log({ actor: u, action: 'eligibility.override', entity: 'exam', entityId: examId, institutionId: student.institutionId, meta: { studentId, ...out, reason }, ip });
+    return out;
+  }
+
+  async overrides(u: AuthUser, examId: string) {
+    await this.load(u, examId);
+    const rows = await this.prisma.eligibilityOverride.findMany({ where: { examId, student: { institutionId: scope.filter(u) } }, orderBy: { createdAt: 'desc' }, include: { student: { select: { regNo: true } } } });
+    return rows.map((r) => ({ id: r.id, regNo: r.student.regNo, studentId: r.studentId, attemptId: r.attemptId, oldDecision: r.oldDecision, newDecision: r.newDecision, reason: r.reason, approvedById: r.approvedById, createdAt: r.createdAt }));
   }
 
   async roster(u: AuthUser, examId: string) {
@@ -152,7 +230,7 @@ export class ExamsService {
     });
     const attempts = await this.prisma.attempt.findMany({ where: { examId, studentId: { in: rows.map((r) => r.studentId) } }, select: { studentId: true, status: true } });
     const m = new Map(attempts.map((a) => [a.studentId, a.status]));
-    return rows.map((r) => ({ studentId: r.studentId, regNo: r.student.regNo, fullName: r.student.user.fullName, institution: r.institution.code, extraTimeMin: r.extraTimeMin, accommodation: r.accommodation, attempt: m.get(r.studentId) ?? null }));
+    return rows.map((r) => ({ studentId: r.studentId, regNo: r.student.regNo, fullName: r.student.user.fullName, institution: r.institution.code, extraTimeMin: r.extraTimeMin, accommodation: r.accommodation, admission: r.status, decisionSource: r.decisionSource, statusReason: r.statusReason, attempt: m.get(r.studentId) ?? null }));
   }
 
   async setAccommodation(u: AuthUser, examId: string, studentId: string, d: { extraTimeMin: number; accommodation?: string }, ip?: string) {
