@@ -24,6 +24,14 @@ export default function Profile() {
             <div className="small faint">Last sign-in: {fmtDT(me.lastLoginAt)}</div>
           </div>
         </Card>
+        {me.role !== 'STUDENT' && (
+          <Card title="Two-factor authentication">
+            <div className="stack">
+              {me.mfa?.enabled ? <Notice tone="ok">Two-factor authentication is on for your account.{me.mfa.required ? ' Your role requires it; to replace a lost device ask a Super Administrator to reset it.' : ''}</Notice>
+                : <><div className="muted">Add an authenticator app as a second step when you sign in.{me.mfa?.required ? ' Your role requires this.' : ' Recommended for anyone who can see question papers or results.'}</div><a className="btn btn-sm" href="/mfa?setup=1" style={{ alignSelf: 'start' }}>Set up two-factor authentication</a></>}
+            </div>
+          </Card>
+        )}
         <Card title="Change password">
           <form className="stack" onSubmit={(e) => { e.preventDefault(); void run(async () => { await post('/auth/change-password', { currentPassword: cur, newPassword: pw }); toast('Password updated. Other devices were signed out.'); setCur(''); setPw(''); setPw2(''); await refresh(); }); }}>
             <Field label="Current password"><input className="in" type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} /></Field>

@@ -4,6 +4,7 @@ import { loadConfig, productionProblems } from '../src/config';
 const GOOD: NodeJS.ProcessEnv = {
   NODE_ENV: 'production', DATABASE_URL: 'postgresql://oes:Xk9fQ2mV7pLr4TzWb8Nc@db.internal:5432/oes?sslmode=require', REDIS_URL: 'rediss://:h7Qm2Zp9Xv4Lk8Wt@cache.internal:6380',
   WEB_ORIGIN: 'https://exams.example-university.test', COOKIE_SECRET: 'q8R!vK2#mZp9$Lw4Xc7&Tb5Nj3^Hd6Fg', RECEIPT_SECRET: 'W3t@Yp8*Ke1%Ua6+Os9=Ij2~Gb5?Vn4Rz', TRUST_PROXY: 'true', DEV_EXPOSE_CODES: 'false',
+  MFA_ENFORCE: 'true', MFA_KEY: 'M7!kR2$vXq9&Lp4#Wz6^Tb8*Nc3@Hd5Y',
 };
 const with_ = (o: NodeJS.ProcessEnv) => ({ ...GOOD, ...o });
 
@@ -24,6 +25,9 @@ describe('production configuration validation', () => {
     ['unauthenticated redis', { REDIS_URL: 'redis://cache.internal:6379' }, /REDIS_URL must carry a password/],
     ['dev MinIO credentials', { S3_ACCESS_KEY: 'oes_dev_minio', S3_SECRET_KEY: 'oes_dev_minio_secret' }, /development MinIO/],
     ['proxy trust missing', { TRUST_PROXY: 'false' }, /TRUST_PROXY=true is required/],
+    ['MFA not enforced', { MFA_ENFORCE: 'false' }, /MFA_ENFORCE=true is required/],
+    ['MFA key missing', { MFA_KEY: undefined }, /MFA_KEY .* is required/],
+    ['MFA key reused from another secret', { MFA_KEY: GOOD.COOKIE_SECRET }, /MFA_KEY must be a distinct/],
     ['very long sessions', { SESSION_TTL_HOURS: '72' }, /SESSION_TTL_HOURS/],
   ])('refuses to boot with %s', (_name, override, re) => {
     expect(() => loadConfig(with_(override))).toThrow(re);
@@ -40,7 +44,7 @@ describe('production configuration validation', () => {
   });
 
   it('non-production environments are not constrained (development secrets are fine locally)', () => {
-    expect(() => loadConfig({ NODE_ENV: 'development', DATABASE_URL: 'postgresql://oes:oes_dev_password@localhost:5433/x', REDIS_URL: 'redis://localhost:6390', COOKIE_SECRET: 'dev-only-cookie-secret-change-me-0123456789', RECEIPT_SECRET: 'dev-only-receipt-secret-change-me-0123456789' })).not.toThrow();
+    expect(() => loadConfig({ NODE_ENV: 'development', DATABASE_URL: 'postgresql://oes:oes_dev_password@localhost:5433/x', REDIS_URL: 'redis://localhost:6390', COOKIE_SECRET: 'dev-only-cookie-secret-change-me-0123456789', RECEIPT_SECRET: 'dev-only-receipt-secret-change-me-0123456789' })).not.toThrow(); // MFA off by default outside production
     expect(productionProblems(loadConfig({ NODE_ENV: 'development', DATABASE_URL: 'x://y', REDIS_URL: 'redis://localhost', COOKIE_SECRET: 'dev-only-cookie-secret-change-me-0123456789', RECEIPT_SECRET: 'dev-only-receipt-secret-change-me-0123456789' }), {}).length).toBeGreaterThan(0);
   });
 });

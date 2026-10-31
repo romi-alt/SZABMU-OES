@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { PASSWORD, email, login } from './helpers';
+import { PASSWORD, email, login, totp } from './helpers';
 
 test.describe('authentication', () => {
   test('sign-in page shows the university identity and rejects bad credentials accessibly', async ({ page }) => {
@@ -65,5 +65,42 @@ test.describe('authentication', () => {
     await page.getByRole('button', { name: 'Verify' }).click();
     await expect(page.getByTestId('verify-bad')).toBeVisible();
     void PASSWORD;
+  });
+
+  test('two-factor: a staff member opts in with an authenticator app, then must pass the code step at the next sign-in', async ({ page, browser }) => {
+    await login(page, 'invigilator.b');
+    await page.goto('/profile');
+    await page.getByRole('link', { name: 'Set up two-factor authentication' }).click();
+    await page.getByRole('button', { name: 'Begin setup' }).click();
+    const secret = (await page.getByTestId('mfa-secret').innerText()).trim();
+    expect(secret).toMatch(/^[A-Z2-7]{32}$/);
+    await page.getByLabel(/6-digit code/).fill('000000');
+    await page.getByRole('button', { name: 'Verify and turn on' }).click();
+    await expect(page.locator('.notice.bad')).toContainText(/not valid/i);                // wrong code is refused
+    await page.getByLabel(/6-digit code/).fill(totp(secret));
+    await page.getByRole('button', { name: 'Verify and turn on' }).click();
+    await expect(page.getByRole('heading', { name: 'Save your recovery codes' })).toBeVisible();
+    await expect(page.getByLabel('Recovery codes')).toContainText(/[0-9A-F]{5}-[0-9A-F]{5}/);
+    await page.getByLabel(/I have stored these codes/).check();
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page).toHaveURL(/\/dashboard/);
+
+    // a fresh browser: password alone is not enough any more
+    const ctx2 = await browser.newContext(); const p2 = await ctx2.newPage();
+    await p2.goto('/login');
+    await p2.getByLabel('University email').fill(email('invigilator.b'));
+    await p2.getByLabel('Password').fill(PASSWORD);
+    await p2.getByRole('button', { name: /sign in/i }).click();
+    await expect(p2).toHaveURL(/\/mfa/);
+    await expect(p2.getByRole('heading', { name: 'Two-factor verification' })).toBeVisible();
+    await p2.goto('/dashboard');                                                       // cannot skip the step by typing a URL
+    await expect(p2).toHaveURL(/\/mfa/);
+    await p2.getByLabel('Authentication code').fill('123456');
+    await p2.getByRole('button', { name: 'Verify' }).click();
+    await expect(p2.locator('.notice.bad')).toContainText(/not valid/i);
+    await p2.getByLabel('Authentication code').fill(totp(secret, Date.now() + 30_000)); // next step: the enrolment code cannot be replayed
+    await p2.getByRole('button', { name: 'Verify' }).click();
+    await expect(p2).toHaveURL(/\/dashboard/);
+    await ctx2.close();
   });
 });

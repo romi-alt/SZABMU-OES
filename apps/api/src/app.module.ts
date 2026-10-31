@@ -10,6 +10,7 @@ import { AllExceptionsFilter } from './common/errors';
 import { AuditService } from './modules/audit/audit.service';
 import { AuthService } from './modules/auth/auth.service';
 import { AuthController } from './modules/auth/auth.controller';
+import { MfaService } from './modules/auth/mfa.service';
 import { OrgService } from './modules/org/org.service';
 import { OrgController } from './modules/org/org.controller';
 import { CourseAccessService } from './modules/org/course-access.service';
@@ -34,7 +35,7 @@ import { JobsService } from './modules/jobs.service';
   providers: [
     { provide: CONFIG, useFactory: () => loadConfig() },
     PrismaService, RedisService, QueuesService, MailService, AuditService, NotificationsService,
-    AuthService, OrgService, CourseAccessService, QuestionsService, ExamsService, DeliveryService, ResultsService, InvigilationService, ReportsService, JobsService,
+    AuthService, MfaService, OrgService, CourseAccessService, QuestionsService, ExamsService, DeliveryService, ResultsService, InvigilationService, ReportsService, JobsService,
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],
