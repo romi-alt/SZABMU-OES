@@ -90,7 +90,7 @@ export function Table<T>({ cols, rows, empty = 'Nothing to show.', rowKey }: { c
   if (!Array.isArray(rows)) return <Notice tone="bad">The server returned this list in an unexpected format, so it cannot be shown. Try again; if it keeps happening, tell the examination office.</Notice>;
   if (!rows.length) return <Empty>{empty}</Empty>;
   return (
-    <div className="tbl-wrap"><table className="tbl"><thead><tr>{cols.map((c) => <th key={c.h} className={c.num ? 'num' : ''}>{c.h}</th>)}</tr></thead>
+    <div className="tbl-wrap"><table className="tbl"><thead><tr>{cols.map((c) => <th key={c.h || 'actions'} scope="col" className={c.num ? 'num' : ''}>{c.h || <span className="sr-only">Actions</span>}</th>)}</tr></thead>
       <tbody>{rows.map((r) => <tr key={rowKey(r)}>{cols.map((c) => <td key={c.h} data-label={c.h} className={`${c.num ? 'num' : ''} ${c.cls ?? ''}`}>{c.cell(r)}</td>)}</tr>)}</tbody></table></div>
   );
 }
