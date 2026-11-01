@@ -31,21 +31,27 @@ export const put = <T = any>(p: string, b: unknown = {}) => api<T>('PUT', p, b);
 export const patch = <T = any>(p: string, b: unknown = {}) => api<T>('PATCH', p, b);
 export const del = <T = any>(p: string) => api<T>('DELETE', p);
 
-/** Minimal data hook: fetches on mount / key change, exposes reload(). */
+/**
+ * Minimal data hook: fetches when `path` changes, exposes reload().
+ * Contract (UI-001): a `null` path means "not requested yet" → `idle: true`, `loading: false`, `data: null`, never an error.
+ * A result is only reported (`error`, "settled") for the path it was fetched for, so on a path change `loading` is true until the new
+ * request answers — consumers never see `loading=false` with no data for a path that has been requested.
+ */
 export function useGet<T = any>(path: string | null) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<ApiError | null>(null);
-  const [loading, setLoading] = useState(!!path);
+  const [res, setRes] = useState<{ key: string | null; data: T | null; error: ApiError | null }>({ key: null, data: null, error: null });
+  const [busy, setBusy] = useState(false);
   const seq = useRef(0);
   const load = useCallback(async () => {
     if (!path) return;
-    const n = ++seq.current; setLoading(true);
-    try { const d = await get<T>(path); if (n === seq.current) { setData(d); setError(null); } }
-    catch (e) { if (n === seq.current) setError(e as ApiError); }
-    finally { if (n === seq.current) setLoading(false); }
+    const n = ++seq.current; setBusy(true);
+    try { const d = await get<T>(path); if (n === seq.current) setRes({ key: path, data: d, error: null }); }
+    catch (e) { if (n === seq.current) setRes((r) => ({ key: path, data: r.data, error: e as ApiError })); }
+    finally { if (n === seq.current) setBusy(false); }
   }, [path]);
   useEffect(() => { void load(); }, [load]);
-  return { data, error, loading, reload: load, setData };
+  const settled = !!path && res.key === path;
+  const setData = useCallback((v: T | null | ((prev: T | null) => T | null)) => setRes((r) => ({ ...r, data: typeof v === 'function' ? (v as (p: T | null) => T | null)(r.data) : v })), []);
+  return { data: path ? res.data : null, error: settled ? res.error : null, loading: !!path && (busy || !settled), idle: !path, reload: load, setData };
 }
 
 const fmtTz = 'Asia/Karachi';
