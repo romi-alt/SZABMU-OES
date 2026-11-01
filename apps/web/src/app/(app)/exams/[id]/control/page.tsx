@@ -70,7 +70,7 @@ export default function ControlCentre() {
             {s.freshness.degraded && <Badge tone="amber">Degraded: {s.freshness.reasons.join('; ')}</Badge>}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 12 }} data-testid="stats">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(140px,100%),1fr))', gap: 12 }} data-testid="stats">
             <Stat k="Allocated" v={t.allocated} /><Stat k="Eligible" v={t.eligible} /><Stat k="Admitted (entered)" v={t.admitted} s={t.eligible ? `${Math.round((t.admitted / t.eligible) * 100)}% of eligible` : undefined} />
             <Stat k="In progress" v={t.inProgress} s={t.suspended ? `${t.suspended} suspended` : undefined} /><Stat k="Online / disconnected" v={`${n(t.online)} / ${n(t.disconnected)}`} s={t.online === null ? 'unknown — Redis unavailable' : undefined} />
             <Stat k="Submitted" v={t.submitted} /><Stat k="Auto-submitted" v={t.autoSubmitted} /><Stat k="Remaining" v={t.remaining} s="eligible, not yet sealed" /><Stat k="Active incidents" v={t.activeIncidents} />
@@ -91,7 +91,7 @@ export default function ControlCentre() {
 
           <PolicyCard d={d} id={id} can={can} run={run} onDone={reload} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(420px,1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(420px,100%),1fr))', gap: 16 }}>
             <Card title="Campuses" flush>
               <Table rowKey={(c: any) => c.institutionId} rows={s.campuses} empty="No participating campuses." cols={[
                 { h: 'Campus', cell: (c: any) => <button className="btn-link" onClick={() => setCampus(campus === c.institutionId ? '' : c.institutionId)} aria-pressed={campus === c.institutionId}>{c.code}</button> },
@@ -107,7 +107,7 @@ export default function ControlCentre() {
 
           <Candidates id={id} campuses={s.campuses} campus={campus} setCampus={setCampus} refresh={refresh} selected={selected} setSelected={setSelected} canSelect={can('exam.control')} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(420px,1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(420px,100%),1fr))', gap: 16 }}>
             <Card title="Suspension history" flush><Table rowKey={(x: any) => x.id} rows={d.suspensions} empty="No suspensions." cols={[
               { h: 'Scope', cell: (x: any) => x.scope + (x.institutionId ? ' · campus' : '') }, { h: 'Policy', cell: (x: any) => x.timePolicy.replace('_', ' ').toLowerCase() }, { h: 'Suspended', cell: (x: any) => <>{dt(x.suspendedAt)}<div className="small muted">{x.suspendedByName}: {x.reason}</div></> },
               { h: 'Resumed', cell: (x: any) => (x.resumedAt ? <>{dt(x.resumedAt)}<div className="small muted">{x.resumedByName} · paused {x.pausedSeconds ?? 0}s</div></> : <Badge tone="red">Open</Badge>) }, { h: 'Affected', num: true, cell: (x: any) => x.affectedCount },
