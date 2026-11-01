@@ -15,7 +15,7 @@ import { ExamEventsService } from './events.service';
 import { finishTransition } from './transition';
 
 export interface LifecycleStats { autoSubmitted: number; graded: number; opened: number; closed: number; pending: number; scoringStarted: number; forceSealed: number; published: number; poisoned: number; skipped?: boolean; lease?: string }
-const MAX_ATTEMPT_RETRIES = 5; const LEASE_SECONDS = 30; const BATCH = 200; const CONCURRENCY = 8; const BUDGET_MS = 20_000;
+const MAX_ATTEMPT_RETRIES = 5; const leaseSeconds = () => Number(process.env.LIFECYCLE_LEASE_SECONDS ?? 30); const BATCH = 200; const CONCURRENCY = 8; const BUDGET_MS = 20_000;
 
 /**
  * The lifecycle reconciler. PostgreSQL is the authority: every transition is derived from database state and the database clock,
@@ -50,7 +50,7 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
 
   private async acquireLease(): Promise<boolean> {
     const r = await this.prisma.$queryRaw<{ owner: string }[]>`
-      INSERT INTO lifecycle_leases (name, owner, "expiresAt") VALUES ('lifecycle', ${this.instance}, clock_timestamp() + make_interval(secs => ${LEASE_SECONDS}::int))
+      INSERT INTO lifecycle_leases (name, owner, "expiresAt") VALUES ('lifecycle', ${this.instance}, clock_timestamp() + make_interval(secs => ${leaseSeconds()}::int))
       ON CONFLICT (name) DO UPDATE SET owner = EXCLUDED.owner, "expiresAt" = EXCLUDED."expiresAt", "updatedAt" = clock_timestamp()
       WHERE lifecycle_leases."expiresAt" < clock_timestamp() OR lifecycle_leases.owner = EXCLUDED.owner
       RETURNING owner`;
