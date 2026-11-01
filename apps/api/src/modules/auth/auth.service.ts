@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import argon2 from 'argon2';
 import { randomBytes, randomInt } from 'node:crypto';
-import { checkPassword, permissionsFor } from '@oes/shared';
+import { checkPassword, permissionsFor, roleAllowedOnPortal, type Portal } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
 import { RedisService } from '../../infra/redis.service';
 import { MailService } from '../../infra/mail.service';
@@ -33,7 +33,7 @@ export class AuthService {
     return (DUMMY ??= await argon2.hash('not-a-real-password', { type: argon2.argon2id }));
   }
 
-  async login(emailRaw: string, password: string, ip: string, ua?: string) {
+  async login(emailRaw: string, password: string, ip: string, ua?: string, portal: Portal | null = null) {
     const email = emailRaw.trim().toLowerCase();
     const ipHits = await this.redis.hit(`rl:login:ip:${ip}`, 900);
     const idHits = await this.redis.hit(`rl:login:id:${email}`, 900);
@@ -54,6 +54,13 @@ export class AuthService {
       }
       await this.audit.log({ actor: user ? { id: user.id, role: user.role } : null, action: 'auth.login_failed', entity: 'user', entityId: user?.id, meta: { email }, ip });
       this.metrics.authFailures.inc({ kind: 'login_invalid' });
+      throw new AppError(401, 'INVALID_CREDENTIALS', 'Incorrect email or password');
+    }
+    // Two-portal deployment: correct credentials are still refused on the wrong portal, with the SAME message as a bad password
+    // (nothing tells the caller that the account exists or which portal it belongs to). The attempt is audited and counted.
+    if (this.cfg.PORTAL_ENFORCE === 'true' && (!portal || !roleAllowedOnPortal(user.role, portal))) {
+      await this.audit.log({ actor: { id: user.id, role: user.role }, action: 'auth.login_wrong_portal', entity: 'user', entityId: user.id, meta: { portal }, ip });
+      this.metrics.authFailures.inc({ kind: 'login_wrong_portal' });
       throw new AppError(401, 'INVALID_CREDENTIALS', 'Incorrect email or password');
     }
 
