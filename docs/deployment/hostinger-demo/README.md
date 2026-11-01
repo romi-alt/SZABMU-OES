@@ -16,7 +16,7 @@
 | Node.js | 24 (highest Hostinger offers; CI job `node24` is green for build/typecheck/lint/tests) |
 | Source | GitHub `romi-alt/SZABMU-OES`, branch `main` — Hostinger Git auto-deploy rebuilds on every push |
 | PostgreSQL | **Neon** free tier, project `szabmu-oes-us` (`muddy-tooth-28867630`), PG 16, region `aws-us-east-1` — same coast as the Hostinger web server (`us-bos-web1774`, Boston). The first project `szabmu-oes` (Singapore, `empty-voice-15975689`) is no longer used |
-| Redis | **Upstash** free tier (one database allowed), `szabmu-oes`, TLS (`rediss://`), 500k commands/month. Created in `ap-southeast-1`; **to be recreated in `us-east-1`** (the free tier allows one database, so the old one must be deleted first) |
+| Redis | **Upstash** free tier (one database allowed): `szabmu-oes-us`, AWS `us-east-1` (N. Virginia), TLS `rediss://…happy-parrot-199048.upstash.io:6379`, 500k commands/month. The Singapore database was deleted 2026-11-01 |
 | Entry point | `scripts/hostinger-single-site.mjs` (`npm run start:hostinger`) |
 
 ## Why it looks like this
@@ -135,8 +135,8 @@ the resets were transient (the Upstash database is in Singapore, the web server 
 | grading (database sweeper recovers when the queue is down) | login rate limiting |
 | live monitor (falls back to polling) | live push (SSE) via Redis pub/sub |
 
-Improve it by recreating the Upstash database in `us-east-1` (free tier allows one database: delete the Singapore one first), or remove
-the dependency (PR #3, after porting the exam-control services).
+Done 2026-11-01: Redis now lives in `us-east-1` next to the Boston web server (health `ok`, ~0.9 s round trip from Pakistan).
+Removing the dependency entirely is still PR #3 (after porting the exam-control services).
 
 ## Lessons (things that cost time)
 
