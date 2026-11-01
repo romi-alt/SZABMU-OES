@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import Image from 'next/image';
+import { BrandLogo } from '@/brand';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useMe } from '@/session';
@@ -30,7 +30,7 @@ function Bell() {
         Notifications{data?.unread ? <span className="pill-count" aria-hidden>{data.unread}</span> : null}
       </button>
       {open && (
-        <section id={panelId} className="card bell-panel" aria-label="Notifications">
+        <section id={panelId} className="card bell-pop" aria-label="Notifications">
           <div className="card-h"><h3>Notifications</h3>{!!data?.unread && <button className="btn-link small" onClick={async () => { await post('/notifications/read-all'); await load(); }}>Mark all read</button>}</div>
           {!data?.items.length ? <div className="empty">No notifications.</div> : (
             <ul className="bell-list">{data.items.map((n) => (
@@ -48,34 +48,36 @@ function Bell() {
 export default function AppShell({ children }: { children: ReactNode }) {
   const { me, loading, logout } = useMe(); const path = usePathname();
   const [navOpen, setNavOpen] = useState(false); const menuBtn = useRef<HTMLButtonElement>(null);
-  useEffect(() => { setNavOpen(false); }, [path]);                       // navigating closes the drawer
+  // The navigation is a drawer below 1024 px: close it on navigation and on Escape, and keep the page behind it still.
+  useEffect(() => { setNavOpen(false); }, [path]);
   useEffect(() => {
     if (!navOpen) return;
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { setNavOpen(false); menuBtn.current?.focus(); } };
-    document.addEventListener('keydown', key); return () => document.removeEventListener('keydown', key);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setNavOpen(false); menuBtn.current?.focus(); } };
+    document.addEventListener('keydown', onKey); document.body.classList.add('nav-locked');
+    return () => { document.removeEventListener('keydown', onKey); document.body.classList.remove('nav-locked'); };
   }, [navOpen]);
   if (loading || !me) return <div style={{ padding: 40 }}><Loading /></div>;
   const nav = NAV[me.role];
   const crumb = nav.items.find((i) => path.startsWith(i.href))?.label ?? '';
   return (
-    <div className={`shell ${navOpen ? 'nav-open' : ''}`}>
-      <a className="skip-link" href="#main">Skip to content</a>
-      <aside className="sidebar" id="primary-nav">
-        <div className="brand"><Image src="/logo.png" alt="Shaheed Zulfiqar Ali Bhutto Medical University, Islamabad" width={398} height={100} priority /></div>
+    <div className="shell">
+      <aside className={`sidebar ${navOpen ? 'open' : ''}`} id="primary-nav" aria-label="Site navigation">
+        <button className="btn btn-sm nav-close" onClick={() => { setNavOpen(false); menuBtn.current?.focus(); }} aria-label="Close menu">Close ✕</button>
+        <BrandLogo plate priority className="brand" />
         <div className="brand-sub">Examination Portal</div>
         <nav className="nav" aria-label="Primary"><div className="nav-label">{nav.label}</div>
           {nav.items.map((i) => <Link key={i.href} href={i.href} aria-current={path === i.href || (i.href !== '/dashboard' && path.startsWith(i.href)) ? 'page' : undefined}>{i.label}</Link>)}
         </nav>
         <div className="sidebar-foot">{me.institutions.map((i) => i.code).join(' · ') || 'University-wide'}</div>
       </aside>
-      <div className="nav-scrim" onClick={() => setNavOpen(false)} aria-hidden />
+      {navOpen && <div className="nav-scrim" data-testid="nav-scrim" onClick={() => setNavOpen(false)} aria-hidden />}
       <div className="main">
         <header className="topbar">
-          <button ref={menuBtn} className="btn btn-sm menu-btn" aria-expanded={navOpen} aria-controls="primary-nav" onClick={() => setNavOpen(!navOpen)}>{navOpen ? 'Close menu' : 'Menu'}</button>
+          <button ref={menuBtn} className="btn btn-sm menu-btn" data-testid="menu-button" aria-label="Menu" aria-controls="primary-nav" aria-expanded={navOpen} onClick={() => setNavOpen(!navOpen)}>☰ Menu</button>
           <div className="crumbs">{ROLE_LABEL[me.role]} › <b>{crumb}</b></div>
           <div className="row"><Bell /><span className="small muted user-name" style={{ textAlign: 'right' }}><b style={{ color: 'var(--ink)' }}>{me.fullName}</b></span><button className="btn btn-sm" onClick={logout}>Sign out</button></div>
         </header>
-        <main className="content" id="main" tabIndex={-1}>{me.mustChangePw && path !== '/profile' ? <ForceChange /> : children}</main>
+        <main className="content" id="main">{me.mustChangePw && path !== '/profile' ? <ForceChange /> : children}</main>
       </div>
     </div>
   );

@@ -1,0 +1,193 @@
+{
+ "laptops": {
+  "1366x768": {
+   "headerH": 76,
+   "paletteButtonsFullyVisible": 72,
+   "total": 100,
+   "actionBarBottom": 595,
+   "actionBarInView": true
+  },
+  "1280x720": {
+   "headerH": 76,
+   "paletteButtonsFullyVisible": 66,
+   "total": 100,
+   "actionBarBottom": 595,
+   "actionBarInView": true
+  },
+  "1536x864": {
+   "headerH": 76,
+   "paletteButtonsFullyVisible": 90,
+   "total": 100,
+   "actionBarBottom": 595,
+   "actionBarInView": true
+  }
+ },
+ "sheet": {
+  "390x844": {
+   "sheetClient": 692,
+   "sheetScroll": 1240,
+   "sheetTopY": 152,
+   "viewportH": 844,
+   "button87OffsetInSheet": 942,
+   "swipesNeeded": 1,
+   "firstButtonsVisibleWithoutScroll": 54,
+   "headerH": 168,
+   "headerPctOfViewport": 20
+  },
+  "360x640": {
+   "sheetClient": 525,
+   "sheetScroll": 1240,
+   "sheetTopY": 115,
+   "viewportH": 640,
+   "button87OffsetInSheet": 942,
+   "swipesNeeded": 2,
+   "firstButtonsVisibleWithoutScroll": 30,
+   "headerH": 168,
+   "headerPctOfViewport": 26
+  },
+  "768x1024": {
+   "sheetClient": 840,
+   "sheetScroll": 1149,
+   "sheetTopY": 184,
+   "viewportH": 1024,
+   "button87OffsetInSheet": 892,
+   "swipesNeeded": 1,
+   "firstButtonsVisibleWithoutScroll": 78,
+   "headerH": 126,
+   "headerPctOfViewport": 12
+  }
+ },
+ "fail_http500": [
+  {
+   "afterSec": 1,
+   "saveState": "Not yet saved — retrying",
+   "banner": "",
+   "paletteB": "true"
+  },
+  {
+   "afterSec": 5,
+   "saveState": "Not yet saved — retrying",
+   "banner": "",
+   "paletteB": "true"
+  },
+  {
+   "afterSec": 15,
+   "saveState": "Not yet saved — retrying",
+   "banner": "",
+   "paletteB": "true"
+  },
+  {
+   "afterSec": 30,
+   "saveState": "Not yet saved — retrying",
+   "banner": "",
+   "paletteB": "true"
+  },
+  {
+   "reviewScreenMentions": null,
+   "text": "View One question at a time All questions on one page QUESTION 01 / 100 1 MARK Question 1: which finding is most characteristic of renal tubular acidosis? A Option A for question 1 B Option B for question 1 C Option C for question 1 D Option D for question 1 E"
+  }
+ ],
+ "fail_hang": [
+  {
+   "afterSec": 1,
+   "saveState": "Saving…",
+   "banner": "",
+   "paletteB": "true"
+  },
+  {
+   "afterSec": 5,
+   "saveState": "Saving…",
+   "banner": "",
+   "paletteB": "true"
+  },
+  {
+   "afterSec": 15,
+   "saveState": "Saving…",
+   "banner": "",
+   "paletteB": "true"
+  },
+  {
+   "afterSec": 30,
+   "saveState": "Saving…",
+   "banner": "",
+   "paletteB": "true"
+  },
+  {
+   "reviewScreenMentions": null,
+   "text": "View One question at a time All questions on one page QUESTION 01 / 100 1 MARK Question 1: which finding is most characteristic of renal tubular acidosis? A Option A for question 1 B Option B for question 1 C Option C for question 1 D Option D for question 1 E"
+  }
+ ],
+ "fail_conflict": [
+  {
+   "afterSec": 1,
+   "saveState": "Not yet saved — retrying",
+   "banner": "",
+   "paletteB": "true"
+  },
+  {
+   "afterSec": 5,
+   "saveState": "Not yet saved — retrying",
+   "banner": "",
+   "paletteB": "true"
+  },
+  {
+   "afterSec": 15,
+   "saveState": "Not yet saved — retrying",
+   "banner": "",
+   "paletteB": "true"
+  },
+  {
+   "afterSec": 30,
+   "saveState": "Not yet saved — retrying",
+   "banner": "",
+   "paletteB": "true"
+  },
+  {
+   "reviewScreenMentions": null,
+   "text": "View One question at a time All questions on one page QUESTION 01 / 100 1 MARK Question 1: which finding is most characteristic of renal tubular acidosis? A Option A for question 1 B Option B for question 1 C Option C for question 1 D Option D for question 1 E"
+  }
+ ],
+ "kbd": {
+  "first22": [
+   "Review & submit",
+   "One question at a time",
+   "All questions on one page",
+   "A Option A for question 1",
+   "B Option B for question 1",
+   "C Option C for question 1",
+   "D Option D for question 1",
+   "E Option E for question 1",
+   "Skip question",
+   "Mark for review",
+   "Clear response",
+   "Save & next →",
+   "Next →",
+   "All",
+   "Answered 1",
+   "Skipped 0",
+   "Unanswered 1",
+   "Not visited 98",
+   "Marked 0",
+   "Question 1, answered",
+   "Question 2, unanswered",
+   "Question 3, not visited"
+  ],
+  "tabsFromPalette1To87": 86,
+  "pressC": "true",
+  "afterRightArrow": "QUESTION 02 / 100",
+  "optionsRoles": {
+   "radiogroup": 1,
+   "radios": 5,
+   "tabbableOptions": 5,
+   "listitemButtons": 100
+  },
+  "dialogFocus": {
+   "hasDialog": true,
+   "ariaModal": "true",
+   "focusInside": false,
+   "active": "Submit examination…",
+   "label": "Submit examination?"
+  },
+  "escapeClosesDialog": true
+ }
+}

@@ -27,6 +27,8 @@ export type CandidateFilter = (typeof CANDIDATE_STATUS)[number];
 @Injectable()
 export class MonitorService implements OnModuleInit {
   private readonly cache = new Map<string, { at: number; p: Promise<Raw> }>();
+  /** How long the last aggregate took per exam: the cache window stretches to 4× that, so a slow aggregate can never recompute back-to-back. */
+  private readonly lastMs = new Map<string, number>();
   constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly events: ExamEventsService, private readonly metrics: MetricsService) {}
   onModuleInit() { this.events.onTick = (examId, subs) => this.pushStats(examId, subs); }
 
@@ -53,9 +55,9 @@ export class MonitorService implements OnModuleInit {
   // ───────────── aggregate snapshot ─────────────
   private raw(examId: string): Promise<Raw> {
     const hit = this.cache.get(examId);
-    if (hit && Date.now() - hit.at < TTL_MS) return hit.p;
+    if (hit && Date.now() - hit.at < Math.max(TTL_MS, 4 * (this.lastMs.get(examId) ?? 0))) return hit.p;
     const t0 = process.hrtime.bigint();
-    const p = this.compute(examId).then((r) => { this.metrics.monitorCompute.observe({}, Number(process.hrtime.bigint() - t0) / 1e9); return r; });
+    const p = this.compute(examId).then((r) => { const sec = Number(process.hrtime.bigint() - t0) / 1e9; this.metrics.monitorCompute.observe({}, sec); this.lastMs.set(examId, sec * 1000); return r; });
     this.cache.set(examId, { at: Date.now(), p });
     p.catch(() => this.cache.delete(examId));
     if (this.cache.size > 200) for (const [k, v] of this.cache) if (Date.now() - v.at > 60_000) this.cache.delete(k);

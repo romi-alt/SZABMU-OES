@@ -1,0 +1,19 @@
+# 13 — User journeys
+
+Click counts are counted on the real UI (not timed). "Context loss" = information the user must carry to the next page.
+
+| # | Journey | Entry → destination | Actual steps | Result | Findings |
+|---|---|---|---|---|---|
+| A | Student finds and starts today's exam | Sign in → timer | Dashboard → "Go to schedule" (1) → "Start →" (2) → "Begin examination →" (3) = **3 clicks** after login; lands on dashboard (return-to-page is not remembered) | completes | wrong "Opens" time, indirect CTA (UI-007), contradictory countdown (UI-008). Proposed: dashboard "Start exam" → instructions → Begin = 2 clicks |
+| B | Skip MCQs, flag, return and review | Player | Skip (1 each) / Mark (1 each); return by palette (1 click desktop; 3 on phone); Review & submit → review screen with jump buttons | completes | Skip vs Next semantics (UI-016); jump cost on phones (UI-017) |
+| C | Loses internet, reconnects, finishes | Player offline → submit | banner + "Not saved — offline, will retry"; auto-recovers ≤ 6 s; review/submit still possible | **completes (good)**; fails if saves error instead of going offline (UI-003/004) | |
+| D | Lecturer creates and submits an MCQ | Question bank | "+ New question" (1) → fill course, type, stem, 5 options + correct radio, difficulty → "Save draft" (button enabled only when valid) → row "Submit" (green) | completes | no explanation of disabled Save; submit is a separate row action (doc 08) |
+| E | Examiner reviews/approves a paper | CCE dashboard → approval | tile "Papers to approve" (1) → exam row (2) → "Approve paper" (3) | **completes in 3 clicks** | strong deep-link pattern; examiner cannot self-approve (button visible, refused, UI-019) |
+| F | Controller schedules an exam for multiple campuses | Exams | New examination modal (campus checkboxes) → draft → build paper → submit → approve → schedule → approve suspension policy → open admission → start | completes but **≥ 8 steps over 3 roles, no wizard or "next step" guidance** | UI-026/027, doc 09 §1 |
+| G | Campus admin locates a student and confirms attendance | Students | search (type) → row | **fails**: rows have no action; Enrolment & eligibility crashes (UI-001); no attendance register | UI-001, UI-034 |
+| H | Controller identifies a disconnected candidate and authorises recovery | Dashboard "Live exams" tile (1) → exam "Monitor ›" (2) → scan Connection column; or control centre tile "5 / 2" + warning chip | finds count in 2–3 clicks; **no "disconnected" filter**; recovery = Extend time with scope "Selected candidates" (select checkboxes → Extend…) | partly | UI-029; no per-candidate "recover/reconnect" action |
+| I | Examiner reviews and publishes results | exam record "Results workflow" | panel lists each candidate's score/result/certificate and the pipeline sentence "Graded → lecturer review → examiner approval → publication by the Controller (a different person from the approver). Open incidents block approval."; each role sees only its own button | completes (three people, one page) | good clarity; the three buttons appear sequentially |
+| J | Student views and downloads released results | Results | bell/nav → "Results" (1) → "Certificate ›" (2) → "Print certificate" (3, browser print) | completes for passes; **no PDF download**; failed results offer nothing | doc 07 |
+| K | Super admin registers an institution and assigns an administrator | Institutions | "+ Register institution" (1) → 5 fields → Register; then Users → "+ New account" (2) → role Campus Administrator + select institution → Create | completes in 2 pages, ~9 interactions; **no link between them**, no confirmation of resulting access | doc 11 |
+
+Memory burdens: F (remember to approve policy before suspension is possible), K (remember to create the administrator separately), G (cannot carry a student from search to attendance). Back-and-forth: A (dashboard → schedule → exam), H (monitor list → monitor → control centre for actions).

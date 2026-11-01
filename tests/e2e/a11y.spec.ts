@@ -2,7 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { login } from './helpers';
 
 /**
- * Accessibility: automated axe scans plus keyboard-only passes over the interactive widgets.
+ * Accessibility: automated axe scans plus keyboard-only passes over the interactive widgets (dialog, notification menu, sign-in).
+ * The responsive shell (drawer, desktop layout) is covered by responsive.spec.ts.
  *
  * The axe scans need `@axe-core/playwright` (`npm i -D @axe-core/playwright`, then commit the lockfile). It is loaded lazily
  * so the keyboard tests below run — and CI's `npm ci` stays valid — before it has been added; the scans are skipped until then.
@@ -50,14 +51,6 @@ test.describe('keyboard only', () => {
     await expect(page).toHaveURL(/\/dashboard/);
   });
 
-  test('skip link jumps to the main content', async ({ page }) => {
-    await login(page, 'student.b008');
-    await page.keyboard.press('Tab');
-    await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused();
-    await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/#main$/);
-  });
-
   test('notification menu: Enter opens, Escape closes and returns focus to the button', async ({ page }) => {
     await login(page, 'student.b008');
     const bell = page.getByRole('button', { name: /^Notifications, \d+ unread/ });
@@ -85,31 +78,5 @@ test.describe('keyboard only', () => {
     await page.keyboard.press('Escape');
     await expect(dlg).toHaveCount(0);
     await expect(opener).toBeFocused();
-  });
-});
-
-test.describe('desktop layout', () => {
-  test('sidebar is always visible and there is no Menu button or scrim taking space', async ({ page }) => {
-    await login(page, 'student.b008');
-    await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Menu' })).toBeHidden();
-    const { sidebarRight, mainLeft } = await page.evaluate(() => ({ sidebarRight: document.querySelector('.sidebar')!.getBoundingClientRect().right, mainLeft: document.querySelector('.main')!.getBoundingClientRect().left }));
-    expect(mainLeft).toBeGreaterThanOrEqual(sidebarRight - 1);       // content sits beside the sidebar, not under it
-  });
-});
-
-test.describe('phone layout (390 px)', () => {
-  test.use({ viewport: { width: 390, height: 844 } });
-  test('navigation is a drawer: hidden by default, opens from Menu, closes on Escape and after navigating', async ({ page }) => {
-    await login(page, 'student.b008');
-    const nav = page.getByRole('navigation', { name: 'Primary' });
-    const menu = page.getByRole('button', { name: 'Menu' });
-    await expect(nav).toBeHidden();                                   // not rendered in the tab order or the flow
-    await expect(page.locator('.content')).toBeInViewport();          // content starts at the top, not 400 px down
-    await menu.click(); await expect(nav).toBeVisible(); await expect(menu).toHaveAttribute('aria-expanded', 'true');
-    await page.keyboard.press('Escape'); await expect(nav).toBeHidden(); await expect(menu).toBeFocused();
-    await menu.click(); await nav.getByRole('link', { name: /schedule/i }).click();
-    await expect(page).toHaveURL(/\/schedule/); await expect(nav).toBeHidden();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);   // no horizontal scroll
   });
 });

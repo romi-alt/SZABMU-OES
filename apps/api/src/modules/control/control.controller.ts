@@ -23,7 +23,7 @@ const startDto = z.object({ ...base, extendWindow: z.boolean().optional() });
 const policyDto = z.object({ timingPolicy: z.enum(['INDIVIDUAL', 'SYNCHRONIZED']).optional(), controlMode: z.enum(['AUTOMATIC', 'MANUAL']).optional(), suspendTimePolicy: z.enum(['FREEZE_CLOCK', 'CLOCK_CONTINUES']).optional() });
 const candQuery = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(50), institutionId: uuid.optional(), status: z.enum(CANDIDATE_STATUS).optional(), search: z.string().max(60).optional() });
 
-const MAX_STREAMS_PER_USER = 4; const MAX_STREAMS_PER_PROCESS = 20000;
+const MAX_STREAMS_PER_USER = Number(process.env.SSE_MAX_PER_USER ?? 4); const MAX_STREAMS_PER_PROCESS = Number(process.env.SSE_MAX_PER_PROCESS ?? 20000);   // per-user cap protects one account from exhausting sockets; raise for shared operations desks
 const perUser = new Map<string, number>(); let openStreams = 0;
 
 @Controller()

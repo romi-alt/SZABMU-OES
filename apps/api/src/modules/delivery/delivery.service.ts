@@ -374,7 +374,8 @@ export class DeliveryService {
       if (o.mode === 'FORCED' && !o.bulk) await this.audit.log({ actor: o.actor ?? null, action: 'attempt.force_submit', entity: 'attempt', entityId: attemptId, meta: { examId: out.examId, receipt: out.receiptCode, answered: out.answered, total: out.total, reason: o.reason }, ip: o.ip });
       // Best effort and time-boxed: BullMQ waits indefinitely while Redis is down, which must never delay the receipt.
       // The lifecycle sweeper grades any sealed attempt that was not enqueued.
-      if (this.redis.available) await Promise.race([
+      // `bulk` (reconciler) seals thousands of attempts and grades them from the database itself: no per-attempt Redis job.
+      if (this.redis.available && !o.bulk) await Promise.race([
         this.queues.add(QUEUES.grade, 'grade', { attemptId }, { jobId: `grade-${attemptId}` }).catch((e) => this.log.warn(`grade enqueue failed (sweeper will recover): ${e.message}`)),
         new Promise<void>((resolve) => setTimeout(() => { this.log.warn('grade enqueue timed out (sweeper will recover)'); resolve(); }, 1500).unref()),
       ]);
