@@ -83,7 +83,7 @@ export function Table<T>({ cols, rows, empty = 'Nothing to show.', rowKey }: { c
   if (!rows.length) return <Empty>{empty}</Empty>;
   return (
     <div className="tbl-wrap"><table className="tbl"><thead><tr>{cols.map((c) => <th key={c.h} className={c.num ? 'num' : ''}>{c.h}</th>)}</tr></thead>
-      <tbody>{rows.map((r) => <tr key={rowKey(r)}>{cols.map((c) => <td key={c.h} className={`${c.num ? 'num' : ''} ${c.cls ?? ''}`}>{c.cell(r)}</td>)}</tr>)}</tbody></table></div>
+      <tbody>{rows.map((r) => <tr key={rowKey(r)}>{cols.map((c) => <td key={c.h} data-label={c.h} className={`${c.num ? 'num' : ''} ${c.cls ?? ''}`}>{c.cell(r)}</td>)}</tr>)}</tbody></table></div>
   );
 }
 export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: ReactNode }) {

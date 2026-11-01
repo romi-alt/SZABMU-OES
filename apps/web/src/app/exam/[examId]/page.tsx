@@ -93,7 +93,7 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
   const [idx, setIdx] = useState(0); const [filter, setFilter] = useState<Filter>('all'); const [view, setView] = useState<'q' | 'review'>('q');
   const [layout, setLayout] = useState<'single' | 'all'>(() => (typeof window !== 'undefined' && sessionStorage.getItem('oes:layout') === 'all' ? 'all' : 'single'));
   const chooseLayout = (l: 'single' | 'all') => { setLayout(l); setView('q'); sessionStorage.setItem('oes:layout', l); };
-  const [remaining, setRemaining] = useState(engine.remainingMs()); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState('');
+  const [palOpen, setPalOpen] = useState(false); const [remaining, setRemaining] = useState(engine.remainingMs()); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState('');
   const submitKey = useRef(''); if (!submitKey.current) { submitKey.current = sessionStorage.getItem(`oes:sk:${attemptId}`) ?? `sk${uid()}`; sessionStorage.setItem(`oes:sk:${attemptId}`, submitKey.current); }
   const q = questions[idx]!; const st = engine.get(q.id); const counts = engine.counts();
   const timeUp = useRef(false);
@@ -163,10 +163,11 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
   return (
     <div className="exam">
       <header className="exam-bar">
-        <div style={{ width: 168, flex: "none" }}><Image src="/logo.png" alt="SZABMU" width={398} height={100} style={{ width: '100%', height: 'auto' }} /></div>
-        <div className="grow"><div className="title">{exam.title}</div><div className="small muted">{questions.length} questions · {exam.totalMarks} marks</div></div>
-        <div className="small muted" aria-live="polite">Answered <b className="mono" style={{ color: 'var(--ink)' }}>{counts.answered}</b> / {questions.length}</div>
+        <div className="exam-logo"><Image src="/logo.png" alt="SZABMU" width={398} height={100} style={{ width: '100%', height: 'auto' }} /></div>
+        <div className="grow exam-title"><div className="title">{exam.title}</div><div className="small muted">{questions.length} questions · {exam.totalMarks} marks</div></div>
+        <div className="small muted exam-answered" aria-live="polite">Answered <b className="mono" style={{ color: 'var(--ink)' }}>{counts.answered}</b> / {questions.length}</div>
         <div className={`exam-clock ${low ? 'low' : ''}`} role="timer" aria-label="Time remaining"><div className="k">Remaining</div><div className="v" data-testid="remaining">{clock(remaining)}</div></div>
+        <button className="btn pal-toggle" data-testid="palette-toggle" aria-expanded={palOpen} aria-controls="question-navigator" onClick={() => setPalOpen(!palOpen)}>Questions {counts.answered}/{questions.length}</button>
         <button className="btn btn-primary" onClick={openReview} disabled={busy || engine.suspended}>Review &amp; submit</button>
       </header>
       {!engine.online && <div className="conn off" role="alert">Connection lost. Keep working — your answers are held on this device and are saved automatically once the connection returns. {engine.pendingCount()} not yet saved.</div>}
@@ -209,16 +210,18 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
         ) : <ReviewView engine={engine} questions={questions} attemptId={attemptId} clientId={clientId} submitKey={submitKey.current} onBack={(n) => go(n ?? idx)} onSubmitted={onSubmitted} />}
         </div>
 
-        <aside className="stack" aria-label="Question navigator">
+        <aside className={`stack pal-aside ${palOpen ? 'open' : ''}`} id="question-navigator" aria-label="Question navigator">
+          <button className="btn btn-sm pal-close" onClick={() => setPalOpen(false)}>Close ✕</button>
           <div className="card"><div className="card-h"><h2>Question palette</h2><span className="small muted mono">{counts.answered}/{questions.length}</span></div><div className="card-b stack">
             <div className="bar" aria-hidden><i style={{ width: `${(counts.answered / questions.length) * 100}%` }} /></div>
             <div className="row wrap" role="group" aria-label="Filter questions">{([['all', 'All'], ['answered', 'Answered'], ['skipped', 'Skipped'], ['unanswered', 'Unanswered'], ['notvisited', 'Not visited'], ['marked', 'Marked']] as [Filter, string][]).map(([k, l]) => <button key={k} className="chip" aria-pressed={filter === k} onClick={() => setFilter(k)}>{l}{k !== 'all' ? ` ${k === 'marked' ? counts.marked : counts[k]}` : ''}</button>)}</div>
-            <div className="pal" role="list">{visible.map(({ x, i, k, m }) => <button key={x.id} role="listitem" className={`${k} ${i === idx && view === 'q' ? 'current' : ''} ${m ? 'marked' : ''}`} onClick={() => go(i)} aria-label={`Question ${x.number}, ${k === 'notvisited' ? 'not visited' : k}${m ? ', marked for review' : ''}`} aria-current={i === idx ? 'true' : undefined}>{pad(x.number)}</button>)}</div>
+            <div className="pal" role="list">{visible.map(({ x, i, k, m }) => <button key={x.id} role="listitem" className={`${k} ${i === idx && view === 'q' ? 'current' : ''} ${m ? 'marked' : ''}`} onClick={() => { go(i); setPalOpen(false); }} aria-label={`Question ${x.number}, ${k === 'notvisited' ? 'not visited' : k}${m ? ', marked for review' : ''}`} aria-current={i === idx ? 'true' : undefined}>{pad(x.number)}</button>)}</div>
             {!visible.length && <div className="small faint">No questions match this filter.</div>}
             <div className="legend"><span><i style={{ background: 'var(--green)' }} />Answered</span><span><i style={{ background: 'var(--amber-bg)', borderColor: '#E2B93B' }} />Skipped</span><span><i style={{ borderColor: 'var(--maroon)' }} />Unanswered</span><span><i />Not visited</span><span><i style={{ background: 'var(--crimson)' }} />Marked</span></div>
           </div></div>
           <div className="notice small">Press <b className="mono">A–E</b> to choose an option and <b className="mono">←</b> <b className="mono">→</b> to move. Answers save automatically.</div>
         </aside>
+        {palOpen && <div className="nav-scrim pal-scrim" onClick={() => setPalOpen(false)} aria-hidden />}
       </div>
     </div>
   );
