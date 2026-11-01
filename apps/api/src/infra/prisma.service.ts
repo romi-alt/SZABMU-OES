@@ -6,7 +6,12 @@ import { CONFIG, type Config } from '../config';
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleDestroy {
   constructor(@Inject(CONFIG) cfg: Config) {
-    super({ adapter: new PrismaPg({ connectionString: cfg.DATABASE_URL, max: cfg.DB_POOL_MAX }) });
+    // Managed PostgreSQL is reached over the internet (tens of ms per round trip), so Prisma's 5 s default
+    // interactive-transaction timeout is too tight for multi-statement transactions. Explicit per-call options still win.
+    super({
+      adapter: new PrismaPg({ connectionString: cfg.DATABASE_URL, max: cfg.DB_POOL_MAX }),
+      transactionOptions: { maxWait: cfg.DB_TX_MAX_WAIT_MS, timeout: cfg.DB_TX_TIMEOUT_MS },
+    });
   }
   async onModuleDestroy() {
     await this.$disconnect();
