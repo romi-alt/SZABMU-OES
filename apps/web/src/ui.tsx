@@ -1,5 +1,5 @@
 'use client';
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { cloneElement, createContext, isValidElement, type ReactElement, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ApiError } from './api';
 
@@ -94,17 +94,37 @@ export function Table<T>({ cols, rows, empty = 'Nothing to show.', rowKey }: { c
       <tbody>{rows.map((r) => <tr key={rowKey(r)}>{cols.map((c) => <td key={c.h} data-label={c.h} className={`${c.num ? 'num' : ''} ${c.cls ?? ''}`}>{c.cell(r)}</td>)}</tr>)}</tbody></table></div>
   );
 }
-export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: ReactNode }) {
-  return <label className="f">{label}{children}{hint && <span className="hint">{hint}</span>}{error && <span className="err-text" role="alert">{error}</span>}</label>;
+/**
+ * Labelled form field. `required` adds a visible asterisk + aria-required, and reports "<label> is required." when the control is left empty.
+ * The message slot is reserved for required fields so it appearing never moves the buttons below it (a click would otherwise be lost).
+ */
+export function Field({ label, hint, error, required, children }: { label: string; hint?: string; error?: string; required?: boolean; children: ReactNode }) {
+  const [left, setLeft] = useState(false); const [empty, setEmpty] = useState(false);
+  const own = required && left && empty ? `${label} is required.` : '';
+  const msg = error || own;
+  const child = isValidElement(children) && typeof children.type === 'string' && ['input', 'select', 'textarea'].includes(children.type)
+    ? cloneElement(children as ReactElement<Record<string, any>>, {
+      ...(required ? { 'aria-required': true, onBlur: (e: any) => { (children.props as any).onBlur?.(e); setLeft(true); setEmpty(!String(e.target.value ?? '').trim()); }, onInput: (e: any) => { (children.props as any).onInput?.(e); if (left) setEmpty(!String(e.target.value ?? '').trim()); } } : {}),
+      ...(msg ? { 'aria-invalid': true } : {}),
+    })
+    : children;
+  return <label className="f"><span>{label}{required && <span aria-hidden className="req"> *</span>}</span>{child}{hint && <span className="hint">{hint}</span>}{(msg || required) && <span className="err-text" role={msg ? 'alert' : undefined} style={{ minHeight: 16 }}>{msg}</span>}</label>;
 }
+const ModalClose = createContext<() => void>(() => undefined);
+/** Cancel button for dialogs: goes through the same unsaved-changes check as Escape, the backdrop and ✕. */
+export function CancelButton({ children = 'Cancel' }: { children?: ReactNode }) { const close = useContext(ModalClose); return <button className="btn" onClick={close}>{children}</button>; }
 /**
  * Shared dialog. Focus moves into the dialog when it opens, Tab/Shift+Tab stay inside it, Escape and the backdrop close it, and focus returns to
  * the control that opened it (WCAG 2.4.3). The visible heading names the dialog for assistive technology.
+ * Unsaved changes: once the person types or chooses anything, every way of dismissing the dialog first asks "Discard what you entered?"
+ * (UI-026). `missing` lists what still blocks the primary button, so a disabled button is never a mystery.
  */
-export function Modal({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
+export function Modal({ title, onClose, children, footer, missing }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; missing?: string[] }) {
+  const ref = useRef<HTMLDivElement>(null); const [dirty, setDirty] = useState(false); const [asking, setAsking] = useState(false); const keepRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (asking) keepRef.current?.focus(); }, [asking]);
+  const request = useCallback(() => { if (dirty) setAsking(true); else onClose(); }, [dirty, onClose]);
   useEffect(() => { const opener = document.activeElement as HTMLElement | null; ref.current?.focus(); return () => { if (opener && document.contains(opener)) opener.focus(); }; }, []);
-  useEffect(() => { const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose(); window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [onClose]);
+  useEffect(() => { const h = (e: KeyboardEvent) => e.key === 'Escape' && request(); window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [request]);
   const trap = (e: React.KeyboardEvent) => {
     if (e.key !== 'Tab' || !ref.current) return;
     const f = [...ref.current.querySelectorAll<HTMLElement>('button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter((x) => x.offsetParent !== null);
@@ -114,12 +134,17 @@ export function Modal({ title, onClose, children, footer }: { title: string; onC
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   };
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref} onKeyDown={trap}>
-        <div className="modal-h"><h2>{title}</h2><button className="btn btn-sm" onClick={onClose} aria-label="Dismiss dialog">✕</button></div>
-        <div className="modal-b">{children}</div>{footer && <div className="modal-f">{footer}</div>}
+    <ModalClose.Provider value={request}>
+      <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); request(); } }}>
+        <div className="modal" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref} onKeyDown={trap} onInput={() => setDirty(true)} onChange={() => setDirty(true)}>
+          <div className="modal-h"><h2>{title}</h2><button className="btn btn-sm" onClick={request} aria-label="Dismiss dialog">✕</button></div>
+          <div className="modal-b">{children}</div>
+          {asking && <div className="modal-discard notice warn" role="alertdialog" aria-label="Discard changes?"><b>Discard what you entered?</b> <span>Your changes in this dialog will be lost.</span>
+            <span className="row"><button ref={keepRef} className="btn btn-sm btn-green" onClick={() => setAsking(false)} data-testid="keep-editing">Keep editing</button><button className="btn btn-sm btn-danger" onClick={onClose} data-testid="discard-changes">Discard</button></span></div>}
+          {(footer || !!missing?.length) && <div className="modal-f">{!!missing?.length && <span className="small muted modal-missing" data-testid="modal-missing">Still needed: {missing.join(', ')}.</span>}{footer}</div>}
+        </div>
       </div>
-    </div>
+    </ModalClose.Provider>
   );
 }
 /** Runs an async action with busy state + toast feedback. */

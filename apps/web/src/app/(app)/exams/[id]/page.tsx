@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import { post, put, patch, fmtDT, useGet } from '@/api';
 import { useMe } from '@/session';
-import { Async, Badge, Card, Confirm, Field, Modal, Notice, PageHead, Stat, Status, Table, useAction } from '@/ui';
+import { Async, Badge, Card, Confirm, Field, Modal, Notice, PageHead, Stat, Status, Table, useAction, CancelButton } from '@/ui';
 
 function PaperBuilder({ exam, reload }: { exam: any; reload: () => void }) {
   const { run, busy } = useAction(); const cur = useGet<any[]>(`/exams/${exam.id}/paper`); const bank = useGet<any>(`/questions?status=APPROVED&courseId=${exam.courseId}&pageSize=200`);
@@ -42,7 +42,7 @@ function OverrideDialog({ exam, row, onClose, done }: { exam: any; row: any; onC
   const decision = row.admission === 'REVOKED' ? 'GRANT' : 'REVOKE'; const live = row.attempt === 'IN_PROGRESS';
   return (
     <Modal title={`${decision === 'GRANT' ? 'Admit' : 'Withdraw admission of'} ${row.regNo}`} onClose={onClose} footer={<>
-      <button className="btn" onClick={onClose}>Cancel</button>
+      <CancelButton />
       <button className="btn btn-primary" disabled={busy || reason.trim().length < 10 || (live && decision === 'REVOKE' && !force)} onClick={() => run(async () => { await post(`/exams/${exam.id}/candidates/${row.studentId}/override`, { decision, reason: reason.trim(), forceSubmit: force || undefined }); done(); onClose(); }, 'Eligibility decision recorded')}>Record decision</button></>}>
       <div className="stack">
         <Notice tone="warn">This manual decision is permanent in the audit record: your name, the time, the old and new decision and your reason are stored and cannot be edited.</Notice>

@@ -113,7 +113,7 @@ textarea.in { resize: vertical; min-height: 72px; }
 
 /* Modal & toast */
 .overlay { position: fixed; inset: 0; background: rgba(36, 23, 22, 0.55); display: grid; place-items: center; z-index: 50; padding: 16px; }
-.modal { background: var(--white); border-radius: 8px; width: min(560px, 100%); max-height: 90vh; overflow: auto; border: 1px solid var(--rose); }
+.modal { background: var(--white); border-radius: 8px; width: min(560px, 100%); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--rose); } .modal-b { overflow: auto; flex: 1 1 auto; min-height: 0; } .modal-h, .modal-f, .modal-discard { flex: none; }
 .modal-h { padding: 14px 18px; border-bottom: 1px solid var(--rose); display: flex; justify-content: space-between; align-items: center; } .modal-b { padding: 18px; } .modal-f { padding: 12px 18px; border-top: 1px solid var(--rose); display: flex; justify-content: flex-end; gap: 8px; }
 .toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 60; }
 .toast { background: var(--burgundy); color: #fff; padding: 10px 14px; border-radius: 6px; font-size: 13px; max-width: 360px; } .toast.bad { background: var(--crimson); }
@@ -165,7 +165,7 @@ textarea.in { resize: vertical; min-height: 72px; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11.5px; color: var(--ink-2); } .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; border: 1px solid var(--rose); vertical-align: -1px; }
 .bar { height: 6px; background: var(--rose); border-radius: 3px; overflow: hidden; } .bar > i { display: block; height: 100%; background: var(--green); }
 .conn { padding: 8px 24px; font-size: 13px; font-weight: 600; } .conn.off { background: #FDF3F2; color: var(--crimson); border-bottom: 1px solid #F0C9C5; }
-.chip { border: 1px solid var(--rose); background: var(--white); border-radius: 12px; padding: 2px 10px; font-size: 12px; cursor: pointer; font-weight: 600; color: var(--ink-2); } .chip[aria-pressed="true"] { background: var(--maroon); border-color: var(--maroon); color: #fff; }
+.chip { border: 1px solid var(--rose); background: var(--white); border-radius: 12px; padding: 2px 10px; font-size: 12px; cursor: pointer; font-weight: 600; color: var(--ink-2); } .chip[aria-pressed="true"], .chip.on { background: var(--maroon); border-color: var(--maroon); color: #fff; }
 .receipt { text-align: center; padding: 28px; } .receipt .code { font-family: var(--mono); font-size: 28px; font-weight: 700; letter-spacing: 0.06em; color: var(--maroon); margin: 12px 0; }
 
 /* Certificate */
@@ -202,3 +202,10 @@ ul.pal-review { grid-template-columns: repeat(10, 1fr); } @media (max-width: 640
 .skip-link { position: absolute; left: 8px; top: -48px; z-index: 100; background: var(--maroon); color: #fff; padding: 8px 14px; border-radius: 6px; font-weight: 600; text-decoration: none; }
 .skip-link:focus { top: 8px; outline: 3px solid #fff; box-shadow: 0 0 0 5px var(--maroon); }
 main:focus { outline: none; }
+
+.req { color: var(--crimson); font-weight: 700; }
+.modal-discard { margin: 0; border-radius: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.modal-missing { flex: 1 1 100%; margin-right: auto; text-align: left; }
+.modal-f { flex-wrap: wrap; }
+
+.chip:focus-within { outline: 2px solid var(--maroon); outline-offset: 2px; }

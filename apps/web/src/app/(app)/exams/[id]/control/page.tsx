@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, fmtDT, openStream, post, useGet } from '@/api';
 import { useMe } from '@/session';
-import { Async, Badge, Card, Field, Modal, PageHead, Stat, Status, Table, errMsg, useAction, useToast } from '@/ui';
+import { Async, Badge, Card, Field, Modal, PageHead, Stat, Status, Table, errMsg, useAction, useToast, CancelButton } from '@/ui';
 
 type Cmd = 'OPEN_ADMISSION' | 'CLOSE_ADMISSION' | 'START' | 'SUSPEND' | 'RESUME' | 'EXTEND' | 'CLOSE' | 'RECONCILE' | 'INITIATE_SCORING';
 const LABEL: Record<Cmd, string> = { OPEN_ADMISSION: 'Open admission', CLOSE_ADMISSION: 'Stop new entries', START: 'Start examination', SUSPEND: 'Suspend…', RESUME: 'Resume…', EXTEND: 'Extend time…', CLOSE: 'End examination…', RECONCILE: 'Seal expired attempts', INITIATE_SCORING: 'Start scoring' };
@@ -205,7 +205,7 @@ function CommandDialog({ kind, presetScope, d, s, selected, busy, onClose, send,
   const ok = (cb: React.ReactNode) => <label className="row" style={{ alignItems: 'flex-start' }}><input type="checkbox" checked={confirm} onChange={(x) => setConfirm(x.target.checked)} data-testid="confirm-box" /> <span>{cb}</span></label>;
   const title = LABEL[kind as Cmd].replace('…', '');
   let body: React.ReactNode; let footer: React.ReactNode;
-  const cancel = <button className="btn" onClick={onClose}>Cancel</button>;
+  const cancel = <CancelButton />;
   if (kind === 'SUSPEND') {
     body = <div className="stack">{scopeFields}{reasonField}
       <div className="notice small">Clock policy: <b>{e.suspendTimePolicy === 'FREEZE_CLOCK' ? 'frozen — each candidate’s deadline moves later by the time paused' : 'continues — deadlines are not changed and may pass during the suspension'}</b>. Affected candidates cannot answer or submit until you resume.</div>

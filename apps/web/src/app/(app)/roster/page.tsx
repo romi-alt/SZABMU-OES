@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { post, useGet } from '@/api';
 import { useMe } from '@/session';
-import { Async, Badge, Card, Field, Modal, Notice, PageHead, Pager, Table, useAction } from '@/ui';
+import { Async, Badge, Card, Field, Modal, Notice, PageHead, Pager, Table, useAction, CancelButton } from '@/ui';
 
 const HEADER = 'regNo,fullName,dateOfBirth,programCode,semester,batchYear';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -38,7 +38,7 @@ export default function Roster() {
   const parsed = parseCsv(csv); const blocked = !instId || !parsed.rows.length || parsed.problems.length > 0;
   return (
     <>
-      <PageHead title="Student register" sub="The official list of students entitled to create their own account. A student registers with their registration number, date of birth and an emailed code."><button className="btn btn-green" onClick={() => { setImp(true); setDone(''); }}>Import register (CSV)</button></PageHead>
+      <PageHead title="Student register" sub="The official list of students entitled to create their own account. A student registers with their registration number, date of birth and an emailed code."><button className="btn btn-green" onClick={() => { setCsv(''); setImp(true); setDone(''); }}>Import register (CSV)</button></PageHead>
       {done && <Notice tone="ok"><span role="status">{done}</span></Notice>}
       <Card flush>
         <div className="filters">
@@ -54,7 +54,7 @@ export default function Roster() {
             { h: 'Status', cell: (r: any) => r.claimedAt ? <Badge tone="green">Registered</Badge> : <Badge tone="grey">Not registered yet</Badge> },
           ]} /><Pager page={page} total={d.total} size={25} onPage={setPage} /></>}</Async>
       </Card>
-      {imp && <Modal title="Import student register" onClose={() => setImp(false)} footer={<><button className="btn" onClick={() => setImp(false)}>Cancel</button><button className="btn btn-green" disabled={busy || blocked}
+      {imp && <Modal title="Import student register" onClose={() => setImp(false)} footer={<><CancelButton /><button className="btn btn-green" disabled={busy || blocked}
         onClick={() => run(async () => { const r = await post('/roster/import', { institutionId: instId, rows: parsed.rows }); setImp(false); setCsv(''); setDone(`${r.imported} student${r.imported === 1 ? '' : 's'} added to the register.`); st.reload(); })}>Import {parsed.rows.length || ''} {parsed.rows.length === 1 ? 'entry' : 'entries'}</button></>}>
         <div className="stack">
           {choices.length > 1 && <Field label="Institution"><select className="in" value={instId} onChange={(e) => setTarget(e.target.value)}>{choices.map((i: any) => <option key={i.id} value={i.id}>{i.code}</option>)}</select></Field>}

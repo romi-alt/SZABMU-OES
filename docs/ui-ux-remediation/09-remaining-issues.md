@@ -1,6 +1,6 @@
 # 09 — Remaining issues
 
-17 NOT_STARTED, 5 REQUIRES_POLICY_DECISION, 8 FIXED_NOT_FULLY_TESTED.
+15 NOT_STARTED, 5 REQUIRES_POLICY_DECISION, 9 FIXED_NOT_FULLY_TESTED.
 
 - **UI-011** (P2) Global — Muted text token (--ink-3 #8A7A77) — FIXED_NOT_FULLY_TESTED. Not re-measured on every tinted background; axe not re-run across all 197 loads
 - **UI-013** (P2) Dialogs — Modal component — FIXED_NOT_FULLY_TESTED. No dedicated Modal unit spec
@@ -8,7 +8,6 @@
 - **UI-022** (P2) Navigation — Routes reachable but not in the menu — REQUIRES_POLICY_DECISION. Whether hidden-but-reachable routes should be added to menus or blocked is a product/permissions decision (docs/route-permissions.md).
 - **UI-023** (P2) Dashboards — Tile-only dashboards — NOT_STARTED. Open: see audit register UI-023
 - **UI-024** (P2) Staff & accounts — Account list — FIXED_NOT_FULLY_TESTED. Destructive buttons (Deactivate, Reset password) in this list are still unconfirmed
-- **UI-026** (P2) Forms — Create/Save buttons — NOT_STARTED. Open: see audit register UI-026
 - **UI-027** (P2) Paper builder — Question picker — NOT_STARTED. Open: see audit register UI-027
 - **UI-028** (P2) Search / filter / pagination — List state — NOT_STARTED. Open: see audit register UI-028
 - **UI-030** (P2) Control centre — Dialog confirm labels — FIXED_NOT_FULLY_TESTED. No spec asserts the new wording
@@ -17,7 +16,7 @@
 - **UI-034** (P2) Student list — Row actions / detail — REQUIRES_POLICY_DECISION. Adds a new student detail screen — new feature, needs scope approval.
 - **UI-035** (P2) Lecturer portal — Menu/dashboard — REQUIRES_POLICY_DECISION. Lecturer portal content is a product decision.
 - **UI-036** (P2) Exam header — Sticky header — NOT_STARTED. Open: see audit register UI-036
-- **UI-037** (P2) Charts/tiles — aria-pressed on non-interactive chips — NOT_STARTED. Open: see audit register UI-037
+- **UI-037** (P2) Charts/tiles — aria-pressed on non-interactive chips — FIXED_NOT_FULLY_TESTED. Other remaining aria-pressed uses are real toggle buttons (kept); not re-audited with axe
 - **UI-038** (P2) Audit trail — Table — NOT_STARTED. Open: see audit register UI-038
 - **UI-039** (P3) Auth pages — Layout at 360–390 px — FIXED_NOT_FULLY_TESTED. The 401 console probe on public pages (second half of the finding) is NOT addressed; verify page not re-tested
 - **UI-040** (P3) Entry — Reload behaviour — NOT_STARTED. Open: see audit register UI-040
@@ -33,4 +32,4 @@
 - **UI-051** (P2) Eligibility feedback — Empty state for an excluded candidate — NOT_STARTED. Open: see audit register UI-051
 - **UI-052** (P3) Long answer options — Option cards on phones — NOT_STARTED. Open: see audit register UI-052
 
-Suggested next batch: UI-026/027/028 (forms, paper picker, list state), UI-016 button set, then, then the P3 mobile/tokens set.
+Suggested next batch: UI-027/028 (paper picker, list state), UI-016 button set, then, then the P3 mobile/tokens set.
