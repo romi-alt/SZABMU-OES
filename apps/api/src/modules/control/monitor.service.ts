@@ -3,6 +3,7 @@ import { HEARTBEAT_STALE_SECONDS } from '@oes/shared';
 import { Prisma } from '../../generated/prisma/client';
 import { scope, type AuthUser } from '../../common/auth';
 import { notFound } from '../../common/errors';
+import { MetricsService } from '../../infra/metrics.service';
 import { PrismaService } from '../../infra/prisma.service';
 import { RedisService } from '../../infra/redis.service';
 import { ExamEventsService, type Subscriber, type Viewer } from './events.service';
@@ -26,7 +27,7 @@ export type CandidateFilter = (typeof CANDIDATE_STATUS)[number];
 @Injectable()
 export class MonitorService implements OnModuleInit {
   private readonly cache = new Map<string, { at: number; p: Promise<Raw> }>();
-  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly events: ExamEventsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly events: ExamEventsService, private readonly metrics: MetricsService) {}
   onModuleInit() { this.events.onTick = (examId, subs) => this.pushStats(examId, subs); }
 
   // ───────────── who may look at what ─────────────
@@ -53,7 +54,8 @@ export class MonitorService implements OnModuleInit {
   private raw(examId: string): Promise<Raw> {
     const hit = this.cache.get(examId);
     if (hit && Date.now() - hit.at < TTL_MS) return hit.p;
-    const p = this.compute(examId);
+    const t0 = process.hrtime.bigint();
+    const p = this.compute(examId).then((r) => { this.metrics.monitorCompute.observe({}, Number(process.hrtime.bigint() - t0) / 1e9); return r; });
     this.cache.set(examId, { at: Date.now(), p });
     p.catch(() => this.cache.delete(examId));
     if (this.cache.size > 200) for (const [k, v] of this.cache) if (Date.now() - v.at > 60_000) this.cache.delete(k);
