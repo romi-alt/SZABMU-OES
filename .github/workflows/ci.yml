@@ -1,5 +1,9 @@
 name: CI
-on: { push: { branches: [main] }, pull_request: {} }
+# Pushes to claude/** branches run CI too, so work that lands directly on a shared branch is checked, not only pull requests.
+# (A branch with an open PR therefore gets two runs per push: one for the branch, one for the merge with its base.)
+on: { push: { branches: [main, 'claude/**'] }, pull_request: {} }
+# A newer push to the same ref supersedes a run that is still going.
+concurrency: { group: 'ci-${{ github.ref }}', cancel-in-progress: true }
 jobs:
   verify:
     runs-on: ubuntu-latest
