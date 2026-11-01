@@ -1,5 +1,5 @@
 'use client';
-import Image from 'next/image';
+import { BrandLogo } from '@/brand';
 import { useParams } from 'next/navigation';
 import { fmtDate, useGet } from '@/api';
 import { Async, PageHead } from '@/ui';
@@ -11,7 +11,7 @@ export default function Certificate() {
       <PageHead title="Certificate"><button className="btn btn-green no-print" onClick={() => window.print()}>Print certificate</button></PageHead>
       <Async state={st}>{(c) => (
         <div className="cert" data-testid="certificate">
-          <div style={{ width: 300, margin: '0 auto 18px' }}><Image src="/logo.png" alt="Shaheed Zulfiqar Ali Bhutto Medical University" width={398} height={100} style={{ width: '100%', height: 'auto' }} /></div>
+          <BrandLogo className="cert-logo" />
           <h1>Certificate of Examination Success</h1>
           <p className="muted">This is to certify that</p>
           <div className="name">{c.student.fullName}</div>
