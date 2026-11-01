@@ -14,13 +14,16 @@ export class ReportsService {
     const now = new Date();
     switch (u.role) {
       case 'STUDENT': {
-        const [upcoming, results, next] = await Promise.all([
+        const [upcoming, results, next, openNow, scheduled] = await Promise.all([
           this.prisma.examCandidate.count({ where: { studentId: u.studentId, exam: { status: { in: ['SCHEDULED', 'LIVE'] }, closesAt: { gt: now } } } }),
           this.prisma.result.findMany({ where: { studentId: u.studentId, exam: { resultBatch: { status: 'PUBLISHED' } } }, select: { percent: true, status: true } }),
           this.prisma.examCandidate.findFirst({ where: { studentId: u.studentId, exam: { status: { in: ['SCHEDULED', 'LIVE'] }, closesAt: { gt: now } } }, orderBy: { exam: { opensAt: 'asc' } }, include: { exam: { select: { title: true, opensAt: true } } } }),
+          // `openNow` / `scheduled` replace the old catch-all `upcoming` for display (kept for compatibility): an exam that is running is not "upcoming".
+          this.prisma.examCandidate.count({ where: { studentId: u.studentId, status: 'ADMITTED', exam: { status: { in: ['ADMISSION_OPEN', 'LIVE', 'SUSPENDED'] }, closesAt: { gt: now } } } }),
+          this.prisma.examCandidate.count({ where: { studentId: u.studentId, exam: { status: 'SCHEDULED', closesAt: { gt: now } } } }),
         ]);
         const sat = results.filter((r) => r.status !== 'ABSENT');
-        return { upcoming, completed: sat.length, passed: sat.filter((r) => r.status === 'PASS').length, avgPercent: sat.length ? Math.round((sat.reduce((a, b) => a + b.percent, 0) / sat.length) * 10) / 10 : null, next: next?.exam ?? null };
+        return { upcoming, openNow, scheduled, completed: sat.length, passed: sat.filter((r) => r.status === 'PASS').length, avgPercent: sat.length ? Math.round((sat.reduce((a, b) => a + b.percent, 0) / sat.length) * 10) / 10 : null, next: next?.exam ?? null };
       }
       case 'LECTURER': {
         const [mine, bySt, review, students] = await Promise.all([
@@ -41,13 +44,15 @@ export class ReportsService {
         return { questionsToReview: qs, papersPending: papers, liveExams: live, resultsToApprove: results };
       }
       case 'CAMPUS_ADMIN': {
-        const [students, users, exams, incidents] = await Promise.all([
+        const [students, users, exams, incidents, live, scheduled] = await Promise.all([
           this.prisma.student.count({ where: { institutionId: sf } }),
           this.prisma.user.count({ where: { institutions: { some: { institutionId: sf } }, role: { in: ['STUDENT', 'LECTURER', 'INVIGILATOR'] } } }),
           this.prisma.exam.count({ where: { ...examScope, status: { in: ['SCHEDULED', 'LIVE'] } } }),
           this.prisma.incident.count({ where: { institutionId: sf, status: { in: ['OPEN', 'INVESTIGATING'] } } }),
+          this.prisma.exam.count({ where: { ...examScope, status: { in: ['ADMISSION_OPEN', 'LIVE', 'SUSPENDED', 'CLOSING'] } } }),
+          this.prisma.exam.count({ where: { ...examScope, status: 'SCHEDULED' } }),
         ]);
-        return { students, staffAndStudents: users, upcomingExams: exams, openIncidents: incidents };
+        return { students, staffAndStudents: users, upcomingExams: exams, liveExams: live, scheduledExams: scheduled, openIncidents: incidents };
       }
       case 'INVIGILATOR': {
         const [duties, live, mine] = await Promise.all([

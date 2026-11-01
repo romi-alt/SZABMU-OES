@@ -61,6 +61,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const crumb = nav.items.find((i) => path.startsWith(i.href))?.label ?? '';
   return (
     <div className="shell">
+        <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); const m = document.getElementById('main'); m?.focus(); m?.scrollIntoView(); }}>Skip to main content</a>
       <aside className={`sidebar ${navOpen ? 'open' : ''}`} id="primary-nav" aria-label="Site navigation">
         <button className="btn btn-sm nav-close" onClick={() => { setNavOpen(false); menuBtn.current?.focus(); }} aria-label="Close menu">Close ✕</button>
         <BrandLogo plate priority className="brand" />
@@ -77,7 +78,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <div className="crumbs">{ROLE_LABEL[me.role]} › <b>{crumb}</b></div>
           <div className="row"><Bell /><span className="small muted user-name" style={{ textAlign: 'right' }}><b style={{ color: 'var(--ink)' }}>{me.fullName}</b></span><button className="btn btn-sm" onClick={logout}>Sign out</button></div>
         </header>
-        <main className="content" id="main">{me.mustChangePw && path !== '/profile' ? <ForceChange /> : children}</main>
+        <main className="content" id="main" tabIndex={-1}>{me.mustChangePw && path !== '/profile' ? <ForceChange /> : children}</main>
       </div>
     </div>
   );

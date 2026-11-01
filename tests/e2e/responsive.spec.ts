@@ -78,7 +78,7 @@ test.describe.serial('exam player on a phone', () => {
     const courses = await (await examiner.get('/api/courses')).json(); const course = (Array.isArray(courses) ? courses : courses.items).find((c: { code: string }) => c.code === 'MBBS-PATH-4');
     const insts = await (await examiner.get('/api/institutions')).json(); const ids = (Array.isArray(insts) ? insts : insts.items).filter((i: { code: string }) => ['DMC-A', 'DMC-B'].includes(i.code)).map((i: { id: string }) => i.id);
     const qs = await (await examiner.get('/api/questions?status=APPROVED&pageSize=100')).json(); const qids = (qs.items as { id: string; courseId: string }[]).filter((q) => q.courseId === course.id).slice(0, 5).map((q) => q.id);
-    const mk = await examiner.post('/api/exams', { data: { code: `RS-${Date.now() % 1e7}`, title: 'Responsive drill', courseId: course.id, term: '2026-SPRING', opensAt: new Date(Date.now() + 3600e3).toISOString(), closesAt: new Date(Date.now() + 86400e3).toISOString(), durationMin: 45, passPercent: 50, negativeMarking: 0, shuffleQuestions: true, institutionIds: ids, controlMode: 'MANUAL', timingPolicy: 'INDIVIDUAL' } });
+    const mk = await examiner.post('/api/exams', { data: { code: `RS-${Math.random().toString(36).replace(/[0-9.]/g, '').slice(0, 6).toUpperCase().padEnd(6, 'X')}`, title: 'Responsive drill', courseId: course.id, term: '2026-SPRING', opensAt: new Date(Date.now() + 3600e3).toISOString(), closesAt: new Date(Date.now() + 86400e3).toISOString(), durationMin: 45, passPercent: 50, negativeMarking: 0, shuffleQuestions: true, institutionIds: ids, controlMode: 'MANUAL', timingPolicy: 'INDIVIDUAL' } });
     expect(mk.ok(), await mk.text()).toBe(true); examId = (await mk.json()).id;
     expect((await examiner.put(`/api/exams/${examId}/paper`, { data: { items: qids.map((questionId) => ({ questionId, marks: 2 })) } })).ok()).toBe(true);
     expect((await examiner.post(`/api/exams/${examId}/paper/submit`, { data: {} })).ok()).toBe(true);
@@ -97,7 +97,7 @@ test.describe.serial('exam player on a phone', () => {
     expect((await opt.boundingBox())!.height).toBeGreaterThanOrEqual(40);
     await opt.click(); await expect(page.getByTestId('save-state')).toHaveText('✓ Saved');
     await page.getByTestId('palette-toggle').click(); await expect(page.locator('#question-navigator')).toBeVisible();
-    await page.locator('#question-navigator').getByRole('listitem', { name: /^Question 3,/ }).click();
+    await page.locator('#question-navigator').getByRole('button', { name: /^Question 3,/ }).click();
     await expect(page.locator('#question-navigator')).toBeHidden();                                                // selecting a question closes the sheet
     await expect(page.locator('.q-head span').first()).toContainText('03');
     await page.getByTestId('palette-toggle').click(); await page.getByRole('button', { name: 'Close ✕' }).click(); await expect(page.locator('#question-navigator')).toBeHidden();
