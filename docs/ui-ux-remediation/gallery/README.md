@@ -1,4 +1,4 @@
-# UI gallery — premium UI, every role, menu page and key scenario
+# UI gallery — current UI, every role, menu page and key scenario
 
 Captured from the real app (built web + real API, disposable seeded database) at 1280×800 and 390×844. Thumbnails: `sheets/`.
 
@@ -85,35 +85,44 @@ Captured from the real app (built web + real API, disposable seeded database) at
 | 079 | [super admin notifications panel](079-super-admin-notifications-panel.jpg) |
 | 080 | [super admin dashboard on phone](080-super-admin-dashboard-on-phone.jpg) |
 | 081 | [super admin menu drawer on phone](081-super-admin-menu-drawer-on-phone.jpg) |
-| 082 | [register institution dialog](082-register-institution-dialog.jpg) |
-| 083 | [discard changes prompt](083-discard-changes-prompt.jpg) |
-| 084 | [deactivate institution confirmation](084-deactivate-institution-confirmation.jpg) |
-| 085 | [new staff account dialog](085-new-staff-account-dialog.jpg) |
-| 086 | [assign lecturer dialog](086-assign-lecturer-dialog.jpg) |
-| 087 | [profile phone validation](087-profile-phone-validation.jpg) |
-| 088 | [two factor setup](088-two-factor-setup.jpg) |
-| 089 | [add student dialog](089-add-student-dialog.jpg) |
-| 090 | [student register import with line errors](090-student-register-import-with-line-errors.jpg) |
-| 091 | [enrolment with cohort and eligibility](091-enrolment-with-cohort-and-eligibility.jpg) |
-| 092 | [live monitor for campus admin](092-live-monitor-for-campus-admin.jpg) |
-| 093 | [schedule a new examination dialog](093-schedule-a-new-examination-dialog.jpg) |
-| 094 | [new question dialog](094-new-question-dialog.jpg) |
-| 095 | [exam detail](095-exam-detail.jpg) |
-| 096 | [no access page](096-no-access-page.jpg) |
-| 097 | [control centre](097-control-centre.jpg) |
-| 098 | [end examination dialog](098-end-examination-dialog.jpg) |
-| 099 | [student exam schedule with live exam](099-student-exam-schedule-with-live-exam.jpg) |
-| 100 | [exam entry instructions](100-exam-entry-instructions.jpg) |
-| 101 | [question 1](101-question-1.jpg) |
-| 102 | [answer saved](102-answer-saved.jpg) |
-| 103 | [answer cleared with undo](103-answer-cleared-with-undo.jpg) |
-| 104 | [marked for review](104-marked-for-review.jpg) |
-| 105 | [skipped a question palette states](105-skipped-a-question-palette-states.jpg) |
-| 106 | [all questions on one page](106-all-questions-on-one-page.jpg) |
-| 107 | [offline answer kept on this device](107-offline-answer-kept-on-this-device.jpg) |
-| 108 | [review your answers](108-review-your-answers.jpg) |
-| 109 | [submit examination confirmation](109-submit-examination-confirmation.jpg) |
-| 110 | [student schedule on phone](110-student-schedule-on-phone.jpg) |
-| 111 | [exam entry on phone](111-exam-entry-on-phone.jpg) |
-| 112 | [exam player on phone](112-exam-player-on-phone.jpg) |
-| 113 | [question palette sheet on phone](113-question-palette-sheet-on-phone.jpg) |
+| 082 | [student not eligible dashboard notice](082-student-not-eligible-dashboard-notice.jpg) |
+| 083 | [student not eligible schedule notice](083-student-not-eligible-schedule-notice.jpg) |
+| 084 | [certificate not available](084-certificate-not-available.jpg) |
+| 085 | [register institution dialog](085-register-institution-dialog.jpg) |
+| 086 | [discard changes prompt](086-discard-changes-prompt.jpg) |
+| 087 | [deactivate institution confirmation](087-deactivate-institution-confirmation.jpg) |
+| 088 | [new staff account dialog](088-new-staff-account-dialog.jpg) |
+| 089 | [assign lecturer dialog](089-assign-lecturer-dialog.jpg) |
+| 090 | [profile phone validation](090-profile-phone-validation.jpg) |
+| 091 | [two factor setup](091-two-factor-setup.jpg) |
+| 092 | [add student dialog](092-add-student-dialog.jpg) |
+| 093 | [empty list explains the filter](093-empty-list-explains-the-filter.jpg) |
+| 094 | [student register import with line errors](094-student-register-import-with-line-errors.jpg) |
+| 095 | [enrolment with cohort and eligibility](095-enrolment-with-cohort-and-eligibility.jpg) |
+| 096 | [live monitor for campus admin](096-live-monitor-for-campus-admin.jpg) |
+| 097 | [examinations list](097-examinations-list.jpg) |
+| 098 | [schedule a new examination dialog](098-schedule-a-new-examination-dialog.jpg) |
+| 099 | [new question dialog](099-new-question-dialog.jpg) |
+| 100 | [exam detail](100-exam-detail.jpg) |
+| 101 | [no access page](101-no-access-page.jpg) |
+| 102 | [paper builder question bank](102-paper-builder-question-bank.jpg) |
+| 103 | [paper builder ordered paper](103-paper-builder-ordered-paper.jpg) |
+| 104 | [examinations list for the controller with control centre link](104-examinations-list-for-the-controller-with-control-centre-link.jpg) |
+| 105 | [control centre](105-control-centre.jpg) |
+| 106 | [end examination dialog](106-end-examination-dialog.jpg) |
+| 107 | [student exam schedule with live exam](107-student-exam-schedule-with-live-exam.jpg) |
+| 108 | [exam entry instructions](108-exam-entry-instructions.jpg) |
+| 109 | [question 1](109-question-1.jpg) |
+| 110 | [answer saved](110-answer-saved.jpg) |
+| 111 | [answer cleared with undo](111-answer-cleared-with-undo.jpg) |
+| 112 | [marked for review](112-marked-for-review.jpg) |
+| 113 | [moved on without answering is not answered](113-moved-on-without-answering-is-not-answered.jpg) |
+| 114 | [reload resumes directly with a notice](114-reload-resumes-directly-with-a-notice.jpg) |
+| 115 | [all questions on one page](115-all-questions-on-one-page.jpg) |
+| 116 | [offline answer kept on this device](116-offline-answer-kept-on-this-device.jpg) |
+| 117 | [review your answers](117-review-your-answers.jpg) |
+| 118 | [submit examination confirmation](118-submit-examination-confirmation.jpg) |
+| 119 | [student schedule on phone](119-student-schedule-on-phone.jpg) |
+| 120 | [exam entry on phone](120-exam-entry-on-phone.jpg) |
+| 121 | [exam player on phone slim header and action bar](121-exam-player-on-phone-slim-header-and-action-bar.jpg) |
+| 122 | [question palette sheet on phone](122-question-palette-sheet-on-phone.jpg) |
