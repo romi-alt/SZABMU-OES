@@ -31,6 +31,10 @@ export const PERMISSIONS = {
   'exam.schedule': ['EXAMINER', 'CCE', 'SUPER_ADMIN'],
   'exam.sit': ['STUDENT'],
   'invigilator.assign': ['SUPER_ADMIN', 'CCE', 'EXAMINER', 'CAMPUS_ADMIN'],
+  // live exam control (central command centre). Campus staff keep campus-scoped monitoring via `invigilation.*` and gain no exam-wide control.
+  'exam.control.view': ['EXAMINER', 'CCE', 'SUPER_ADMIN'],
+  'exam.control': ['CCE', 'SUPER_ADMIN'],
+  'exam.control.policy': ['CCE', 'SUPER_ADMIN'],
   // invigilation
   'invigilation.monitor': ['INVIGILATOR', 'CAMPUS_ADMIN', 'EXAMINER', 'CCE', 'SUPER_ADMIN'],
   'invigilation.intervene': ['INVIGILATOR', 'CCE', 'SUPER_ADMIN'],

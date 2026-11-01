@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { SAVE_GRACE_SECONDS, computeDeadline, seededOrder } from '@oes/shared';
+import { SAVE_GRACE_SECONDS, computeDeadline, computeSyncDeadline, seededOrder } from '@oes/shared';
+import { startableStates, type ExamState } from '../control/exam-state';
 import { answerDigest, receiptCode } from '@oes/shared/server';
 import { PrismaService } from '../../infra/prisma.service';
 import { RedisService } from '../../infra/redis.service';
@@ -55,24 +56,27 @@ export class DeliveryService {
     const studentId = this.studentIdOf(u);
     const now = await this.prisma.dbNow();
     const cands = await this.prisma.examCandidate.findMany({
-      where: { studentId, exam: { status: { in: ['SCHEDULED', 'LIVE', 'CLOSED', 'RESULT_PENDING', 'PUBLISHED'] } } },
+      where: { studentId, exam: { status: { in: ['SCHEDULED', 'ADMISSION_OPEN', 'LIVE', 'SUSPENDED', 'CLOSING', 'CLOSED', 'SCORING', 'RESULT_PENDING', 'PUBLISHED'] } } },
       include: { exam: { include: { course: { select: { code: true, title: true, semester: true } }, _count: { select: { questions: true } } } } },
       orderBy: { exam: { opensAt: 'asc' } },
     });
-    const attempts = await this.prisma.attempt.findMany({ where: { studentId, examId: { in: cands.map((c) => c.examId) } }, select: { id: true, examId: true, status: true, receiptCode: true, submittedAt: true, deadlineAt: true } });
+    const attempts = await this.prisma.attempt.findMany({ where: { studentId, examId: { in: cands.map((c) => c.examId) } }, select: { id: true, examId: true, status: true, receiptCode: true, submittedAt: true, deadlineAt: true, suspendedAt: true } });
     const am = new Map(attempts.map((a) => [a.examId, a]));
     return {
       serverNow: now,
       items: cands.map((c) => {
         const a = am.get(c.examId) ?? null;
-        const open = ['SCHEDULED', 'LIVE'].includes(c.exam.status) && now >= c.exam.opensAt && now < c.exam.closesAt;
+        // A NEW attempt needs the control state to allow entry (admission open, not suspended, not closed) and the window; AUTOMATIC exams also follow the clock.
+        const open = startableStates(c.exam.controlMode).includes(c.exam.status as ExamState) && !c.exam.admissionClosedAt && now < c.exam.closesAt
+          && (c.exam.controlMode === 'MANUAL' || !!c.exam.officialStartAt || now >= c.exam.opensAt);
         const inProgress = a?.status === 'IN_PROGRESS';
         // A new attempt needs an ADMITTED roster decision; resuming an in-progress attempt never re-evaluates eligibility.
-        const canStart = (c.status === 'ADMITTED' && open && !a) || (open && inProgress) || (inProgress && now < new Date(a!.deadlineAt.getTime() + SAVE_GRACE_SECONDS * 1000));
+        const canStart = (c.status === 'ADMITTED' && open && !a) || (open && inProgress) || (inProgress && (!!a!.suspendedAt || now < new Date(a!.deadlineAt.getTime() + SAVE_GRACE_SECONDS * 1000)));
         return {
           examId: c.examId, code: c.exam.code, title: c.exam.title, course: c.exam.course, status: c.exam.status, opensAt: c.exam.opensAt, closesAt: c.exam.closesAt,
           durationMin: c.exam.durationMin + c.extraTimeMin, totalMarks: c.exam.totalMarks, questionCount: c.exam._count.questions, instructions: c.exam.instructions, negativeMarking: c.exam.negativeMarking,
-          attempt: a && { id: a.id, status: a.status, receiptCode: a.receiptCode, submittedAt: a.submittedAt }, canStart,
+          attempt: a && { id: a.id, status: a.status, receiptCode: a.receiptCode, submittedAt: a.submittedAt, deadlineAt: a.deadlineAt }, canStart, timingPolicy: c.exam.timingPolicy, controlMode: c.exam.controlMode, suspended: !!a?.suspendedAt,
+          admission: c.exam.status === 'ADMISSION_OPEN' ? 'OPEN' : c.exam.admissionClosedAt ? 'CLOSED' : undefined,
         };
       }),
     };
@@ -106,18 +110,25 @@ export class DeliveryService {
 
     let attempt = await this.prisma.attempt.findUnique({ where: { examId_studentId: { examId, studentId } } });
     if (attempt && attempt.status !== 'IN_PROGRESS') throw conflict('ALREADY_SUBMITTED', 'You have already submitted this examination', { receiptCode: attempt.receiptCode, submittedAt: attempt.submittedAt });
-    if (attempt && now.getTime() > attempt.deadlineAt.getTime() + SAVE_GRACE_SECONDS * 1000) {
+    if (attempt && (await this.isExpired(attempt, now))) {
       await this.finalize(attempt.id, { mode: 'AUTO' });
       throw conflict('TIME_EXPIRED', 'Your time has ended; the attempt was submitted automatically');
     }
     if (!attempt) {
-      if (!['SCHEDULED', 'LIVE'].includes(exam.status) || exam.paperStatus !== 'APPROVED') throw conflict('NOT_AVAILABLE', 'This examination is not available');
-      if (now < exam.opensAt) throw conflict('NOT_OPEN', 'The examination has not opened yet', { opensAt: exam.opensAt, serverNow: now });
+      if (exam.admissionClosedAt && ['SCHEDULED', 'ADMISSION_OPEN', 'LIVE', 'SUSPENDED', 'CLOSING'].includes(exam.status)) throw conflict('ADMISSION_CLOSED', 'Admission to this examination has closed. Contact the examination office.', { status: exam.status, serverNow: now });
+      if (exam.status === 'SUSPENDED') throw conflict('EXAM_SUSPENDED', 'The examination is suspended. Wait for instructions from the examination office.', { status: exam.status, serverNow: now });
+      if (!startableStates(exam.controlMode).includes(exam.status as ExamState) || exam.paperStatus !== 'APPROVED') throw conflict('NOT_AVAILABLE', 'This examination is not available', { status: exam.status, serverNow: now });
+      if (exam.admissionClosedAt) throw conflict('ADMISSION_CLOSED', 'Admission to this examination has closed. Contact the examination office.', { status: exam.status, serverNow: now });
+      const hold = await this.prisma.examSuspension.findFirst({ where: { examId, resumedAt: null, OR: [{ scope: 'CAMPUS', institutionId: cand.institutionId }, { scope: 'CANDIDATES', studentIds: { has: studentId } }] }, select: { id: true } });
+      if (hold) throw conflict('EXAM_SUSPENDED', 'Your examination is suspended. Wait for instructions from the examination office.', { status: exam.status, serverNow: now });
+      if (exam.controlMode === 'AUTOMATIC' && !exam.officialStartAt && now < exam.opensAt) throw conflict('NOT_OPEN', 'The examination has not opened yet', { opensAt: exam.opensAt, serverNow: now });
       if (now >= exam.closesAt) throw conflict('CLOSED', 'The examination window has closed');
+      // SYNCHRONIZED: candidates may enter the lobby once admission is open, but the paper is only delivered when the controller starts the exam.
+      if (exam.timingPolicy === 'SYNCHRONIZED' && exam.status !== 'LIVE') throw conflict('WAITING_FOR_START', 'You are admitted. The examination has not been started yet — please wait.', { status: exam.status, serverNow: now, timingPolicy: exam.timingPolicy });
       const admission = await this.admit(u, cand, exam, now);
       const paper = await this.paperFor(examId);
       if (!paper.length) throw conflict('NOT_AVAILABLE', 'This examination has no questions');
-      const deadline = computeDeadline({ startedAt: now, durationMin: exam.durationMin, extraTimeMin: cand.extraTimeMin, windowEndsAt: exam.closesAt });
+      const deadline = exam.timingPolicy === 'SYNCHRONIZED' ? await this.syncDeadline(exam, cand.extraTimeMin) : computeDeadline({ startedAt: now, durationMin: exam.durationMin, extraTimeMin: cand.extraTimeMin, windowEndsAt: exam.closesAt });
       const id = randomUUID();
       const ids = paper.map((q) => q.id);
       const order = exam.shuffleQuestions ? seededOrder(ids, id) : ids;
@@ -147,11 +158,30 @@ export class DeliveryService {
     const answers = await this.prisma.attemptAnswer.findMany({ where: { attemptId: fresh.id } });
     return {
       attempt: { id: fresh.id, status: fresh.status, startedAt: fresh.startedAt, deadlineAt: fresh.deadlineAt, clientEpoch: fresh.clientEpoch },
+      control: { examStatus: exam.status, suspended: !!fresh.suspendedAt, timingPolicy: exam.timingPolicy },
       serverNow: now,
       exam: { id: exam.id, code: exam.code, title: exam.title, durationMin: exam.durationMin, totalMarks: exam.totalMarks, instructions: exam.instructions, negativeMarking: exam.negativeMarking },
       questions: fresh.questionOrder.map((id, i) => ({ ...byId.get(id)!, number: i + 1 })),
       answers: answers.map((a) => ({ examQuestionId: a.examQuestionId, selectedLabel: a.selectedLabel, state: a.state, markedForReview: a.markedForReview, visited: a.visited, revision: a.revision })),
     };
+  }
+
+  /** Expired on the DATABASE-derived clock: deadline + grace, plus the paused time for an attempt frozen by a FREEZE_CLOCK suspension. */
+  private async isExpired(a: { deadlineAt: Date; suspendedAt: Date | null; suspensionId: string | null }, now: Date): Promise<boolean> {
+    let offset = 0;
+    if (a.suspendedAt && a.suspensionId) {
+      const sp = await this.prisma.examSuspension.findUnique({ where: { id: a.suspensionId }, select: { timePolicy: true } });
+      if (sp?.timePolicy === 'FREEZE_CLOCK') offset = now.getTime() - a.suspendedAt.getTime();
+    }
+    return now.getTime() > a.deadlineAt.getTime() + offset + SAVE_GRACE_SECONDS * 1000;
+  }
+
+  /** One shared clock for SYNCHRONIZED exams: official start + duration + accommodation + exam-wide extensions + completed exam-wide pauses, capped by the window. */
+  private async syncDeadline(exam: { id: string; durationMin: number; closesAt: Date; opensAt: Date; officialStartAt: Date | null }, extraTimeMin: number): Promise<Date> {
+    const r = (await this.prisma.$queryRaw<{ ext: number; paused: number }[]>`
+      SELECT COALESCE((SELECT sum(minutes) FROM exam_extensions WHERE "examId" = ${exam.id}::uuid AND scope = 'EXAM'), 0)::int AS ext,
+             COALESCE((SELECT sum("pausedSeconds") FROM exam_suspensions WHERE "examId" = ${exam.id}::uuid AND scope = 'EXAM' AND "timePolicy" = 'FREEZE_CLOCK'), 0)::int AS paused`)[0]!;
+    return computeSyncDeadline({ officialStartAt: exam.officialStartAt ?? exam.opensAt, durationMin: exam.durationMin, extraTimeMin, examExtensionMin: r.ext, pausedSeconds: r.paused, windowEndsAt: exam.closesAt });
   }
 
   // ───────────── answer saving ─────────────
@@ -168,7 +198,7 @@ export class DeliveryService {
       WITH a AS (
         SELECT id, "examId" FROM attempts
         WHERE id = ${attemptId}::uuid AND "studentId" = ${studentId}::uuid AND status = 'IN_PROGRESS'
-          AND "activeClientId" = ${d.clientId}
+          AND "activeClientId" = ${d.clientId} AND "suspendedAt" IS NULL
           AND "deadlineAt" + make_interval(secs => ${SAVE_GRACE_SECONDS}::int) > clock_timestamp()
         FOR KEY SHARE
       ), q AS (
@@ -210,24 +240,38 @@ export class DeliveryService {
     if (!a || a.studentId !== studentId) return new AppError(404, 'NOT_FOUND', 'Attempt not found');
     if (a.status !== 'IN_PROGRESS') return conflict('ATTEMPT_CLOSED', 'This attempt has already been submitted', { receiptCode: a.receiptCode });
     if (a.activeClientId !== clientId) return conflict('SESSION_SUPERSEDED', 'This examination is open in another window or device. Reload to continue there.');
-    return conflict('TIME_EXPIRED', 'The examination time has ended');
+    if (a.suspendedAt) return conflict('EXAM_SUSPENDED', 'The examination is suspended. Your saved answers are safe; wait for instructions from the examination office.');
+    // Only claim expiry if the database clock says so. Otherwise the state changed between the refused write and this diagnosis (for example the
+    // exam was resumed): tell the client to retry rather than make it believe its time is up.
+    if (await this.isExpired(a, await this.prisma.dbNow())) return conflict('TIME_EXPIRED', 'The examination time has ended');
+    return conflict('STATE_CHANGED', 'The examination state changed while saving. Retrying.');
   }
 
+  /**
+   * The candidate's authoritative clock/state check (the client also calls it whenever an SSE event arrives). One read, database clock:
+   * deadline, suspension, exam state and expiry are all computed by PostgreSQL.
+   */
   async heartbeat(u: AuthUser, attemptId: string, clientId: string, online = true) {
     const studentId = this.studentIdOf(u);
-    const rows = await this.prisma.$queryRaw<{ id: string; examId: string; studentId: string; status: string; deadlineAt: Date; activeClientId: string | null; now: Date }[]>`
-      SELECT id, "examId", "studentId", status, "deadlineAt", "activeClientId", clock_timestamp() AS now FROM attempts WHERE id = ${attemptId}::uuid`;
+    const rows = await this.prisma.$queryRaw<{ id: string; examId: string; studentId: string; status: string; deadlineAt: Date; activeClientId: string | null; suspendedAt: Date | null; suspensionPolicy: string | null; examStatus: string; stateVersion: number; inst: string; expired: boolean; now: Date }[]>`
+      SELECT a.id, a."examId", a."studentId", a.status, a."deadlineAt", a."activeClientId", a."suspendedAt", sp."timePolicy"::text AS "suspensionPolicy", e.status::text AS "examStatus", e."stateVersion", s."institutionId" AS inst,
+             (a."deadlineAt" + make_interval(secs => ${SAVE_GRACE_SECONDS}::int)
+               + CASE WHEN a."suspendedAt" IS NOT NULL AND sp."timePolicy" = 'FREEZE_CLOCK' THEN clock_timestamp() - a."suspendedAt" ELSE interval '0' END < clock_timestamp()) AS expired,
+             clock_timestamp() AS now
+      FROM attempts a JOIN exams e ON e.id = a."examId" JOIN students s ON s.id = a."studentId" LEFT JOIN exam_suspensions sp ON sp.id = a."suspensionId" WHERE a.id = ${attemptId}::uuid`;
     const a = rows[0];
     if (!a || a.studentId !== studentId) throw notFound('Attempt');
     const now = a.now;
-    if (a.status === 'IN_PROGRESS' && now.getTime() > a.deadlineAt.getTime() + SAVE_GRACE_SECONDS * 1000) {
+    if (a.status === 'IN_PROGRESS' && a.expired) {
       await this.finalize(a.id, { mode: 'AUTO' });
-      return { status: 'AUTO_SUBMITTED', serverNow: now, deadlineAt: a.deadlineAt, superseded: false };
+      return { status: 'AUTO_SUBMITTED', serverNow: now, deadlineAt: a.deadlineAt, superseded: false, suspended: false, examStatus: a.examStatus, stateVersion: a.stateVersion };
     }
     if (a.activeClientId === clientId && a.status === 'IN_PROGRESS') {
-      try { await this.redis.client.pipeline().hset(`hb:${a.examId}`, a.id, JSON.stringify({ t: now.getTime(), online })).expire(`hb:${a.examId}`, 86400).exec(); } catch { /* coordination only */ }
+      const t = now.getTime();
+      try { await this.redis.client.pipeline().hset(`hb:${a.examId}`, a.id, JSON.stringify({ t, online })).expire(`hb:${a.examId}`, 86400)
+        .zadd(`hbz:${a.examId}`, t, a.id).expire(`hbz:${a.examId}`, 86400).zadd(`hbz:${a.examId}:${a.inst}`, t, a.id).expire(`hbz:${a.examId}:${a.inst}`, 86400).exec(); } catch { /* coordination only */ }
     }
-    return { status: a.status, serverNow: now, deadlineAt: a.deadlineAt, superseded: a.activeClientId !== clientId };
+    return { status: a.status, serverNow: now, deadlineAt: a.deadlineAt, superseded: a.activeClientId !== clientId, suspended: !!a.suspendedAt, suspensionPolicy: a.suspensionPolicy, examStatus: a.examStatus, stateVersion: a.stateVersion };
   }
 
   async recordEvent(u: AuthUser, attemptId: string, clientId: string, kind: string, detail?: Record<string, unknown>) {
@@ -262,9 +306,9 @@ export class DeliveryService {
    * Seals the answer sheet exactly once. Row lock (FOR UPDATE) serialises against in-flight saves
    * and concurrent submits; a replay returns the original receipt untouched.
    */
-  async finalize(
+  private async seal(
     attemptId: string,
-    o: { mode: 'MANUAL' | 'AUTO' | 'FORCED'; clientId?: string; submitKey?: string; expected?: { examQuestionId: string; revision: number; selectedLabel: string | null }[]; actor?: AuthUser; reason?: string; ip?: string },
+    o: { mode: 'MANUAL' | 'AUTO' | 'FORCED'; onlyIfExpired?: boolean; bulk?: boolean; clientId?: string; submitKey?: string; expected?: { examQuestionId: string; revision: number; selectedLabel: string | null }[]; actor?: AuthUser; reason?: string; ip?: string },
   ) {
     // 1. Cheap reads OUTSIDE any transaction: no pooled connection is held while these (or anything else) queue.
     const pre = (await this.prisma.$queryRaw<{ id: string; examId: string; studentId: string; status: string; receiptCode: string | null; submittedAt: Date | null; answerDigest: string | null }[]>`
@@ -282,14 +326,20 @@ export class DeliveryService {
     //    (lock) → (read answers, fresh snapshot so a save we waited for is included) → (one statement: update + journal).
     //    Waiting for a free connection is bounded generously instead of failing after Prisma's 2 s default.
     const out = await this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<{ id: string; examId: string; studentId: string; status: string; deadlineAt: Date; activeClientId: string | null; receiptCode: string | null; submittedAt: Date | null; answerDigest: string | null; now: Date }[]>`
-        SELECT id, "examId", "studentId", status, "deadlineAt", "activeClientId", "receiptCode", "submittedAt", "answerDigest", clock_timestamp() AS now FROM attempts WHERE id = ${attemptId}::uuid FOR UPDATE`;
+      const rows = await tx.$queryRaw<{ id: string; examId: string; studentId: string; status: string; deadlineAt: Date; activeClientId: string | null; suspendedAt: Date | null; expired: boolean; receiptCode: string | null; submittedAt: Date | null; answerDigest: string | null; now: Date }[]>`
+        SELECT a.id, a."examId", a."studentId", a.status, a."deadlineAt", a."activeClientId", a."suspendedAt", a."receiptCode", a."submittedAt", a."answerDigest", clock_timestamp() AS now,
+               (a."deadlineAt" + make_interval(secs => ${SAVE_GRACE_SECONDS}::int)
+                 + CASE WHEN a."suspendedAt" IS NOT NULL AND sp."timePolicy" = 'FREEZE_CLOCK' THEN clock_timestamp() - a."suspendedAt" ELSE interval '0' END < clock_timestamp()) AS expired
+        FROM attempts a LEFT JOIN exam_suspensions sp ON sp.id = a."suspensionId" WHERE a.id = ${attemptId}::uuid FOR UPDATE OF a`;
       const a = rows[0];
       if (!a) throw notFound('Attempt');
       if (a.status !== 'IN_PROGRESS') { // sealed by a concurrent request between our pre-read and the lock
         const n = (await tx.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM attempt_answers WHERE "attemptId" = ${attemptId}::uuid AND state = 'ANSWERED'`)[0]!.n;
         return replay(a, async () => n);
       }
+      // The expiry decision is re-made HERE, under the row lock, on the database clock: an extension/resume that landed after the caller chose this attempt wins.
+      if (o.onlyIfExpired && !a.expired) return { skipped: true as const };
+      if (o.mode === 'MANUAL' && a.suspendedAt) throw conflict('EXAM_SUSPENDED', 'The examination is suspended. Submission is not possible until it resumes; your saved answers are safe.');
       if (o.mode === 'MANUAL' && a.activeClientId !== o.clientId) throw conflict('SESSION_SUPERSEDED', 'This examination is open in another window or device.');
       const late = a.now.getTime() > a.deadlineAt.getTime() + SAVE_GRACE_SECONDS * 1000;
       const answers = await tx.attemptAnswer.findMany({ where: { attemptId } });
@@ -317,13 +367,15 @@ export class DeliveryService {
         INSERT INTO attempt_events ("attemptId", kind, "actorId", detail) SELECT id, ${kind}, ${o.actor?.id ?? null}::uuid, ${detail}::jsonb FROM u`;
       return { receiptCode: code, submittedAt, answered: answers.filter((x) => x.state === 'ANSWERED').length, total, digest, status, replayed: false as const, late, examId: a.examId, studentId: a.studentId, fresh: true as const };
     }, { maxWait: 15_000, timeout: 20_000 });
+    if ('skipped' in out) return out;
     if (out.fresh) {
       // Candidate submits / deadline auto-submits are recorded on the attempt itself (status, receipt, digest, attempt_events).
       // Only staff-initiated seals go to the (globally serialised) audit chain.
-      if (o.mode === 'FORCED') await this.audit.log({ actor: o.actor ?? null, action: 'attempt.force_submit', entity: 'attempt', entityId: attemptId, meta: { examId: out.examId, receipt: out.receiptCode, answered: out.answered, total: out.total, reason: o.reason }, ip: o.ip });
+      if (o.mode === 'FORCED' && !o.bulk) await this.audit.log({ actor: o.actor ?? null, action: 'attempt.force_submit', entity: 'attempt', entityId: attemptId, meta: { examId: out.examId, receipt: out.receiptCode, answered: out.answered, total: out.total, reason: o.reason }, ip: o.ip });
       // Best effort and time-boxed: BullMQ waits indefinitely while Redis is down, which must never delay the receipt.
       // The lifecycle sweeper grades any sealed attempt that was not enqueued.
-      if (this.redis.available) await Promise.race([
+      // `bulk` (reconciler) seals thousands of attempts and grades them from the database itself: no per-attempt Redis job.
+      if (this.redis.available && !o.bulk) await Promise.race([
         this.queues.add(QUEUES.grade, 'grade', { attemptId }, { jobId: `grade-${attemptId}` }).catch((e) => this.log.warn(`grade enqueue failed (sweeper will recover): ${e.message}`)),
         new Promise<void>((resolve) => setTimeout(() => { this.log.warn('grade enqueue timed out (sweeper will recover)'); resolve(); }, 1500).unref()),
       ]);
@@ -331,6 +383,15 @@ export class DeliveryService {
     const { fresh: _f, examId: _e, studentId: _s, ...pub } = out;
     return pub;
   }
+
+  /** Seals the attempt (see `seal`). */
+  async finalize(attemptId: string, o: Omit<Parameters<DeliveryService['seal']>[1], 'onlyIfExpired'>) {
+    const r = await this.seal(attemptId, o);
+    if ('skipped' in r) throw new AppError(500, 'INTERNAL', 'Unexpected skip');
+    return r;
+  }
+  /** Seals only if, under the row lock, the attempt is STILL expired (reconciler path). Returns {skipped:true} otherwise. */
+  sealIfExpired(attemptId: string, o: { bulk?: boolean } = {}) { return this.seal(attemptId, { mode: 'AUTO', onlyIfExpired: true, bulk: o.bulk }); }
 
   async receipt(u: AuthUser, attemptId: string) {
     const studentId = this.studentIdOf(u);

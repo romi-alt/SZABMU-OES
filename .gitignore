@@ -10,3 +10,8 @@ test-results/
 apps/api/src/generated/
 .DS_Store
 *.log
+
+# Hostinger deployment: real environment files and TLS material never enter git (only the *.env.example templates do)
+infra/hostinger/env/*.env
+infra/hostinger/certs/
+infra/hostinger/backups/

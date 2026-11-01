@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Queue, Worker, type Job } from 'bullmq';
 import { CONFIG, type Config } from '../config';
 
-export const QUEUES = { grade: 'grade-attempt', sweep: 'attempt-sweeper', mail: 'mail', results: 'result-batch' } as const;
+export const QUEUES = { grade: 'grade-attempt', mail: 'mail', results: 'result-batch' } as const;
 
 type Handler = (job: Job) => Promise<unknown>;
 

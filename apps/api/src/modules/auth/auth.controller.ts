@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Req, Res } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { isValidPhone, PHONE_HINT, PORTAL_HEADER, portalOf } from '@oes/shared';
 import { AllowMfaPending, AllowMustChange, CurrentUser, Perm, Public, SESSION_COOKIE, type AuthUser } from '../../common/auth';
 import { parse } from '../../common/validate';
 import { AuthService } from './auth.service';
@@ -21,7 +22,7 @@ export class AuthController {
   @Public() @Post('login') @HttpCode(200)
   async login(@Body() body: unknown, @Req() req: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
     const dto = parse(loginDto, body);
-    const r = await this.auth.login(dto.email, dto.password, req.ip, req.headers['user-agent']);
+    const r = await this.auth.login(dto.email, dto.password, req.ip, req.headers['user-agent'], portalOf(req.headers[PORTAL_HEADER]));
     reply.setCookie(SESSION_COOKIE, r.token, { httpOnly: true, sameSite: 'lax', secure: this.cfg.NODE_ENV === 'production', path: '/', expires: r.expiresAt });
     return { user: r.user };
   }
@@ -37,7 +38,7 @@ export class AuthController {
   me(@CurrentUser() u: AuthUser) { return this.auth.me(u); }
 
   @Perm('program.read') @Patch('profile')
-  profile(@CurrentUser() u: AuthUser, @Body() b: unknown, @Req() req: FastifyRequest) { return this.auth.updateProfile(u, parse(z.object({ phone: z.string().max(30).optional(), address: z.string().max(300).optional(), guardianPhone: z.string().max(30).optional() }), b), req.ip); }
+  profile(@CurrentUser() u: AuthUser, @Body() b: unknown, @Req() req: FastifyRequest) { return this.auth.updateProfile(u, parse(z.object({ phone: z.string().max(30).refine(isValidPhone, PHONE_HINT).optional(), address: z.string().max(300).optional(), guardianPhone: z.string().max(30).refine(isValidPhone, PHONE_HINT).optional() }), b), req.ip); }
 
   @Public() @Post('forgot') @HttpCode(200)
   forgot(@Body() body: unknown, @Req() req: FastifyRequest) { return this.auth.forgot(parse(forgotDto, body).email, req.ip); }

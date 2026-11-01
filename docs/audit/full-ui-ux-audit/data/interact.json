@@ -1,0 +1,342 @@
+{
+ "A1_examiner_institutions_deactivate": {
+  "error": "locator.innerText: Timeout 30000ms exceeded."
+ },
+ "A2_examiner_register_institution_modal": {
+  "modal": "Register institution ✕ Code Capitals, digits, hyphen City Name Type medical college dental college nursing college allied health teaching hospital affiliated institute Affiliation Constituent Affiliated Cancel Register",
+  "toasts": [],
+  "errors": []
+ },
+ "A3_examiner_approve_own_paper": {
+  "approveButton": true,
+  "dialog": "",
+  "toasts": [
+   "You cannot approve a paper you submitted (four-eyes principle)"
+  ],
+  "notice": "Approval freezes each question and the answer key onto this paper. You cannot approve a paper you submitted."
+ },
+ "B1_students_search_and_pagination": {
+  "initial": {
+   "rows": 25,
+   "pager": "",
+   "url": "/students"
+  },
+  "afterSearchHira": {
+   "rows": 4,
+   "pager": "",
+   "url": "/students"
+  },
+  "noResults": {
+   "rows": 0,
+   "text": "No students."
+  },
+  "nextEnabled": true,
+  "afterNext": {
+   "rows": 25,
+   "pager": "",
+   "url": "/students"
+  },
+  "urlReflectsPage": false
+ },
+ "B2_filters_in_url_and_back": {
+  "error": "locator.click: Timeout 30000ms exceeded."
+ },
+ "B3_dashboard_tile_deeplink": [
+  {
+   "tile": "INSTITUTIONS 3",
+   "href": "/institutions",
+   "landedOn": "/institutions",
+   "h1": "Institutions",
+   "filterApplied": null
+  },
+  {
+   "tile": "USERS 91",
+   "href": "/users",
+   "landedOn": "/users",
+   "h1": "Users",
+   "filterApplied": ""
+  },
+  {
+   "tile": "STUDENTS 80",
+   "href": "/students",
+   "landedOn": "/students",
+   "h1": "Students",
+   "filterApplied": ""
+  },
+  {
+   "tile": "EXAMS 7",
+   "href": "/exams",
+   "landedOn": "/exams",
+   "h1": "Examinations",
+   "filterApplied": ""
+  },
+  {
+   "tile": "AUDIT ENTRIES 545",
+   "href": "/audit",
+   "landedOn": "/audit",
+   "h1": "Audit trail",
+   "filterApplied": ""
+  }
+ ],
+ "B4_audit_page": {
+  "cols": [
+   "#",
+   "WHEN",
+   "ACTION",
+   "ROLE",
+   "ENTITY",
+   "DETAIL",
+   "HASH"
+  ],
+  "firstRow": "545 | 01 | Nov | 2026 | 14:40 | auth.login | super_admin | user | ba0cf8c6 | 3f96d7bb46",
+  "pager": "",
+  "whenColumnWidthPx": 237,
+  "rowHeight": 36
+ },
+ "C1_new_examination_form": {
+  "error": "locator.click: Timeout 30000ms exceeded."
+ },
+ "C2_new_question_form": {
+  "error": "locator.boundingBox: Timeout 30000ms exceeded."
+ },
+ "C3_edit_question_modal": {
+  "title": "Edit question",
+  "buttons": [
+   "✕",
+   "Cancel",
+   "Save draft"
+  ]
+ },
+ "C4_new_account_form": {
+  "labels": [
+   "Full name",
+   "Email",
+   "Role Lecturer Examiner Campus Administrator Invigilator Cont",
+   "Institutions (campus-scoped roles) DNC-C — Demo College of N"
+  ],
+  "roleOptions": [
+   "Lecturer",
+   "Examiner",
+   "Campus Administrator",
+   "Invigilator",
+   "Controller of Examinations",
+   "Super Administrator"
+  ],
+  "buttons": [
+   "✕",
+   "Cancel",
+   "Create"
+  ]
+ },
+ "C5_register_institution_form": {
+  "labels": [
+   "Code Capitals, digits, hyphen",
+   "City",
+   "Name",
+   "Type medical college dental college nursing college allied h",
+   "Affiliation Constituent Affiliated"
+  ],
+  "buttons": [
+   "✕",
+   "Cancel",
+   "Register"
+  ]
+ },
+ "C6_assign_lecturer_form": {
+  "labels": [
+   "Campus DNC-C — Demo College of Nursing C (synthetic) DMC-A —",
+   "Lecturer Select…",
+   "Course Select… BSN-FUND-1 — Fundamentals of Nursing (BSN) MB"
+  ],
+  "buttons": [
+   "✕",
+   "Cancel",
+   "Assign"
+  ]
+ },
+ "C7_report_incident_form": {
+  "error": "locator.click: Timeout 30000ms exceeded."
+ },
+ "C8_profile_and_password": {
+  "error": "locator.fill: Timeout 30000ms exceeded."
+ },
+ "D_control_dialogs": {
+  "buttons": [
+   {
+    "id": "cmd-open-admission",
+    "label": "Open admission",
+    "disabled": true,
+    "title": "Admission is already open"
+   },
+   {
+    "id": "cmd-close-admission",
+    "label": "Close admission",
+    "disabled": false,
+    "title": null
+   },
+   {
+    "id": "cmd-start",
+    "label": "Start examination",
+    "disabled": true,
+    "title": "Not available while the examination is LIVE"
+   },
+   {
+    "id": "cmd-suspend",
+    "label": "Suspend…",
+    "disabled": false,
+    "title": null
+   },
+   {
+    "id": "cmd-resume",
+    "label": "Resume…",
+    "disabled": true,
+    "title": "Nothing is suspended"
+   },
+   {
+    "id": "cmd-extend",
+    "label": "Extend time…",
+    "disabled": false,
+    "title": null
+   },
+   {
+    "id": "cmd-close",
+    "label": "Close examination…",
+    "disabled": false,
+    "title": null
+   },
+   {
+    "id": "cmd-reconcile",
+    "label": "Reconcile attempts",
+    "disabled": false,
+    "title": null
+   },
+   {
+    "id": "cmd-initiate-scoring",
+    "label": "Initiate scoring",
+    "disabled": true,
+    "title": "Not available while the examination is LIVE"
+   }
+  ],
+  "close-admission": {
+   "title": "Close admission",
+   "text": "Close admission ✕ No new attempts can start. Candidates already admitted keep every right: saving, resuming and submitting. Cancel Close admission",
+   "goLabel": "Close admission",
+   "buttons": [
+    "✕",
+    "Cancel",
+    "Close admission"
+   ]
+  },
+  "suspend": {
+   "title": "Suspend",
+   "text": "Suspend ✕ Scope Entire examination One campus cohort Selected candidates (0) Reason (recorded in the audit trail) At least 10 characters Clock policy: frozen — each candidate’s deadline moves later by the time paused. Affected candidates cannot answer or submit until you resume. I confirm this suspension. Cancel Suspend",
+   "goLabel": "Suspend",
+   "buttons": [
+    "✕",
+    "Cancel",
+    "Suspend"
+   ]
+  },
+  "extend": {
+   "title": "Extend time",
+   "text": "Extend time ✕ Scope Entire active examination One campus cohort Selected candidates (0) Additional minutes (1–240) Reason (recorded in the audit trail) At least 10 characters Preview effect I approve this extension and have reviewed the effect above. Cancel Apply extension",
+   "goLabel": "Apply extension",
+   "buttons": [
+    "✕",
+    "Preview effect",
+    "Cancel",
+    "Apply extension"
+   ]
+  },
+  "close": {
+   "title": "Close examination",
+   "text": "Close examination ✕ Admission closes. Candidates still working finish at their own deadlines, then the examination becomes Closed. Force-close: seal every remaining attempt now (0 in progress) Cancel Close",
+   "goLabel": "Close",
+   "buttons": [
+    "✕",
+    "Cancel",
+    "Close"
+   ]
+  },
+  "reconcile": {
+   "title": "Reconcile attempts",
+   "text": "Reconcile attempts ✕ Seals attempts whose database-derived deadline has passed (the same pass the background worker runs). Safe to repeat. Cancel Reconcile attempts",
+   "goLabel": "Reconcile attempts",
+   "buttons": [
+    "✕",
+    "Cancel",
+    "Reconcile attempts"
+   ]
+  },
+  "initiate-scoring": "disabled",
+  "open-admission": "disabled",
+  "start": "disabled",
+  "resume": "disabled"
+ },
+ "E_notifications_student.a002": {
+  "itemsShown": 5,
+  "links": 5,
+  "bodyHeight": 420,
+  "destinations": [
+   {
+    "title": "Results published: Audit — Completed Paper (published)",
+    "href": "/results",
+    "landed": "/results",
+    "h1": "Results",
+    "bodyStart": "Results Published results only. Results appear here after examiner approval and publicatio"
+   },
+   {
+    "title": "Exam scheduled: Pathology Mid-term (DEMO)",
+    "href": "/schedule",
+    "landed": "/schedule",
+    "h1": "Exam schedule",
+    "bodyStart": "Exam schedule Your examinations. The start button unlocks when the examination opens (serv"
+   }
+  ]
+ },
+ "E_notifications_examiner": {
+  "itemsShown": 100,
+  "links": 100,
+  "bodyHeight": 420,
+  "destinations": [
+   {
+    "title": "Results ready for review",
+    "href": "/results",
+    "landed": "/results",
+    "h1": "(none)",
+    "bodyStart": "This page is for candidates."
+   },
+   {
+    "title": "Question awaiting review",
+    "href": "/questions",
+    "landed": "/questions",
+    "h1": "Question bank",
+    "bodyStart": "Question bank Review submitted questions and curate the approved bank. + New question Stat"
+   }
+  ]
+ },
+ "E_notifications_lecturer.a": {
+  "itemsShown": 100,
+  "links": 100,
+  "bodyHeight": 420,
+  "destinations": [
+   {
+    "title": "Question approved",
+    "href": "/questions",
+    "landed": "/questions",
+    "h1": "Question bank",
+    "bodyStart": "Question bank Author questions; submit for examiner approval. Approved questions are avail"
+   }
+  ]
+ },
+ "F_session_expiry": {
+  "landedOn": "/login",
+  "text": "Examination portal for the next generation of medical professionals. Schedule, conduct and approve examinations across the university's constituent and affiliated institutions — with role-based contro",
+  "afterRelogin": "/dashboard"
+ },
+ "F2_logged_out_deeplink": {
+  "landedOn": "/login",
+  "afterLogin": "/dashboard",
+  "returnedToRequestedPage": false
+ }
+}

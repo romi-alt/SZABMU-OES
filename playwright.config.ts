@@ -14,7 +14,7 @@ export default defineConfig({
   reporter: [['list']],
   use: { baseURL: 'http://localhost:3000', trace: 'retain-on-failure', screenshot: 'only-on-failure', launchOptions: { ...(chromiumPath ? { executablePath: chromiumPath } : {}), args: ['--no-sandbox'] } },
   webServer: [
-    { command: 'node --env-file=.env apps/api/dist/main.js', url: 'http://localhost:4000/api/health', reuseExistingServer: true, timeout: 60_000, env: { RUN_WORKERS: 'true' } },
+    { command: 'node --env-file=.env apps/api/dist/main.js', url: 'http://localhost:4000/api/health', reuseExistingServer: true, timeout: 60_000, env: { RUN_WORKERS: 'true', LOGIN_RATE_IP_MAX: '5000', LOGIN_RATE_ID_MAX: '500' } },
     // NODE_ENV=production so the production Content-Security-Policy (no 'unsafe-eval') is what the browser tests exercise
     { command: 'npm run start -w @oes/web', url: 'http://localhost:3000/login', reuseExistingServer: true, timeout: 60_000, env: { NODE_ENV: 'production' } },
   ],

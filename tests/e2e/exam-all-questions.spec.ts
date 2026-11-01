@@ -20,9 +20,9 @@ test('all MCQs on one page: answer several, skip and mark in place, palette jump
 
   await cards.nth(4).getByRole('button', { name: 'Skip question' }).click();      // skip in place, does not erase anything
   await cards.nth(2).getByRole('button', { name: 'Mark for review' }).click();    // answered + marked
-  await expect(cards.nth(2).getByRole('radio', { name: /B/ }).first()).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('all-opt-3-B')).toHaveAttribute('aria-checked', 'true');
 
-  await page.getByRole('list').getByRole('listitem').nth(10).click();             // palette jumps to question 11
+  await page.locator('#question-navigator').getByRole('button', { name: /^Question 11,/ }).click();             // palette jumps to question 11
   await expect(cards.nth(10)).toBeInViewport();
 
   await page.reload();                                                            // layout and answers survive a reload
