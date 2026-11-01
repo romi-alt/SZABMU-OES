@@ -15,7 +15,8 @@ import { ExamEventsService } from './events.service';
 import { finishTransition } from './transition';
 
 export interface LifecycleStats { autoSubmitted: number; graded: number; opened: number; closed: number; pending: number; scoringStarted: number; forceSealed: number; published: number; poisoned: number; skipped?: boolean; lease?: string }
-const MAX_ATTEMPT_RETRIES = 5; const leaseSeconds = () => Number(process.env.LIFECYCLE_LEASE_SECONDS ?? 30); const BATCH = 200; const CONCURRENCY = 8; const BUDGET_MS = 20_000;
+const CONCURRENCY_ENV = () => Math.max(1, Math.min(32, Number(process.env.LIFECYCLE_CONCURRENCY ?? 8)));
+const MAX_ATTEMPT_RETRIES = 5; const leaseSeconds = () => Number(process.env.LIFECYCLE_LEASE_SECONDS ?? 15); const BATCH = 200; const BUDGET_MS = 20_000;
 
 /**
  * The lifecycle reconciler. PostgreSQL is the authority: every transition is derived from database state and the database clock,
@@ -57,17 +58,38 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
     return r.length > 0;
   }
 
+  /** Extends our own lease (no-op if someone else took it). Called between steps so a long pass does not lose ownership mid-way. */
+  private async renewLease() {
+    await this.prisma.$executeRaw`UPDATE lifecycle_leases SET "expiresAt" = clock_timestamp() + make_interval(secs => ${leaseSeconds()}::int), "updatedAt" = clock_timestamp() WHERE name = 'lifecycle' AND owner = ${this.instance}`.catch(() => undefined);
+  }
+
   // ───────────── one reconciliation pass ─────────────
+  private current?: Promise<LifecycleStats>;
+  /** Resolves when no pass is running (used by tests and graceful shutdown). */
+  async idle() { while (this.running) await this.current?.catch(() => undefined); }
+
+  /**
+   * One reconciliation pass. The periodic loop never overlaps itself (an overlapping tick is skipped). An explicit exam-scoped request
+   * (the RECONCILE command, a force-close kick) WAITS for any pass in flight and then runs its own, so it never reports "done" for work it skipped.
+   */
   async runOnce(opts: { examId?: string } = {}): Promise<LifecycleStats> {
+    const empty: LifecycleStats = { autoSubmitted: 0, graded: 0, opened: 0, closed: 0, pending: 0, scoringStarted: 0, forceSealed: 0, published: 0, poisoned: 0 };
+    if (this.running && !opts.examId) return { ...empty, skipped: true };
+    while (this.running) await this.current?.catch(() => undefined);
+    if (this.running) return { ...empty, skipped: true };
+    const p = this.pass(opts); this.current = p;
+    return p;
+  }
+
+  private async pass(opts: { examId?: string }): Promise<LifecycleStats> {
     const stats: LifecycleStats = { autoSubmitted: 0, graded: 0, opened: 0, closed: 0, pending: 0, scoringStarted: 0, forceSealed: 0, published: 0, poisoned: 0 };
-    if (this.running) return { ...stats, skipped: true };       // never overlap with ourselves
-    if (!opts.examId && !(await this.acquireLease())) { this.metrics.lifecycleRuns.inc({ outcome: 'skipped_not_leader' }); return { ...stats, skipped: true }; }
-    this.running = true;
+    this.running = true;                                   // claim the slot BEFORE any await so two callers can never run a pass together
+    if (!opts.examId && !(await this.acquireLease())) { this.running = false; this.metrics.lifecycleRuns.inc({ outcome: 'skipped_not_leader' }); return { ...stats, skipped: true }; }
     const started = Date.now(); const deadline = started + BUDGET_MS;
     const run = (await this.prisma.$queryRaw<{ id: string }[]>`INSERT INTO lifecycle_runs (id, instance) VALUES (gen_random_uuid(), ${this.instance}) RETURNING id`)[0]!.id;
     let error: string | null = null;
     try {
-      const step = async (name: string, fn: () => Promise<void>) => { try { await fn(); } catch (e) { error = `${name}: ${String(e).replace(/\s+/g, ' ').slice(0, 300)}`; this.log.error(`step ${name} failed: ${error}`); } };
+      const step = async (name: string, fn: () => Promise<void>) => { if (!opts.examId) await this.renewLease(); try { await fn(); } catch (e) { error = `${name}: ${String(e).replace(/\s+/g, ' ').slice(0, 300)}`; this.log.error(`step ${name} failed: ${error}`); } };
       await step('expire', () => this.expireAttempts(stats, opts.examId, deadline));
       await step('start', () => this.autoStart(stats, opts.examId));
       await step('forceClose', () => this.forceClose(stats, opts.examId, deadline));
@@ -215,7 +237,7 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
   /** Bounded parallelism without a dependency. */
   private async pool<T>(items: T[], fn: (x: T) => Promise<void>) {
     let i = 0;
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, async () => { while (i < items.length) { const x = items[i++]!; await fn(x); } }));
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY_ENV(), items.length) }, async () => { while (i < items.length) { const x = items[i++]!; await fn(x); } }));
   }
 
   // ───────────── health (for the control centre) ─────────────

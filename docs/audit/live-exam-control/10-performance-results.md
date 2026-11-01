@@ -37,3 +37,26 @@ Four earlier runs (n1–n4) are **not used**: my restart step failed silently, s
 - Many simultaneous controllers; thousands of SSE viewers (per-user cap is 4, so the test used 16 viewers over four staff accounts).
 - The cost of the notification fan-out (one row per affected candidate) at scale.
 - Statistical significance: single runs per configuration (two for old/new workers-off), on a noisy shared box.
+
+
+## Scale-risk pass before the 5,000-candidate test (TODAY)
+
+Tool: `tests/load/scale-bench.mjs` (targeted benchmark; seeds attempts directly with set-based SQL, so it measures the **control plane and save/heartbeat path, not login/start**). Environment: one shared 4-vCPU sandbox, disposable PostgreSQL + Redis, **one API process**, load generator on the same box. Single run per cell (no repeats) — treat differences under ~30 % as noise. Before = commit `f7133f9`; after = this change.
+
+| | 5,000 before | 5,000 after | 20,000 before | 20,000 after |
+|---|---|---|---|---|
+| exam-wide extend / suspend / resume (ms) | 1348 / 1325 / 1552 | 503 / 550 / 471 | 5151 / 5144 / 5472 | 1699 / 1615 / 1731 |
+| save p95 *during* a command (ms) | 896 / 34 / 806 | 53 / 49 / 27 | 215 / 142 / 3360 | 40 / 39 / 33 |
+| save max during a command (ms) | 932 | 77 | 3718 | 68 |
+| heartbeats/s (closed loop, 48 workers) | 890 | 923 | 859 | 870 |
+| saves/s (no commands) | 1194 | 1223 | 1137 | 1164 |
+| mass expiry, sealed/s | 246 | 242 | 327 | 330 |
+| integrity (sealed = receipts = events) | pass | pass | pass | pass |
+
+What changed and why: suspend/resume/extend moved their per-attempt work (20,000 ids, per-candidate notification inserts) from Node into single set-based SQL statements, which removed the event-loop stall that made concurrent saves wait (cause: CPU profile, `--cpu-prof`). Group commands are ≈ 3× faster and save latency during them is back to baseline. The per-save abuse limiter no longer makes a Redis round trip (in-process window, ≈ 5 % of profile).
+
+**Not improved / negative findings**
+- Mass expiry is **~245–330 seals/s and did not change** with either "bulk seals skip the per-attempt grade enqueue" or `LIFECYCLE_CONCURRENCY` 8 vs 16 (5,000: 249/s at 8, 242/s at 16, 246/s baseline). The bottleneck is not the enqueue or the worker pool width; it is not yet attributed. Expect ≈ 20 s per 5,000 and ≈ 60 s per 20,000 expiring in the same instant, on this box.
+- A single API process saturates around 700–900 heartbeat/save requests/s; the profile is dominated by socket writes and Redis/PostgreSQL round trips, not by application code. Reaching 5,000 candidates therefore needs more than one API process (and the load generator on a different host); no capacity figure is claimed.
+- **Unexplained regression:** `candidates` page p50 rose from 17 → 71 ms (5,000, idle) and 50 → 121 ms (20,000). It appears at idle, so it is not write contention. Not investigated further (possible planner statistics after seeding, or the changed monitor cache TTL); needs an `EXPLAIN` before the test.
+- Session lookup still costs one Redis GET per request (≈ 4.6 s of profile). Caching it in-process would delay session revocation, so it was **left as is pending a decision**.
