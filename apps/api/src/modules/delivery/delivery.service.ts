@@ -10,6 +10,7 @@ import { AuditService } from '../audit/audit.service';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import type { AuthUser } from '../../common/auth';
 import { CONFIG, type Config } from '../../config';
+import { ATTENDANCE_THRESHOLD } from '../org/org.service';
 
 export interface SaveInput {
   clientId: string;
@@ -62,8 +63,17 @@ export class DeliveryService {
     });
     const attempts = await this.prisma.attempt.findMany({ where: { studentId, examId: { in: cands.map((c) => c.examId) } }, select: { id: true, examId: true, status: true, receiptCode: true, submittedAt: true, deadlineAt: true, suspendedAt: true } });
     const am = new Map(attempts.map((a) => [a.examId, a]));
+    // Additive (UI-051): examinations the student would sit but is not admitted to, with the reason, so the screens can say so instead of showing nothing.
+    const revoked = cands.filter((c) => c.status === 'REVOKED').map((c) => ({ examId: c.examId, code: c.exam.code, title: c.exam.title, course: c.exam.course.title, reason: c.statusReason ?? 'Your admission was withdrawn.', attendancePct: null as number | null, threshold: null as number | null }));
+    const inel = await this.prisma.enrollment.findMany({ where: { studentId, status: 'ENROLLED', eligibility: 'INELIGIBLE' }, select: { courseId: true, term: true, attendancePct: true } });
+    const student = await this.prisma.student.findUnique({ where: { id: studentId }, select: { institutionId: true } });
+    const missed = inel.length && student ? await this.prisma.exam.findMany({
+      where: { status: { in: ['SCHEDULED', 'ADMISSION_OPEN', 'LIVE', 'SUSPENDED', 'CLOSING'] }, OR: inel.map((e) => ({ courseId: e.courseId, term: e.term })), institutions: { some: { institutionId: student.institutionId } }, candidates: { none: { studentId } } },
+      select: { id: true, code: true, title: true, courseId: true, term: true, course: { select: { title: true } } },
+    }) : [];
+    const notEligible = [...revoked, ...missed.map((x) => { const e = inel.find((i) => i.courseId === x.courseId && i.term === x.term)!; return { examId: x.id, code: x.code, title: x.title, course: x.course.title, reason: e.attendancePct != null ? `Attendance is ${e.attendancePct}% — the minimum is ${ATTENDANCE_THRESHOLD}%.` : 'You are not currently eligible for this course.', attendancePct: e.attendancePct, threshold: ATTENDANCE_THRESHOLD }; })];
     return {
-      serverNow: now,
+      serverNow: now, notEligible,
       items: cands.map((c) => {
         const a = am.get(c.examId) ?? null;
         // A NEW attempt needs the control state to allow entry (admission open, not suspended, not closed) and the window; AUTOMATIC exams also follow the clock.

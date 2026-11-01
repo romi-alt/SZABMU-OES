@@ -87,9 +87,20 @@ export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => v
  * and when nothing has been requested (`idle`) or the response carried no payload it shows `idle` (default: a plain "Nothing to show yet").
  * Generic in the payload type so callers that pass `useGet<T>()` get a typed `data` in `children`.
  */
+/** Skeleton that admits when it is taking too long (UI-033): after 8 s it says so and offers a retry instead of spinning forever. */
+export function SlowLoading({ onRetry, after = 8000 }: { onRetry?: () => void; after?: number }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setSlow(true), after); return () => clearTimeout(t); }, [after]);
+  return (
+    <>
+      <Loading />
+      {slow && <div className="notice warn" role="status" data-testid="slow-loading" style={{ marginTop: 12 }}>This is taking longer than usual. Your connection or the server may be slow. {onRetry && <button className="btn btn-sm" onClick={onRetry} style={{ marginLeft: 8 }}>Try again</button>}</div>}
+    </>
+  );
+}
 export function Async<T = any>({ state, children, idle }: { state: { data: T | null; error: unknown; loading: boolean; idle?: boolean; reload?: () => void }; children: (d: NonNullable<T>) => ReactNode; idle?: ReactNode }) {
   if (state.error) return <ErrorBox error={state.error} onRetry={state.reload} />;
-  if (state.loading && state.data == null) return <Loading />;
+  if (state.loading && state.data == null) return <SlowLoading onRetry={state.reload} />;
   if (state.data == null) return <>{idle ?? <Empty>Nothing to show yet.</Empty>}</>;
   return <>{children(state.data as NonNullable<T>)}</>;
 }

@@ -2,7 +2,7 @@
 import { fmtDT, useGet } from '@/api';
 import { useMe } from '@/session';
 import { Async, Card, PageHead, Table } from '@/ui';
-import { ExamActionLink, ExamStatusCell, type MyExam } from '@/exam-status-ui';
+import { ExamActionLink, ExamStatusCell, type MyExam, NotEligibleNotice } from '@/exam-status-ui';
 
 export default function Schedule() {
   const { me } = useMe(); const st = useGet<any>(me?.role === 'STUDENT' ? '/me/exams' : null);
@@ -10,6 +10,7 @@ export default function Schedule() {
   return (
     <>
       <PageHead title="Exam schedule" sub="Your examinations and what you can do with each one right now (server time)." />
+      {st.data && <NotEligibleNotice items={st.data.notEligible} />}
       <Card flush><Async state={st}>{(d) => {
         const off = new Date(d.serverNow).getTime() - Date.now();
         return <Table rowKey={(r: MyExam) => r.examId} empty="No examinations are scheduled for you yet." rows={d.items} cols={[
