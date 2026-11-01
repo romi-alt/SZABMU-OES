@@ -4,13 +4,14 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ApiError, fmtDT, get, openStream, post } from '@/api';
-import { ExamEngine, paletteKind, type PaletteKind } from '@/exam-engine';
+import { ExamEngine, paletteKind } from '@/exam-engine';
 import { useMe } from '@/session';
+import { describeExam } from '@oes/shared';
 import { Loading, Modal, Notice, errMsg } from '@/ui';
+import { QuestionPalette, GLYPH, labelFor, type Filter, type PalItem } from './palette';
 
 interface Q { id: string; number: number; position: number; marks: number; type: string; vignette: string | null; stem: string; options: { label: string; text: string }[] }
 interface Receipt { receiptCode: string; submittedAt: string; answered: number; total: number; status: string; replayed?: boolean; late?: boolean }
-type Filter = 'all' | PaletteKind | 'marked';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const clock = (ms: number) => { const s = Math.ceil(ms / 1000); const h = Math.floor(s / 3600); return `${h ? pad(h) + ':' : ''}${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`; };
@@ -77,7 +78,7 @@ export default function ExamPage() {
           <li>Review your answers and confirm before submitting. You receive a receipt code on submission.</li>
         </ul>
         {error && <Notice tone="bad">{error}</Notice>}
-        {!info.canStart && !error && <Notice tone="warn">{info.attempt ? 'This examination is not available to resume.' : `Opens ${fmtDT(info.opensAt)}.`}</Notice>}
+        {!info.canStart && !error && (() => { const p = describeExam(info, new Date(), (d) => fmtDT(d)); return <Notice tone="warn"><b>{p.label}.</b> {p.detail}</Notice>; })()}
         <div className="row"><button className="btn btn-green" disabled={!info.canStart || starting} onClick={begin}>{starting ? 'Starting…' : resuming ? 'Resume examination →' : 'Begin examination →'}</button><Link className="btn" href="/schedule">Back</Link></div>
       </div></div>
     </Shell>
@@ -93,10 +94,18 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
   const [idx, setIdx] = useState(0); const [filter, setFilter] = useState<Filter>('all'); const [view, setView] = useState<'q' | 'review'>('q');
   const [layout, setLayout] = useState<'single' | 'all'>(() => (typeof window !== 'undefined' && sessionStorage.getItem('oes:layout') === 'all' ? 'all' : 'single'));
   const chooseLayout = (l: 'single' | 'all') => { setLayout(l); setView('q'); sessionStorage.setItem('oes:layout', l); };
-  const [palOpen, setPalOpen] = useState(false); const [remaining, setRemaining] = useState(engine.remainingMs()); const [busy, setBusy] = useState(false); const [msg, setMsg] = useState('');
+  const [palOpen, setPalOpen] = useState(false); const [remaining, setRemaining] = useState(engine.remainingMs()); const [msg, setMsg] = useState('');
   const submitKey = useRef(''); if (!submitKey.current) { submitKey.current = sessionStorage.getItem(`oes:sk:${attemptId}`) ?? `sk${uid()}`; sessionStorage.setItem(`oes:sk:${attemptId}`, submitKey.current); }
   const q = questions[idx]!; const st = engine.get(q.id); const counts = engine.counts();
   const timeUp = useRef(false);
+  const asideRef = useRef<HTMLElement>(null); const toggleRef = useRef<HTMLButtonElement>(null); const wasOpen = useRef(false); const [isSheet, setIsSheet] = useState(false);
+  const ss = engine.saveStatus(); const numOf = new Map(questions.map((x) => [x.id, x.number])); const qList = (ids: string[]) => ids.map((id) => numOf.get(id)).filter((n): n is number => !!n).sort((a, b) => a - b).join(', ');
+  useEffect(() => { const m = window.matchMedia('(max-width: 960px)'); const f = () => setIsSheet(m.matches); f(); m.addEventListener('change', f); return () => m.removeEventListener('change', f); }, []);
+  // the palette sheet is a dialog on small screens: focus moves into it on open, Escape closes it, focus returns to the "Questions" button
+  useEffect(() => { if (palOpen) asideRef.current?.focus(); else if (wasOpen.current) toggleRef.current?.focus(); wasOpen.current = palOpen; }, [palOpen]);
+  useEffect(() => { if (!palOpen) return; const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setPalOpen(false); }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [palOpen]);
+  // the sticky palette sits below the sticky header, whatever height the header has
+  useEffect(() => { const el = document.querySelector('.exam-bar') as HTMLElement | null; if (!el || typeof ResizeObserver === 'undefined') return; const set = () => document.documentElement.style.setProperty('--exam-bar-h', `${el.offsetHeight}px`); set(); const ro = new ResizeObserver(set); ro.observe(el); return () => ro.disconnect(); }, []);
   const [ctlMsg, setCtlMsg] = useState('');
 
   // Live control: authoritative state arrives with every heartbeat; an SSE event just makes us ask NOW instead of in ≤15 s.
@@ -132,26 +141,27 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
     const h = (e: KeyboardEvent) => {
       if (view !== 'q' || layout !== 'single' || (e.target as HTMLElement)?.tagName === 'TEXTAREA' || e.ctrlKey || e.metaKey) return;
       if (e.key === 'ArrowRight') go(idx + 1); else if (e.key === 'ArrowLeft') go(idx - 1);
+      else if (/^g$/i.test(e.key) && !e.altKey && !(e.target as HTMLElement)?.closest?.('input,select,textarea,[role=dialog]')) { e.preventDefault(); if (isSheet) setPalOpen(true); setTimeout(() => document.getElementById('jump-input')?.focus(), 60); }
       else if (/^[a-e]$/i.test(e.key) && q.options.some((o) => o.label === e.key.toUpperCase())) engine.select(q.id, e.key.toUpperCase());
     };
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
-  }, [engine, go, idx, q, view, layout]);
+  }, [engine, go, idx, q, view, layout, isSheet]);
 
-  const visible = useMemo(() => questions.map((x, i) => ({ x, i, k: paletteKind(engine.get(x.id)), m: engine.get(x.id).marked })).filter(({ k, m }) => filter === 'all' || (filter === 'marked' ? m : k === filter)),
-    [questions, filter, engine.getVersion()]);
+  const all = useMemo<PalItem[]>(() => questions.map((x, i) => { const t = engine.get(x.id); return { id: x.id, number: x.number, index: i, kind: paletteKind(t), marked: t.marked, unsynced: t.rev > t.savedRev }; }), [questions, engine.getVersion()]);
+  const visible = useMemo(() => all.filter(({ kind, marked }) => filter === 'all' || (filter === 'marked' ? marked : kind === filter)), [all, filter]);
 
-  async function saveAndNext() { setBusy(true); await engine.flushAll(8000); setBusy(false); go(idx + 1); }
+  // Saving is automatic and never blocks navigation: both actions give pending saves a short head start, then carry on (UI-004).
+  async function saveAndNext() { await engine.flushAll(1200); go(idx + 1); }
   async function openReview() {
-    setBusy(true); setMsg('Checking that every answer is stored…');
-    const ok = await engine.flushAll(20000);
-    if (!ok) { setBusy(false); setMsg(`${engine.pendingCount()} answer(s) could not be stored yet. Check your connection — they will keep retrying. Do not close this window.`); return; }
-    const bad = await engine.reconcile().catch(() => null);
-    setBusy(false); setMsg(bad && bad.length ? `${bad.length} answer(s) differed from what the server holds and were refreshed. Please review.` : '');
-    setView('review');
+    await engine.flushAll(1500);                                   // normal case: everything is confirmed before the screen opens
+    if (engine.pendingCount() === 0) { const bad = await engine.reconcile().catch(() => null); setMsg(bad && bad.length ? `${bad.length} answer(s) differed from what the server holds and were refreshed. Please review.` : ''); }
+    else setMsg('');                                               // never reconcile over unconfirmed local edits; the review screen lists them
+    setView('review'); setPalOpen(false);
   }
 
   const sync = st.sync; const saved = sync === 'saved' && st.savedRev > 0;
-  const indicator = engine.phase !== 'running' ? { c: 'bad', t: 'Not saving' } : sync === 'error' ? { c: 'bad', t: 'Could not save — contact the invigilator' } : saved ? { c: 'ok', t: '✓ Saved' } : sync === 'saving' ? { c: 'wait', t: 'Saving…' } : st.rev === 0 ? { c: '', t: '' } : { c: 'wait', t: engine.online ? 'Not yet saved — retrying' : 'Not saved — offline, will retry' };
+  const unconfirmedText = ss.state === 'offline_pending' ? 'Not saved — offline, will retry' : ss.state === 'not_confirmed' ? 'Not confirmed by the server — retrying' : ss.state === 'reconciliation_required' ? 'Checking with the server…' : 'Not yet saved — retrying';
+  const indicator = engine.phase !== 'running' ? { c: 'bad', t: 'Not saving' } : sync === 'error' ? { c: 'bad', t: 'Could not save — contact the invigilator' } : saved ? { c: 'ok', t: '✓ Saved' } : sync === 'saving' && ss.state === 'saving' ? { c: 'wait', t: 'Saving…' } : st.rev === 0 ? { c: '', t: '' } : st.rev > st.savedRev && ss.state === 'saving' ? { c: 'wait', t: 'Saving…' } : { c: ss.state === 'retrying' ? 'wait' : 'bad', t: unconfirmedText };
 
   if (engine.phase === 'superseded') return (
     <Modal title="Examination open in another window" onClose={() => undefined} footer={<button className="btn btn-primary" onClick={onTakeover}>Use this window instead</button>}>
@@ -167,10 +177,13 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
         <div className="grow exam-title"><div className="title">{exam.title}</div><div className="small muted">{questions.length} questions · {exam.totalMarks} marks</div></div>
         <div className="small muted exam-answered" aria-live="polite">Answered <b className="mono" style={{ color: 'var(--ink)' }}>{counts.answered}</b> / {questions.length}</div>
         <div className={`exam-clock ${low ? 'low' : ''}`} role="timer" aria-label="Time remaining"><div className="k">Remaining</div><div className="v" data-testid="remaining">{clock(remaining)}</div></div>
-        <button className="btn pal-toggle" data-testid="palette-toggle" aria-expanded={palOpen} aria-controls="question-navigator" onClick={() => setPalOpen(!palOpen)}>Questions {counts.answered}/{questions.length}</button>
-        <button className="btn btn-primary" onClick={openReview} disabled={busy || engine.suspended}>Review &amp; submit</button>
+        <button ref={toggleRef} className="btn pal-toggle" data-testid="palette-toggle" aria-expanded={palOpen} aria-controls="question-navigator" onClick={() => setPalOpen(!palOpen)}>Questions {counts.answered}/{questions.length}</button>
+        <button className="btn btn-primary" onClick={openReview} disabled={engine.suspended}>Review &amp; submit</button>
       </header>
       {!engine.online && <div className="conn off" role="alert">Connection lost. Keep working — your answers are held on this device and are saved automatically once the connection returns. {engine.pendingCount()} not yet saved.</div>}
+      {(ss.state === 'not_confirmed' || ss.state === 'reconciliation_required') && ss.pendingIds.length > 0 && (
+        <div className="conn off" role="alert" data-testid="save-banner"><b>{ss.pendingIds.length === 1 ? '1 answer is' : `${ss.pendingIds.length} answers are`} not confirmed by the server.</b> Question {qList(ss.pendingIds)}. {ss.state === 'reconciliation_required' ? 'We could not check what the server holds yet. ' : ''}Your choice is kept on this device and retried automatically — keep this window open. <button className="btn btn-sm" onClick={() => void engine.retryNow()}>Retry now</button> <button className="btn btn-sm" onClick={() => void openReview()}>Review unconfirmed answers</button></div>)}
+      {ss.refreshedIds.length > 0 && <div className="conn" style={{ background: '#FFFBEF', borderBottom: '1px solid #EBD9A8' }} role="status" data-testid="refreshed-banner">The server held a different, newer copy of {ss.refreshedIds.length === 1 ? 'one answer' : `${ss.refreshedIds.length} answers`} (Question {qList(ss.refreshedIds)}); {ss.refreshedIds.length === 1 ? 'it was' : 'they were'} updated to match. Please check {ss.refreshedIds.length === 1 ? 'it' : 'them'}. <button className="btn-link small" onClick={() => engine.dismissRefreshed()}>Dismiss</button></div>}
       {msg && <div className="conn" style={{ background: '#FFFBEF', borderBottom: '1px solid #EBD9A8' }} role="status">{msg}</div>}
       {ctlMsg && <div className="conn" style={{ background: '#EEF6F1', borderBottom: '1px solid #BBD9C8' }} role="status" data-testid="control-message">{ctlMsg} <button className="btn-link small" onClick={() => setCtlMsg('')}>Dismiss</button></div>}
       {engine.suspended && <div className="conn off" role="alert" data-testid="suspended-banner"><b>Examination suspended.</b> You cannot answer or submit until it resumes. Do not close this window — your saved answers are safe and it resumes automatically.</div>}
@@ -184,7 +197,7 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
         {view === 'q' && layout === 'all' ? (
           <div className="stack" data-testid="all-questions" style={{ gap: 16 }}>
             {questions.map((x, i) => <QuestionBlock key={x.id} engine={engine} q={x} total={questions.length} current={i === idx} onFocus={() => setIdx(i)} />)}
-            <div className="card"><div className="card-b row"><span className="small muted">{counts.answered} of {questions.length} answered. Answers save automatically as you choose them.</span><span className="grow" /><button className="btn btn-primary" onClick={openReview} disabled={busy}>Review &amp; submit</button></div></div>
+            <div className="card"><div className="card-b row"><span className="small muted">{counts.answered} of {questions.length} answered. Answers save automatically as you choose them.</span><span className="grow" /><button className="btn btn-primary" onClick={openReview}>Review &amp; submit</button></div></div>
           </div>
         ) : view === 'q' ? (
           <section className="q-card" aria-label={`Question ${q.number}`}>
@@ -203,23 +216,17 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
               <button className="btn" onClick={() => engine.clear(q.id)} disabled={!st.selectedLabel}>Clear response</button>
               <span className="grow" />
               <span className={`save-state ${indicator.c}`} role="status" aria-live="polite" data-testid="save-state">{indicator.t}</span>
-              <button className="btn btn-green" onClick={saveAndNext} disabled={busy}>{idx === questions.length - 1 ? 'Save' : 'Save & next →'}</button>
+              <button className="btn btn-green" onClick={saveAndNext}>{idx === questions.length - 1 ? 'Save' : 'Save & next →'}</button>
               <button className="btn" onClick={() => go(idx + 1)} disabled={idx === questions.length - 1}>Next →</button>
             </div>
           </section>
         ) : <ReviewView engine={engine} questions={questions} attemptId={attemptId} clientId={clientId} submitKey={submitKey.current} onBack={(n) => go(n ?? idx)} onSubmitted={onSubmitted} />}
         </div>
 
-        <aside className={`stack pal-aside ${palOpen ? 'open' : ''}`} id="question-navigator" aria-label="Question navigator">
-          <button className="btn btn-sm pal-close" onClick={() => setPalOpen(false)}>Close ✕</button>
-          <div className="card"><div className="card-h"><h2>Question palette</h2><span className="small muted mono">{counts.answered}/{questions.length}</span></div><div className="card-b stack">
-            <div className="bar" aria-hidden><i style={{ width: `${(counts.answered / questions.length) * 100}%` }} /></div>
-            <div className="row wrap" role="group" aria-label="Filter questions">{([['all', 'All'], ['answered', 'Answered'], ['skipped', 'Skipped'], ['unanswered', 'Unanswered'], ['notvisited', 'Not visited'], ['marked', 'Marked']] as [Filter, string][]).map(([k, l]) => <button key={k} className="chip" aria-pressed={filter === k} onClick={() => setFilter(k)}>{l}{k !== 'all' ? ` ${k === 'marked' ? counts.marked : counts[k]}` : ''}</button>)}</div>
-            <div className="pal" role="list">{visible.map(({ x, i, k, m }) => <button key={x.id} role="listitem" className={`${k} ${i === idx && view === 'q' ? 'current' : ''} ${m ? 'marked' : ''}`} onClick={() => { go(i); setPalOpen(false); }} aria-label={`Question ${x.number}, ${k === 'notvisited' ? 'not visited' : k}${m ? ', marked for review' : ''}`} aria-current={i === idx ? 'true' : undefined}>{pad(x.number)}</button>)}</div>
-            {!visible.length && <div className="small faint">No questions match this filter.</div>}
-            <div className="legend"><span><i style={{ background: 'var(--green)' }} />Answered</span><span><i style={{ background: 'var(--amber-bg)', borderColor: '#E2B93B' }} />Skipped</span><span><i style={{ borderColor: 'var(--maroon)' }} />Unanswered</span><span><i />Not visited</span><span><i style={{ background: 'var(--crimson)' }} />Marked</span></div>
-          </div></div>
-          <div className="notice small">Press <b className="mono">A–E</b> to choose an option and <b className="mono">←</b> <b className="mono">→</b> to move. Answers save automatically.</div>
+        <aside ref={asideRef} tabIndex={-1} className={`stack pal-aside ${palOpen ? 'open' : ''}`} id="question-navigator" aria-label="Question navigator" role={isSheet && palOpen ? 'dialog' : undefined} aria-modal={isSheet && palOpen ? true : undefined}>
+          <button type="button" className="btn btn-sm pal-close" onClick={() => setPalOpen(false)}>Close ✕</button>
+          <QuestionPalette items={visible} all={all} total={questions.length} current={idx} inView={view === 'q'} counts={counts} filter={filter} setFilter={setFilter} onGo={(i) => { go(i); setPalOpen(false); }} sheet={isSheet} />
+          <div className="notice small">Press <b className="mono">A–E</b> to choose an option, <b className="mono">←</b> <b className="mono">→</b> to move and <b className="mono">G</b> to go to a question number. Answers save automatically.</div>
         </aside>
         {palOpen && <div className="nav-scrim pal-scrim" onClick={() => setPalOpen(false)} aria-hidden />}
       </div>
@@ -258,12 +265,20 @@ function QuestionBlock({ engine, q, total, current, onFocus }: { engine: ExamEng
 }
 
 function ReviewView({ engine, questions, attemptId, clientId, submitKey, onBack, onSubmitted }: { engine: ExamEngine; questions: Q[]; attemptId: string; clientId: string; submitKey: string; onBack: (n?: number) => void; onSubmitted: (r: Receipt) => void }) {
-  const [agree, setAgree] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [confirm, setConfirm] = useState(false);
-  const c = engine.counts();
+  const [agree, setAgree] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [confirm, setConfirm] = useState(false); const [waiting, setWaiting] = useState(false); const cancelled = useRef(false);
+  const c = engine.counts(); const ss = engine.saveStatus(); const pending = ss.pendingIds; const idxOf = new Map(questions.map((x, i) => [x.id, i]));
+  const pendingNums = pending.map((id) => ({ id, i: idxOf.get(id) ?? 0, n: questions[idxOf.get(id) ?? 0]?.number ?? 0 })).sort((a, b) => a.n - b.n);
+  const items: PalItem[] = questions.map((x, i) => { const t = engine.get(x.id); return { id: x.id, number: x.number, index: i, kind: paletteKind(t), marked: t.marked, unsynced: t.rev > t.savedRev }; });
+  const left = clock(engine.remainingMs());
+  // Submission is the authoritative step. Anything the server has not confirmed is NOT part of `expected` and will not be counted — the candidate is told exactly which
+  // questions, gets a bounded, cancellable attempt to confirm them first, and must acknowledge before submitting without them. Nothing is dropped silently.
   async function submit() {
-    setBusy(true); setErr('');
-    const ok = await engine.flushAll(20000);
-    if (!ok) { setBusy(false); setErr(`${engine.pendingCount()} answer(s) are not stored yet. Wait for the connection and try again.`); return; }
+    setBusy(true); setErr(''); cancelled.current = false;
+    if (engine.pendingCount() > 0) {
+      setWaiting(true); await engine.retryNow(); await engine.flushAll(15000, () => cancelled.current); setWaiting(false);
+      if (cancelled.current) { setBusy(false); return; }
+    }
+    const unconfirmed = engine.pendingCount();
     for (let attempt = 0; attempt < 6; attempt++) {
       try {
         const r = await post(`/attempts/${attemptId}/submit`, { clientId, submitKey, expected: engine.expected() });
@@ -275,22 +290,28 @@ function ReviewView({ engine, questions, attemptId, clientId, submitKey, onBack,
         await new Promise((r) => setTimeout(r, 1000 * (attempt + 1))); // network/5xx: retry with the SAME submit key (idempotent)
       }
     }
-    setBusy(false); setErr('Could not reach the server. Your answers are safe; press Submit again when the connection returns.');
+    setBusy(false); setErr(unconfirmed ? `Could not reach the server, so nothing was submitted. ${unconfirmed} answer(s) are still not confirmed. You have ${left} left — press Submit again when the connection returns.` : 'Could not reach the server, so nothing was submitted. Your confirmed answers are safe; press Submit again when the connection returns.');
   }
   return (
     <section className="card" aria-label="Review answers">
-      <div className="card-h"><h2>Review your answers</h2><button className="btn btn-sm" onClick={() => onBack()}>← Back to questions</button></div>
+      <div className="card-h"><h2>Review your answers</h2><div className="row"><span className="small muted" data-testid="review-time-left">Time left <b className="mono">{left}</b></span><button className="btn btn-sm" onClick={() => onBack()}>← Back to questions</button></div></div>
       <div className="card-b stack">
         <div className="grid g4"><Cnt k="Answered" v={c.answered} /><Cnt k="Skipped" v={c.skipped} /><Cnt k="Unanswered" v={c.unanswered} /><Cnt k="Not visited" v={c.notvisited} /></div>
+        {pending.length > 0
+          ? <Notice tone="warn"><div data-testid="review-unconfirmed" role="status"><b>{pending.length === 1 ? '1 answer is' : `${pending.length} answers are`} not confirmed by the server yet.</b> They are kept on this device and retried automatically; until the server confirms them they are <b>not</b> counted as saved.{' '}
+            {pendingNums.map((p, k) => <span key={p.id}>{k ? ', ' : ''}<button className="btn-link" onClick={() => onBack(p.i)}>Question {p.n}</button></span>)}. <button className="btn btn-sm" onClick={() => void engine.retryNow()} data-testid="review-retry">Retry saving now</button></div></Notice>
+          : <p className="small muted" data-testid="review-all-confirmed" role="status">✓ Every answer on this screen is confirmed by the server.</p>}
         {c.marked > 0 && <Notice tone="warn">{c.marked} question(s) are marked for review.</Notice>}
         {(c.skipped + c.unanswered + c.notvisited) > 0 && <Notice tone="warn">{c.skipped + c.unanswered + c.notvisited} question(s) have no answer. Select a number to return to it.</Notice>}
-        <div className="pal" style={{ gridTemplateColumns: 'repeat(10, 1fr)' }}>{questions.map((x, i) => { const s = engine.get(x.id); return <button key={x.id} className={`${paletteKind(s)} ${s.marked ? 'marked' : ''}`} onClick={() => onBack(i)} aria-label={`Question ${x.number}: ${paletteKind(s)}`}>{pad(x.number)}</button>; })}</div>
+        <ul className="pal pal-review" aria-label="All questions">{items.map((x) => <li key={x.id}><button type="button" className={`${x.kind} ${x.marked ? 'marked' : ''} ${x.unsynced ? 'unsynced' : ''}`} onClick={() => onBack(x.index)} aria-label={labelFor(x)}><span className="g" aria-hidden>{x.unsynced ? '!' : GLYPH[x.kind]}</span>{pad(x.number)}</button></li>)}</ul>
         {err && <Notice tone="bad">{err}</Notice>}
-        <div className="row"><button className="btn btn-primary" onClick={() => setConfirm(true)} disabled={busy}>Submit examination…</button><span className="small muted">You cannot change answers after submission.</span></div>
+        <div className="row"><button className="btn btn-primary" onClick={() => { setAgree(false); setConfirm(true); }} disabled={busy}>Submit examination…</button><span className="small muted">You cannot change answers after submission.</span></div>
       </div>
-      {confirm && <Modal title="Submit examination?" onClose={() => !busy && setConfirm(false)} footer={<><button className="btn" onClick={() => setConfirm(false)} disabled={busy}>Cancel</button><button className="btn btn-primary" disabled={!agree || busy} onClick={submit} data-testid="confirm-submit">{busy ? 'Submitting…' : 'Confirm and submit'}</button></>}>
-        <p>You answered <b>{c.answered}</b> of <b>{questions.length}</b> questions. {questions.length - c.answered > 0 ? `${questions.length - c.answered} will be marked as unanswered.` : ''}</p>
-        <label className="row" style={{ alignItems: 'flex-start' }}><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /> <span>I have reviewed my answers and understand that submission is final.</span></label>
+      {confirm && <Modal title="Submit examination?" onClose={() => { if (waiting) { cancelled.current = true; } if (!busy || waiting) setConfirm(false); }} footer={<><button className="btn" onClick={() => { cancelled.current = true; setConfirm(false); }} disabled={busy && !waiting}>{waiting ? 'Stop waiting' : 'Cancel'}</button><button className="btn btn-primary" disabled={!agree || busy} onClick={submit} data-testid="confirm-submit">{busy ? (waiting ? 'Confirming answers…' : 'Submitting…') : 'Confirm and submit'}</button></>}>
+        <p>You answered <b>{c.answered}</b> of <b>{questions.length}</b> questions. {questions.length - c.answered > 0 ? `${questions.length - c.answered} will be marked as unanswered.` : ''} Time left: <b className="mono">{left}</b>.</p>
+        {pending.length > 0 && <Notice tone="bad"><div role="alert" data-testid="confirm-unconfirmed"><b>Not confirmed by the server: Question {pendingNums.map((p) => p.n).join(', ')}.</b> These answers are not stored. If you submit now they <b>will not be counted</b>. We will first try for up to 15 seconds to confirm them; you can also <button className="btn btn-sm" onClick={() => void engine.retryNow()}>retry now</button> or cancel and go back.</div></Notice>}
+        {waiting && <p role="status" aria-live="polite" className="small">Confirming {engine.pendingCount()} answer(s) with the server… you can stop waiting at any time.</p>}
+        <label className="row" style={{ alignItems: 'flex-start' }}><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /> <span>{pending.length > 0 ? `I understand that ${pending.length === 1 ? 'this answer' : 'these answers'} will not be counted unless the server confirms ${pending.length === 1 ? 'it' : 'them'}, and that submission is final.` : 'I have reviewed my answers and understand that submission is final.'}</span></label>
         {err && <Notice tone="bad">{err}</Notice>}
       </Modal>}
     </section>

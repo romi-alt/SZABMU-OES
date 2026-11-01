@@ -62,7 +62,7 @@ test.describe.serial('student examination — real API and database', () => {
     await page.getByTestId('opt-D').click();
     await expect(saveState(page)).toHaveText('✓ Saved');
     await context.setOffline(true);
-    await page.getByRole('button', { name: /^Next/ }).click();
+    await page.getByRole('button', { name: 'Next →', exact: true }).click();
     await page.getByTestId('opt-E').click();
     await expect(saveState(page)).not.toHaveText('✓ Saved');
     await expect(page.getByText(/connection lost/i)).toBeVisible();
