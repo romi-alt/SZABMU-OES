@@ -88,6 +88,16 @@ test.describe('keyboard only', () => {
   });
 });
 
+test.describe('desktop layout', () => {
+  test('sidebar is always visible and there is no Menu button or scrim taking space', async ({ page }) => {
+    await login(page, 'student.b008');
+    await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Menu' })).toBeHidden();
+    const { sidebarRight, mainLeft } = await page.evaluate(() => ({ sidebarRight: document.querySelector('.sidebar')!.getBoundingClientRect().right, mainLeft: document.querySelector('.main')!.getBoundingClientRect().left }));
+    expect(mainLeft).toBeGreaterThanOrEqual(sidebarRight - 1);       // content sits beside the sidebar, not under it
+  });
+});
+
 test.describe('phone layout (390 px)', () => {
   test.use({ viewport: { width: 390, height: 844 } });
   test('navigation is a drawer: hidden by default, opens from Menu, closes on Escape and after navigating', async ({ page }) => {
