@@ -32,7 +32,7 @@ test.describe('Content-Security-Policy and favicon', () => {
   test('no policy violation while using login, student dashboard, schedule, exam player (both layouts), results, performance, MFA and staff pages', async ({ page, browser }) => {
     const violations = watchCsp(page);
     await page.goto('/login'); await expect(page.getByRole('heading', { name: /sign in/i }).first()).toBeVisible();
-    await login(page, 'student.b002');                                                                  // a seeded candidate no other spec uses
+    await login(page, 'student.b008');                                                                  // a seeded candidate no other spec uses
     for (const p of ['/dashboard', '/schedule', '/results', '/performance', '/profile']) { await page.goto(p); await page.waitForLoadState('networkidle'); }
     await page.goto('/schedule'); await page.getByRole('link', { name: /Start|Resume/ }).click();
     await page.getByRole('button', { name: /begin|resume/i }).click(); await expect(page.getByRole('timer')).toBeVisible();

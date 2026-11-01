@@ -192,7 +192,7 @@ describe('submission', () => {
     const acked = results.slice(0, eqs.length).map((r, i) => ({ r, q: eqs[i]! })).filter((x) => x.r.status === 200);
     for (const { q } of acked) expect(final.find((f) => f.examQuestionId === q.id)?.selectedLabel).toBeTruthy(); // every "Saved" is durable
     const att = await ctx.prisma.attempt.findUniqueOrThrow({ where: { id: a.id } });
-    const { answerDigest } = await import('@oes/shared');
+    const { answerDigest } = await import('@oes/shared/server');
     const am = new Map(final.map((f) => [f.examQuestionId, f]));
     expect(att.answerDigest).toBe(answerDigest(eqs.map((q) => ({ examQuestionId: q.id, selectedLabel: am.get(q.id)?.selectedLabel ?? null, revision: am.get(q.id)?.revision ?? 0 }))));
   });

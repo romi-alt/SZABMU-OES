@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { login } from './helpers';
 
-// student.b006 is used by no other spec (the specs share one seeded database).
+// student.b007 is used by no other spec (the specs share one seeded database; each state-changing spec owns its candidate).
 test('all MCQs on one page: answer several, skip and mark in place, palette jumps, survives reload, review and submit', async ({ page }) => {
-  await login(page, 'student.b006');
+  await login(page, 'student.b007');
   await page.goto('/schedule'); await page.getByRole('link', { name: /Start|Resume/ }).click();
   await page.getByRole('button', { name: /begin|resume/i }).click();
   await expect(page.getByRole('timer')).toBeVisible();
