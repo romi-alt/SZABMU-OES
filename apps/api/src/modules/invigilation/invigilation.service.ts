@@ -43,7 +43,7 @@ export class InvigilationService {
     const counts = await this.prisma.$queryRaw<{ attemptId: string; n: number }[]>`
       SELECT aa."attemptId", count(*) FILTER (WHERE aa.state = 'ANSWERED')::int AS n FROM attempt_answers aa JOIN attempts a ON a.id = aa."attemptId" WHERE a."examId" = ${examId}::uuid GROUP BY 1`;
     const cm = new Map(counts.map((c) => [c.attemptId, c.n]));
-    let hb: Record<string, string> = {};
+    const hb: Record<string, string> = {};
     try { for (const h of await this.prisma.attemptHeartbeat.findMany({ where: { examId }, select: { attemptId: true, seenAt: true, online: true } })) hb[h.attemptId] = JSON.stringify({ t: h.seenAt.getTime(), online: h.online }); } catch { /* optional */ }
     const am = new Map(attempts.map((a) => [a.studentId, a]));
     const total = await this.prisma.examQuestion.count({ where: { examId } });
