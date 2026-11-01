@@ -96,6 +96,21 @@
 Free-tier limits to watch: Upstash 500k commands/month (BullMQ polling consumes some continuously); Neon free compute auto-suspends when idle,
 so the first request after a quiet period is slower.
 
+## Known issue: Redis unreachable from Hostinger (health = `degraded`)
+
+From the Hostinger server every Redis connection to Upstash (`rediss://…:6379`) ends in `ECONNRESET`, while the same URL works from a
+workstation and PostgreSQL (5432) works from Hostinger. Most likely Hostinger's shared web servers block outbound 6379 (Upstash offers no
+other TCP port; 443 is HTTP/REST only). Effect, because the API degrades gracefully:
+
+| Works | Does not work |
+|---|---|
+| sign-in, dashboards, question bank, papers, scheduling, sitting an exam, answer saves, submit | password-reset codes (`rt:*` keys), student self-registration (`reg:*`) |
+| grading (database sweeper recovers when the queue is down) | login rate limiting is not enforced |
+| live monitor (falls back to polling) | live push (SSE) via Redis pub/sub |
+
+Fix options: (1) finish the hosting track's Redis removal (PR #3, ported onto the exam-control backend) — the project's own plan;
+(2) ask Hostinger support to allow outbound TCP 6379 to `*.upstash.io`; (3) a Redis host reachable on an allowed port.
+
 ## Lessons (things that cost time)
 
 - **Loopback ports between processes don't work on Hostinger web hosting.** A child API on `127.0.0.1:<port>` reported `EADDRINUSE`
