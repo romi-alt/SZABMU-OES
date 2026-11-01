@@ -32,6 +32,12 @@ test.describe.serial('student examination — real API and database', () => {
     await page.getByRole('button', { name: 'Clear response' }).click();
     await expect(page.getByTestId('opt-C')).toHaveAttribute('aria-checked', 'false');
     await expect(saveState(page)).toHaveText('✓ Saved');
+    // UI-015: clearing is reversible — Undo restores the choice and it is saved again; then clear for the rest of the test
+    await expect(page.getByTestId('clear-undo')).toBeVisible();
+    await page.getByTestId('clear-undo').getByRole('button', { name: 'Undo' }).click();
+    await expect(page.getByTestId('opt-C')).toHaveAttribute('aria-checked', 'true'); await expect(saveState(page)).toHaveText('✓ Saved');
+    await page.getByRole('button', { name: 'Clear response' }).click();
+    await expect(page.getByTestId('opt-C')).toHaveAttribute('aria-checked', 'false'); await expect(saveState(page)).toHaveText('✓ Saved');
 
     // mark / unmark
     await page.getByRole('button', { name: 'Mark for review' }).click();

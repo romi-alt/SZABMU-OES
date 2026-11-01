@@ -36,3 +36,32 @@ test('notification panel states how many are shown and can filter to unread', as
   await page.getByLabel('Unread only').check();
   expect(await page.getByTestId('notification-link').count()).toBeLessThanOrEqual(all);
 });
+
+test.describe('navigation labels and monitor scope (UI-020, UI-021, UI-024)', () => {
+  test('menu label equals page title and the breadcrumb is never blank', async ({ page }) => {
+    await login(page, 'examiner');
+    for (const [link, title] of [['Question bank', 'Question bank'], ['Examinations', 'Examinations']] as const) {
+      await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: link, exact: true }).click();
+      await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+      await expect(page.locator('.crumbs b')).toHaveText(title);
+    }
+    await page.goto('/programs'); await expect(page.locator('.crumbs b')).toHaveText('Programs & courses');
+  });
+  test('CCE menu says Enrolment & eligibility like its page', async ({ page }) => {
+    await login(page, 'cce');
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Enrolment & eligibility', exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Enrolment & eligibility' })).toBeVisible(); await expect(page.locator('.crumbs b')).toHaveText('Enrolment & eligibility');
+  });
+  test('monitor scope text matches the viewer; an exam that does not exist stops claiming to reconnect', async ({ browser }) => {
+    const c = await browser.newContext(); const p = await c.newPage(); await login(p, 'cce');
+    await p.goto('/monitor/00000000-0000-4000-8000-000000000000');
+    await expect(p.getByTestId('error-notfound')).toBeVisible(); await expect(p.getByText(/Reconnecting/)).toHaveCount(0); await c.close();
+  });
+  test('Staff & accounts lists staff by default; students are one filter away', async ({ page }) => {
+    await login(page, 'admin.a'); await page.goto('/users');
+    await expect(page.locator('tbody tr').first()).toBeVisible();
+    await expect(page.locator('tbody tr td:nth-child(3)').filter({ hasText: /^Student$/ })).toHaveCount(0);
+    await page.getByLabel('Role').selectOption({ label: 'Student' });
+    await expect(page.locator('tbody tr td:nth-child(3)').filter({ hasText: /^Student$/ }).first()).toBeVisible();
+  });
+});

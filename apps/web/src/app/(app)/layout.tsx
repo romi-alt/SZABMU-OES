@@ -4,7 +4,7 @@ import { BrandLogo } from '@/brand';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMe } from '@/session';
-import { NAV, ruleFor } from '@/nav';
+import { NAV, crumbFor, ruleFor } from '@/nav';
 import { get, post, fmtDT } from '@/api';
 import { Loading } from '@/ui';
 import { PERMISSIONS, ROLE_LABEL, isSafeAppLink, type Permission, type Role } from '@oes/shared';
@@ -60,7 +60,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   if (loading || !me) return <div style={{ padding: 40 }}><Loading /></div>;
   const nav = NAV[me.role];
   const rule = ruleFor(path); const denied = !!rule && !me.permissions.includes(rule.perm);
-  const crumb = nav.items.find((i) => path.startsWith(i.href))?.label ?? '';
+  const crumb = nav.items.find((i) => path.startsWith(i.href))?.label ?? crumbFor(path);
   return (
     <div className="shell">
         <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); const m = document.getElementById('main'); m?.focus(); m?.scrollIntoView(); }}>Skip to main content</a>

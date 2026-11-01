@@ -40,7 +40,7 @@ test.describe('staff workflows', () => {
 
     const ctx = await browser.newContext(); const ex = await ctx.newPage();
     await login(ex, 'examiner');
-    await ex.getByRole('link', { name: 'Question review' }).click();
+    await ex.getByRole('link', { name: 'Question bank' }).click();
     const r2 = ex.locator('tbody tr', { hasText: 'underlying cause of this anaemia' });
     await expect(r2).toContainText('Submitted');
     await r2.getByRole('button', { name: 'Approve' }).click();

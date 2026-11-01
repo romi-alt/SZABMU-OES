@@ -5,7 +5,7 @@
 | Type-check (web) | clean |
 | Build (shared, API, web) | OK |
 | `@oes/shared` | 52 / 52 passed |
-| `@oes/api` (incl. authorization, engine, campus isolation) | 260 / 260 passed (20 files) |
+| `@oes/api` (incl. authorization, engine, campus isolation) | 264 / 264 passed (21 files) |
 | Playwright e2e (real API + built web) | 74 / 74 passed |
 | Fault suite (own infrastructure) | 17 passed, 1 skipped, exit 0 |
 
