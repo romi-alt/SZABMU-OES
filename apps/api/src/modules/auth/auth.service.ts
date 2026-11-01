@@ -37,7 +37,7 @@ export class AuthService {
     const email = emailRaw.trim().toLowerCase();
     const ipHits = await this.redis.hit(`rl:login:ip:${ip}`, 900);
     const idHits = await this.redis.hit(`rl:login:id:${email}`, 900);
-    if (ipHits > 60 || idHits > 20) { this.metrics.authFailures.inc({ kind: 'login_rate_limited' }); throw new AppError(429, 'RATE_LIMITED', 'Too many sign-in attempts. Try again later.'); }
+    if (ipHits > this.cfg.LOGIN_RATE_IP_MAX || idHits > this.cfg.LOGIN_RATE_ID_MAX) { this.metrics.authFailures.inc({ kind: 'login_rate_limited' }); throw new AppError(429, 'RATE_LIMITED', 'Too many sign-in attempts. Try again later.'); }
 
     const user = await this.prisma.user.findUnique({ where: { email }, include: { institutions: true, student: { select: { id: true } } } });
     const now = new Date();
