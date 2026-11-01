@@ -1,6 +1,6 @@
 # 10 — Final verification and classification
 Classification: **INTERNAL_TESTING_READY** (unchanged). No pilot or production-readiness claim.
 
-Dispositions: FIXED_VERIFIED 22, FIXED_NOT_FULLY_TESTED 7, NOT_STARTED 18, REQUIRES_POLICY_DECISION 5, BLOCKED 0, NOT_REPRODUCED 0 — total 52. All 8 P1 issues are FIXED_VERIFIED. **This is not "all 52 resolved."**
+Dispositions: FIXED_VERIFIED 22, FIXED_NOT_FULLY_TESTED 8, NOT_STARTED 17, REQUIRES_POLICY_DECISION 5, BLOCKED 0, NOT_REPRODUCED 0 — total 52. All 8 P1 issues are FIXED_VERIFIED. **This is not "all 52 resolved."**
 
 Evidence: see 07-test-results.md and the per-issue rows in 11-issue-tracker.md. Feature branch pushed through `c6726b0`; later batches are local commits until pushed. No PR, no merge, no deploy.

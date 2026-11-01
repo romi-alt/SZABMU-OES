@@ -28,6 +28,7 @@ export default function Login() {
         <div className="row between"><span className="small faint">Accounts lock for 15 minutes after 5 failed attempts.</span><Link href="/forgot" className="small" style={{ whiteSpace: "nowrap" }}>Forgot password?</Link></div>
         <button className="btn btn-primary" disabled={busy || !email || !password} style={{ justifyContent: 'center', padding: '10px' }}>{busy ? 'Signing in…' : 'Sign in →'}</button>
       </form>
+      <div className="notice small" style={{ textAlign: 'center' }}>New student? <Link href="/register"><b>Create your account</b></Link></div>
       <div className="small faint">Trouble signing in? Contact your campus administrator or the university IT helpdesk.</div>
     </AuthFrame>
   );

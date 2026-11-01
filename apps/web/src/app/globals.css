@@ -124,7 +124,7 @@ textarea.in { resize: vertical; min-height: 72px; }
 .auth-art h2 { font-size: 30px; font-weight: 650; line-height: 1.2; max-width: 520px; color: #fff; } .auth-art p { max-width: 460px; color: #D9C0BC; }
 .auth-form { display: grid; place-items: center; padding: 32px; } .auth-box { width: min(400px, 100%); display: flex; flex-direction: column; gap: 14px; }
 .auth-logo { width: 340px; max-width: 100%; }
-@media (max-width: 860px) { .auth { grid-template-columns: 1fr; } .auth-art { padding: 24px; gap: 20px; } .auth-art h2 { font-size: 22px; } }
+@media (max-width: 860px) { .auth { grid-template-columns: minmax(0, 1fr); } .auth-art, .auth-form { min-width: 0; } .auth-art img, .auth-art .auth-logo { max-width: 100%; height: auto; } .auth-form { padding: 24px 16px; } .auth-art { padding: 24px; gap: 20px; } .auth-art h2 { font-size: 22px; } }
 .otp { display: flex; gap: 8px; } .otp input { width: 46px; height: 52px; text-align: center; font-family: var(--mono); font-size: 22px; border: 1px solid var(--rose); border-radius: 6px; }
 .meter { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; } .meter i { height: 4px; border-radius: 2px; background: var(--rose); } .meter i.on { background: var(--green); } .meter i.weak { background: var(--crimson); }
 
