@@ -8,7 +8,8 @@
   --radius: 6px; --sidebar: 248px;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--ivory); color: var(--ink); font-family: var(--font); font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+html { font-size: 100%; } body { font-size: 0.875rem; }  /* follows the browser text-size setting (UI-046) */
+html, body { margin: 0; background: var(--ivory); color: var(--ink); font-family: var(--font); line-height: 1.45; -webkit-font-smoothing: antialiased; }
 h1, h2, h3 { margin: 0; line-height: 1.2; letter-spacing: -0.01em; }
 h1 { font-size: 22px; font-weight: 650; } h2 { font-size: 15px; font-weight: 650; } h3 { font-size: 13px; font-weight: 650; }
 a { color: var(--maroon); } a:hover { color: var(--crimson); }
@@ -348,3 +349,18 @@ a:has(> .stat) { display: block; border-radius: 16px; transition: transform .12s
 .paper-list li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #F2E8E4; border-radius: 12px; background: #fff; }
 .paper-n { flex: none; width: 28px; height: 28px; border-radius: 8px; background: #F6DEDB; color: var(--maroon); display: grid; place-items: center; font-weight: 700; font-size: 12px; } .paper-stem { flex: 1; min-width: 0; }
 @media (max-width: 640px) { .paper-list li { flex-wrap: wrap; } .paper-stem { flex: 1 1 100%; } }
+
+/* Phones: slim exam header (≤ 64 px) and an action bar that stays on screen however long the question is (UI-036, 041, 052) */
+@media (max-width: 960px) {
+  .q-card { overflow: visible; } .q-head { border-radius: 20px 20px 0 0; }
+  .exam .q-foot { position: sticky; bottom: 0; z-index: 8; border-radius: 0 0 20px 20px; box-shadow: 0 -8px 20px rgba(36, 23, 22, .1); }
+}
+@media (max-width: 640px) {
+  .exam-bar { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 0 0 16px 16px; }
+  .exam-logo { display: none; }
+  .exam-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }   /* still the page's h1 for assistive technology */
+  .exam-clock { padding: 2px 10px; border-radius: 12px; } .exam-clock .k { display: none; } .exam-clock .v { font-size: 18px; }
+  .exam-bar .pal-toggle { justify-self: end; } .exam-bar .btn { min-height: 40px; padding: 6px 10px; font-size: 12.5px; flex: none; }
+}
+
+.tbl td.nowrap { white-space: nowrap; } .audit-det summary { cursor: pointer; color: var(--maroon); } .audit-det[open] > div { margin-top: 6px; max-width: 360px; word-break: break-all; }

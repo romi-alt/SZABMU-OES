@@ -36,3 +36,16 @@ export function ExamActionLink({ row, offset, size = 'sm' }: { row: MyExam; offs
   if (a.kind === 'view-result') return <Link className={cls} href="/results">{a.label} →</Link>;
   return <Link className={cls} href={`/exam/${row.examId}`}>{a.kind === 'resume' ? 'Resume →' : 'Start →'}</Link>;
 }
+
+export interface NotEligible { examId: string; code: string; title: string; course: string; reason: string }
+/** Says plainly when a candidate is not admitted to an examination, why, and who to contact (UI-051). */
+export function NotEligibleNotice({ items }: { items: NotEligible[] | undefined }) {
+  if (!items?.length) return null;
+  return (
+    <div className="stack" data-testid="not-eligible" style={{ marginBottom: 14 }}>
+      {items.map((x) => (
+        <div key={x.examId} className="notice warn" role="status"><b>You are not eligible for {x.title}.</b> {x.reason} Contact your campus administrator or examinations office as soon as possible — they can review your record or record a decision.</div>
+      ))}
+    </div>
+  );
+}

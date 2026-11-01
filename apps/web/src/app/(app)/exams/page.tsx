@@ -30,18 +30,25 @@ function Create({ onClose, onDone }: { onClose: () => void; onDone: () => void }
   );
 }
 
+const LIVEISH = ['LIVE', 'SUSPENDED', 'CLOSING'];
+const CONTROLLABLE = ['SCHEDULED', 'ADMISSION_OPEN', 'LIVE', 'SUSPENDED', 'CLOSING', 'CLOSED', 'SCORING'];
+const SUBTITLE: Record<string, string> = {
+  LECTURER: 'Examinations for your courses, with their papers and results.', EXAMINER: 'Build papers, schedule examinations, follow them live and review results.',
+  CCE: 'Approve papers, control live examinations and publish results.', CAMPUS_ADMIN: 'Examinations running at your campus.', INVIGILATOR: 'Examinations you are assigned to.', SUPER_ADMIN: 'Every examination across the university.',
+};
+
 function Inner() {
-  const { can } = useMe(); const sp = useSearchParams(); const url = useUrlState({ status: sp.get('status') ?? '', page: '1' }); const status = url.vals.status; const page = Number(url.vals.page) || 1; const setStatus = (v: string) => url.set('status', v); const setPage = (n: number) => url.set('page', String(n)); const [create, setCreate] = useState(false);
+  const { me, can } = useMe(); const sp = useSearchParams(); const url = useUrlState({ status: sp.get('status') ?? '', page: '1' }); const status = url.vals.status; const page = Number(url.vals.page) || 1; const setStatus = (v: string) => url.set('status', v); const setPage = (n: number) => url.set('page', String(n)); const [create, setCreate] = useState(false);
   const list = useGet<Paged<ExamListItem>>(`/exams?page=${page}&pageSize=25${status ? `&status=${status}` : ''}`);
   return (
     <>
-      <PageHead title="Examinations" sub="Build papers, approve, schedule, monitor and publish.">{can('exam.schedule') && <button className="btn btn-green" onClick={() => setCreate(true)}>+ New examination</button>}</PageHead>
+      <PageHead title="Examinations" sub={SUBTITLE[me?.role ?? ''] ?? 'Examinations you can see.'}>{can('exam.schedule') && <button className="btn btn-green" onClick={() => setCreate(true)}>+ New examination</button>}</PageHead>
       <Card flush>
         <div className="filters"><Field label="Status"><select className="in" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}><option value="">All</option>{['DRAFT', 'PAPER_PENDING', 'APPROVED', 'SCHEDULED', 'LIVE', 'CLOSED', 'RESULT_PENDING', 'PUBLISHED', 'CANCELLED'].map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}</select></Field></div>
         <Async state={list}>{(d) => <><Table rowKey={(r) => r.id} empty={<ListEmpty noun="examinations" filters={[status && status.toLowerCase().replace(/_/g, ' ')].filter(Boolean) as string[]} onClear={url.reset} />} rows={d.items} cols={[
           { h: 'Code', cell: (r) => <Link className="code" href={`/exams/${r.id}`}>{r.code}</Link> }, { h: 'Title', cell: (r) => <b>{r.title}</b> }, { h: 'Course', cell: (r) => r.course.code },
-          { h: 'Opens', cell: (r) => fmtDT(r.opensAt) }, { h: 'Min', num: true, cell: (r) => r.durationMin }, { h: 'Qs', num: true, cell: (r) => r._count.questions }, { h: 'Candidates', num: true, cell: (r) => r._count.candidates },
-          { h: 'Status', cell: (r) => <Status s={r.status} /> }, { h: '', cell: (r) => <Link href={`/exams/${r.id}`}>Open ›</Link> },
+          { h: 'Window opens', cell: (r) => LIVEISH.includes(r.status) ? <b>Live now</b> : fmtDT(r.opensAt) }, { h: 'Minutes', num: true, cell: (r) => r.durationMin }, { h: 'Questions', num: true, cell: (r) => r._count.questions }, { h: 'Candidates', num: true, cell: (r) => r._count.candidates },
+          { h: 'Status', cell: (r) => <Status s={r.status} /> }, { h: '', cell: (r) => <span className="row"><Link href={`/exams/${r.id}`}>Open ›</Link>{can('exam.control.view') && CONTROLLABLE.includes(r.status) && <Link className="btn btn-sm" href={`/exams/${r.id}/control`} aria-label={`Control centre for ${r.code}`}>Control centre</Link>}</span> },
         ]} /><Pager page={page} total={d.total} size={25} onPage={setPage} /></>}</Async>
       </Card>
       {create && <Create onClose={() => setCreate(false)} onDone={list.reload} />}

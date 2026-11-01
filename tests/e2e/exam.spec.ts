@@ -86,9 +86,9 @@ test.describe.serial('student examination — real API and database', () => {
 
     // reload mid-exam: server state restores answers; clock keeps running from the server deadline
     const before = await page.getByTestId('remaining').innerText();
-    await page.reload();
-    await page.getByRole('button', { name: /resume examination/i }).click();
-    await expect(page.getByRole('timer')).toBeVisible();
+    await page.reload();                                                                     // UI-040: no instructions page, no extra click
+    await expect(page.getByRole('timer')).toBeVisible(); await expect(page.getByText(/Welcome back — you were taken straight to your examination/)).toBeVisible();
+    await expect(page.getByRole('button', { name: /resume examination|begin examination/i })).toHaveCount(0);
     await page.locator('.pal button').nth(0).click();
     await expect(page.getByTestId('opt-A')).toHaveAttribute('aria-checked', 'true');
     await expect(page.locator('.q-stem')).toHaveText(firstStem);
