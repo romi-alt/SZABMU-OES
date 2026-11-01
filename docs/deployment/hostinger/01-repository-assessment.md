@@ -1,5 +1,7 @@
 # 01 — Repository assessment
 
+> **Superseded plan.** This folder describes a self-managed VPS deployment. The current direction is Hostinger **managed** hosting with external services: see [`../hostinger-managed/`](../hostinger-managed/). The repository audit below remains valid; the infrastructure parts do not apply.
+
 Scope: the existing SZABMU/PIMS Online Examination System, assessed for deployment to **https://oes.szabmu.site** (students) and **https://dashboard.szabmu.site** (staff/admin) as two portals of one platform. Nothing was deployed, no DNS was changed, no migration was run.
 
 Assessed on branch `claude/hosting-hostinger-plan`, created from `origin/claude/oes-platform-foundation` at `c6726b0`. That branch is still moving (another session is working on it); re-run `git log` before relying on any file path here.

@@ -1,6 +1,6 @@
 # Hostinger VPS deployment templates
 
-**Templates only. Nothing here has been executed, installed or deployed.** The plan, the gates and the open questions are in
+**Superseded VPS templates (see `docs/deployment/README.md`). Templates only; nothing here has been executed, installed or deployed.** The plan, the gates and the open questions are in
 [`docs/deployment/hostinger/`](../../docs/deployment/hostinger/) (start with `03-two-portal-architecture.md`, finish with `08-implementation-checklist.md`).
 
 | File | Purpose | Validated |
