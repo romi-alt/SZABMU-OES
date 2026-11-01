@@ -34,3 +34,10 @@ PostgreSQL failover; reverse proxy/TLS; Firefox/Safari; behaviour with several h
 ## Not claimed
 
 Pilot readiness; capacity at any size beyond what `10` measured; that the control centre has been used for a real examination.
+
+
+## Added by the scale-risk pass (TODAY)
+- New environment knobs: `LIFECYCLE_LEASE_SECONDS` (15), `LIFECYCLE_CONCURRENCY` (8, 1–32), `SSE_MAX_PER_USER` (4), `SSE_MAX_PER_PROCESS` (20000). Defaults unchanged in behaviour except the lease now renews during long passes.
+- Save abuse limiter is now per-process (not shared across API processes): with N processes a candidate's effective ceiling is up to N × 100 saves per 10 s. Acceptable as abuse protection; not an exact quota.
+- Mass expiry throughput (~250–330/s) is unattributed; the candidates-page slowdown (see 10) is unexplained; session-cache GET per request retained deliberately.
+- Benchmark scope: seeded attempts, one API process, shared box, single runs.

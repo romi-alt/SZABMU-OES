@@ -407,7 +407,7 @@ describe('25–28 deadlines, close, scoring (MANUAL exam)', () => {
 
 describe('21 lifecycle reconciler: ownership, multiple workers, backlog, retries', () => {
   it('a database lease gives one owner at a time; a crashed owner’s lease expires and another worker takes over', async () => {
-    const a = ctx.app.get(LifecycleService);
+    const a = ctx.app.get(LifecycleService); await a.idle();                                                          // a background pass kicked by an earlier command may still be running
     await ctx.prisma.$executeRaw`DELETE FROM lifecycle_leases`;
     const r1 = await a.runOnce(); expect(r1.skipped).toBeUndefined();
     const lease = await ctx.prisma.lifecycleLease.findUniqueOrThrow({ where: { name: 'lifecycle' } }); expect(lease.owner).toBe(a.instance);
