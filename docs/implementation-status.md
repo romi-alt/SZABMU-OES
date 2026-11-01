@@ -219,4 +219,4 @@ No database change; the shared development database was not touched (12,023 user
 ### Checkpoint — UI/UX remediation (local commits, not pushed)
 - Done: all 8 P1 audit issues FIXED_VERIFIED plus shared-cause P2 items; student self-registration built (docs/ui-ux-remediation/12-student-registration.md, policy P-31 awaiting Registrar). Tracker: see 11-issue-tracker.md.
 - Gates on HEAD: lint 0; typecheck clean; builds OK; shared 52/52; API 260/260; Playwright 70/70; fault 17 passed/1 skipped.
-- Next action: remaining P3 items; policy decisions (P-31 etc.). Pushing needs authorisation per batch.
+- Next action: policy decisions (P-31 and the other four REQUIRES_POLICY_DECISION items); remaining NOT_STARTED items listed in 09-remaining-issues.md.

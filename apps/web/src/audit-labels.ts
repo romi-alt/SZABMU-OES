@@ -1,0 +1,21 @@
+/** Plain-language names for audit actions (UI-038). Unknown codes fall back to a readable form of the code, so a new action is never shown as raw tokens only. */
+const LABELS: Record<string, string> = {
+  'auth.login': 'Signed in', 'auth.login_failed': 'Failed sign-in', 'auth.logout': 'Signed out', 'auth.password_changed': 'Changed password', 'auth.password_reset': 'Reset password with a code', 'auth.profile_updated': 'Updated profile',
+  'auth.register_requested': 'Started student registration', 'auth.register_unmatched': 'Registration did not match the register', 'auth.reset_code_verified': 'Verified a password-reset code', 'auth.reset_requested': 'Asked for a password-reset code',
+  'student.self_registered': 'Student registered themselves', 'student.create': 'Added a student', 'student.import': 'Imported students', 'student.update': 'Updated a student', 'roster.import': 'Imported the student register',
+  'user.create': 'Created an account', 'user.update': 'Updated an account', 'user.password_reset_by_admin': 'Reset a password for someone', 'mfa.enabled': 'Turned on two-factor', 'mfa.disabled': 'Turned off two-factor', 'mfa.reset': 'Reset someone’s two-factor', 'mfa.setup_started': 'Started two-factor setup', 'mfa.verify_failed': 'Failed two-factor code',
+  'institution.create': 'Registered an institution', 'institution.update': 'Changed an institution', 'program.create': 'Created a programme', 'course.create': 'Created a course', 'course.assign': 'Assigned a lecturer to a course', 'course.unassign': 'Removed a lecturer from a course', 'department.create': 'Created a department', 'invigilator.assign': 'Assigned an invigilator',
+  'question.create': 'Created a question', 'question.update': 'Edited a question', 'question.submit': 'Submitted a question for review', 'question.retire': 'Retired a question',
+  'exam.create': 'Created an examination', 'exam.schedule': 'Scheduled an examination', 'exam.cancel': 'Cancelled an examination', 'paper.set': 'Saved the question paper', 'paper.submit': 'Submitted the paper for approval', 'paper.approve': 'Approved the paper', 'paper.reject': 'Returned the paper',
+  'exam.control.open_admission': 'Opened admission', 'exam.control.close_admission': 'Stopped new entries', 'exam.control.start': 'Started the examination', 'exam.control.suspend': 'Suspended the examination', 'exam.control.resume': 'Resumed the examination', 'exam.control.extend': 'Extended the time', 'exam.control.close': 'Ended the examination', 'exam.control.reconcile': 'Sealed expired attempts', 'exam.control.initiate_scoring': 'Started scoring', 'exam.control.policy': 'Changed the suspension policy',
+  'exam.lifecycle.start': 'Examination opened automatically', 'exam.lifecycle.close': 'Examination closed automatically', 'exam.lifecycle.scoring_started': 'Scoring started automatically', 'exam.lifecycle.results_pending': 'Results ready for review',
+  'attempt.extend_time': 'Added time for a candidate', 'attempt.force_submit': 'Ended a candidate’s attempt', 'candidate.accommodation': 'Set a candidate accommodation',
+  'eligibility.attendance': 'Recorded attendance', 'eligibility.condone': 'Condoned ineligibility', 'eligibility.override': 'Overrode eligibility', 'enrollment.bulk': 'Enrolled a cohort',
+  'incident.report': 'Reported an incident', 'results.lecturer_review': 'Reviewed results', 'results.examiner_approve': 'Approved results', 'results.publish': 'Published results', 'notification.broadcast': 'Sent a notification',
+};
+export function auditLabel(action: string): string {
+  if (LABELS[action]) return LABELS[action]!;
+  const w = action.replace(/[._]/g, ' ').trim(); return w.charAt(0).toUpperCase() + w.slice(1);
+}
+const ENTITY: Record<string, string> = { user: 'Account', student: 'Student', question: 'Question', exam: 'Examination', attempt: 'Attempt', incident: 'Incident', enrollment: 'Enrolment', institution: 'Institution', roster: 'Register entry', course: 'Course', program: 'Programme' };
+export const entityLabel = (e: string) => ENTITY[e] ?? e.charAt(0).toUpperCase() + e.slice(1);

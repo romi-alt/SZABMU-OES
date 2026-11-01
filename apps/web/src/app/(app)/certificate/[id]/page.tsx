@@ -2,13 +2,15 @@
 import { BrandLogo } from '@/brand';
 import { useParams } from 'next/navigation';
 import { fmtDate, useGet } from '@/api';
-import { Async, PageHead } from '@/ui';
+import Link from 'next/link';
+import { Async, Notice, PageHead } from '@/ui';
 
 export default function Certificate() {
   const { id } = useParams<{ id: string }>(); const st = useGet<any>(`/me/results/${id}/certificate`);
   return (
     <>
-      <PageHead title="Certificate"><button className="btn btn-green no-print" onClick={() => window.print()}>Print certificate</button></PageHead>
+      <PageHead title="Certificate">{st.data && <button className="btn btn-green no-print" onClick={() => window.print()}>Print certificate</button>}</PageHead>
+      {st.error && <Notice>Certificates are issued only for examinations you passed, after the results are published. <Link href="/results">Back to your results</Link></Notice>}
       <Async state={st}>{(c) => (
         <div className="cert" data-testid="certificate">
           <BrandLogo className="cert-logo" />
