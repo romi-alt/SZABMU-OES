@@ -40,7 +40,7 @@ test.describe('Content-Security-Policy and favicon', () => {
     await page.getByTestId('layout-all').click(); await expect(page.getByTestId('all-questions')).toBeVisible();   // inline style attributes (palette, bars) render
     await page.getByRole('button', { name: /review & submit/i }).first().click(); await expect(page.getByRole('heading', { name: 'Review your answers' })).toBeVisible();
     await page.goto('/mfa'); await page.waitForLoadState('networkidle');
-    await page.goto('/dashboard'); const logo = page.locator('img[src*="logo.png"]').first();                  // next/image → /_next/image?url=…logo.png
+    await page.goto('/dashboard'); const logo = page.locator('img[src*="logo"]').first();                  // next/image → /_next/image?url=…logo.png
     await expect(logo).toBeVisible(); expect(await logo.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
 
     for (const [who, pages] of [['admin.a', ['/dashboard', '/students', '/assignments']], ['examiner', ['/exams', '/questions']], ['cce', ['/dashboard', '/audit', '/incidents']]] as const) {

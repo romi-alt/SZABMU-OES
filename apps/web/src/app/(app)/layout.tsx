@@ -7,6 +7,7 @@ import { useMe } from '@/session';
 import { NAV, crumbFor, ruleFor } from '@/nav';
 import { get, post, fmtDT } from '@/api';
 import { Loading } from '@/ui';
+import { Icon, iconForRoute } from '@/icons';
 import { PERMISSIONS, ROLE_LABEL, isSafeAppLink, type Permission, type Role } from '@oes/shared';
 
 function Bell() {
@@ -15,7 +16,7 @@ function Bell() {
   useEffect(() => { void load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, []);
   return (
     <div style={{ position: 'relative' }}>
-      <button className="btn btn-sm" aria-label={`Notifications, ${data?.unread ?? 0} unread`} aria-expanded={open} onClick={() => setOpen(!open)}>Notifications{data?.unread ? <span className="pill-count">{data.unread}</span> : null}</button>
+      <button className="btn btn-sm icon-btn bell-btn" aria-label={`Notifications, ${data?.unread ?? 0} unread`} aria-expanded={open} onClick={() => setOpen(!open)}><Icon name="bell" size={18} />{data?.unread ? <span className="pill-count" aria-hidden>{data.unread}</span> : null}</button>
       {open && (
         <div className="card bell-pop">
           <div className="card-h"><h3>Notifications</h3>{!!data?.unread && <button className="btn-link small" onClick={async () => { await post('/notifications/read-all'); await load(); }}>Mark all read</button>}</div>
@@ -66,19 +67,19 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); const m = document.getElementById('main'); m?.focus(); m?.scrollIntoView(); }}>Skip to main content</a>
       <aside className={`sidebar ${navOpen ? 'open' : ''}`} id="primary-nav" aria-label="Site navigation">
         <button className="btn btn-sm nav-close" onClick={() => { setNavOpen(false); menuBtn.current?.focus(); }} aria-label="Close menu">Close ✕</button>
-        <BrandLogo plate priority className="brand" />
-        <div className="brand-sub">Examination Portal</div>
+        <BrandLogo white priority className="brand" />
+        <div className="brand-name"><i className="auth-bar" aria-hidden />OES Portal</div>
         <nav className="nav" aria-label="Primary"><div className="nav-label">{nav.label}</div>
-          {nav.items.map((i) => <Link key={i.href} href={i.href} aria-current={path === i.href || (i.href !== '/dashboard' && path.startsWith(i.href)) ? 'page' : undefined}>{i.label}</Link>)}
+          {nav.items.map((i) => <Link key={i.href} href={i.href} aria-current={path === i.href || (i.href !== '/dashboard' && path.startsWith(i.href)) ? 'page' : undefined}><Icon name={iconForRoute(i.href)} size={18} /><span>{i.label}</span></Link>)}
         </nav>
         <div className="sidebar-foot">{me.institutions.map((i) => i.code).join(' · ') || 'University-wide'}</div>
       </aside>
       {navOpen && <div className="nav-scrim" data-testid="nav-scrim" onClick={() => setNavOpen(false)} aria-hidden />}
       <div className="main">
         <header className="topbar">
-          <button ref={menuBtn} className="btn btn-sm menu-btn" data-testid="menu-button" aria-label="Menu" aria-controls="primary-nav" aria-expanded={navOpen} onClick={() => setNavOpen(!navOpen)}>☰ Menu</button>
+          <button ref={menuBtn} className="btn btn-sm menu-btn" data-testid="menu-button" aria-label="Menu" aria-controls="primary-nav" aria-expanded={navOpen} onClick={() => setNavOpen(!navOpen)}><Icon name="menu" size={18} /> Menu</button>
           <div className="crumbs">{ROLE_LABEL[me.role]} › <b>{crumb}</b></div>
-          <div className="row"><Bell /><span className="small muted user-name" style={{ textAlign: 'right' }}><b style={{ color: 'var(--ink)' }}>{me.fullName}</b></span><button className="btn btn-sm" onClick={logout}>Sign out</button></div>
+          <div className="row topbar-r"><Bell /><span className="user-chip" title={me.email}><span className="user-av" aria-hidden><Icon name="user" size={16} /></span><span className="user-name">{me.fullName}</span></span><button className="btn btn-sm icon-btn" onClick={logout} aria-label="Sign out" title="Sign out"><Icon name="logout" size={18} /></button></div>
         </header>
         <main className="content" id="main" tabIndex={-1}>{me.mustChangePw && path !== '/profile' ? <ForceChange /> : denied && rule ? <NoAccess name={rule.name} perm={rule.perm} /> : children}</main>
       </div>
