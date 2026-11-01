@@ -1,5 +1,8 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
+import { ROLE_LABEL } from '@oes/shared';
+import { auditLabel, entityLabel } from '@/audit-labels';
 import { fmtDT, get, useGet } from '@/api';
 import { useMe } from '@/session';
 import { useUrlState } from '@/url-state';
@@ -15,7 +18,11 @@ export default function Audit() {
       <Card flush>
         <div className="filters"><Field label="Entity"><select className="in" value={entity} onChange={(e) => { setEntity(e.target.value); setPage(1); }}><option value="">All</option>{['user', 'student', 'question', 'exam', 'attempt', 'incident', 'enrollment', 'institution'].map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="Action starts with"><input className="in" value={action} onChange={(e) => { setAction(e.target.value); setPage(1); }} placeholder="e.g. auth." /></Field></div>
         <Async state={st}>{(d) => <><Table rowKey={(r: any) => r.seq} rows={d.items} empty={<ListEmpty noun="audit entries" filters={[entity && `entity ${entity}`, action && `action “${action}”`].filter(Boolean) as string[]} onClear={url.reset} />} cols={[
-          { h: '#', num: true, cell: (r: any) => r.seq }, { h: 'When', cell: (r: any) => fmtDT(r.at) }, { h: 'Action', cell: (r: any) => <span className="code">{r.action}</span> }, { h: 'Role', cell: (r: any) => r.actorRole?.toLowerCase() ?? '—' }, { h: 'Entity', cell: (r: any) => `${r.entity}${r.entityId ? ' ' + r.entityId.slice(0, 8) : ''}` }, { h: 'Detail', cell: (r: any) => <span className="small mono faint">{r.meta ? JSON.stringify(r.meta).slice(0, 90) : ''}</span> }, { h: 'Hash', cell: (r: any) => <span className="small mono faint">{r.hash.slice(0, 10)}</span> },
+          { h: '#', num: true, cell: (r: any) => r.seq }, { h: 'When', cls: 'nowrap', cell: (r: any) => fmtDT(r.at) },
+          { h: 'What happened', cell: (r: any) => <><b>{auditLabel(r.action)}</b><div className="small faint code" title="Technical action name">{r.action}</div></> },
+          { h: 'Who', cell: (r: any) => r.actorRole ? ROLE_LABEL[r.actorRole as keyof typeof ROLE_LABEL] ?? r.actorRole.toLowerCase() : 'System / not signed in' },
+          { h: 'About', cell: (r: any) => r.entity === 'exam' && r.entityId ? <Link href={`/exams/${r.entityId}`}>{entityLabel(r.entity)} {r.entityId.slice(0, 8)}</Link> : <>{entityLabel(r.entity)}{r.entityId ? <span className="small faint mono"> {r.entityId.slice(0, 8)}</span> : null}</> },
+          { h: 'Details', cell: (r: any) => <details className="audit-det"><summary className="small">Show</summary><div className="small mono faint">{r.meta ? JSON.stringify(r.meta) : 'No extra details.'}<br />Record hash {r.hash.slice(0, 16)}…</div></details> },
         ]} /><Pager page={page} total={d.total} size={50} onPage={setPage} /></>}</Async>
       </Card>
     </>
