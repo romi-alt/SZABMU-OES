@@ -1,0 +1,29 @@
+{
+ "long-options-1440": {
+  "q": "QUESTION 08 / 10",
+  "optionHeights": [
+   157,
+   157,
+   157,
+   157,
+   157
+  ],
+  "docH": 1218,
+  "saveNextVisible": false
+ },
+ "long-options-390": {
+  "q": "QUESTION 08 / 10",
+  "optionHeights": [
+   439,
+   439,
+   439,
+   439,
+   439
+  ],
+  "docH": 2843,
+  "saveNextVisible": false
+ },
+ "a001_dashboard": "Welcome back, Anila MBBS · Semester 4 · Reg. DMC-A-2024-0001 View exam schedule UPCOMING EXAMS 0 COMPLETED 0 Published results AVERAGE SCORE — Across published results PASSED 0",
+ "a001_schedule": "Exam schedule Your examinations. The start button unlocks when the examination opens (server time). No examinations are scheduled for you yet.",
+ "a001_exam": "You are not registered for this examination. Back to schedule"
+}

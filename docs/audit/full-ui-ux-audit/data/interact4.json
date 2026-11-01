@@ -1,0 +1,58 @@
+{
+ "back_button_filter_state": {
+  "error": "locator.inputValue: Timeout 30000ms exceeded."
+ },
+ "students_search_then_open_then_back": {
+  "rowsBefore": 4,
+  "searchValueAfterBack": "",
+  "rowsAfterBack": 25
+ },
+ "api_hangs_on_list_page": [
+  {
+   "afterSec": 2,
+   "body": "Examinations Build papers, approve, schedule, monitor and publish. + New examination Status All DRAFT PAPER PENDING APPR",
+   "skeleton": 3
+  },
+  {
+   "afterSec": 8,
+   "body": "Examinations Build papers, approve, schedule, monitor and publish. + New examination Status All DRAFT PAPER PENDING APPR",
+   "skeleton": 3
+  },
+  {
+   "afterSec": 20,
+   "body": "Examinations Build papers, approve, schedule, monitor and publish. + New examination Status All DRAFT PAPER PENDING APPR",
+   "skeleton": 3
+  }
+ ],
+ "api_500_on_list_page": {
+  "text": "Students All institutions Import CSV + Add student Search Institution All DNC-C DMC-A DMC-B Something went wrong on our side The request could not be completed. Please try again; if it keeps happening, tell the examination office. Try again Go to dashboard",
+  "retryButton": 1
+ },
+ "offline_on_navigation": {
+  "error": "locator.click: Error: strict mode violation: getByRole('link', { name: 'Students' }) resolved to 2 elements:"
+ },
+ "toast_behaviour": {
+  "error": "page.goto: net::ERR_INTERNET_DISCONNECTED at http://localhost:3000/institutions"
+ },
+ "exam_detail_to_control_clicks": {
+  "dash": "Welcome back, Demo University-wide access PAPERS TO APPROVE 1 RESULTS TO PUBLISH 0 OPEN INCIDENTS 0 LIVE EXAMS 3",
+  "mainLinks": [
+   {
+    "t": "PAPERS TO APPROVE 1",
+    "h": "/exams?status=PAPER_PENDING"
+   },
+   {
+    "t": "RESULTS TO PUBLISH 0",
+    "h": "/exams?status=RESULT_PENDING"
+   },
+   {
+    "t": "OPEN INCIDENTS 0",
+    "h": "/incidents"
+   },
+   {
+    "t": "LIVE EXAMS 3",
+    "h": "/monitor"
+   }
+  ]
+ }
+}
