@@ -15,7 +15,7 @@ const questionDto = z.object({
 const examDto = z.object({
   code: z.string().min(3).max(40).regex(/^[A-Z0-9-]+$/), title: z.string().min(3).max(200), courseId: uuid, term: z.string().min(3).max(30),
   opensAt: z.coerce.date(), closesAt: z.coerce.date(), durationMin: z.number().int().min(5).max(480), passPercent: z.number().min(0).max(100).default(50),
-  negativeMarking: z.number().min(0).max(1).default(0), shuffleQuestions: z.boolean().default(true), instructions: z.string().max(4000).optional(), institutionIds: z.array(uuid).min(1).max(200),
+  negativeMarking: z.number().min(0).max(1).default(0), timingPolicy: z.enum(['INDIVIDUAL', 'SYNCHRONIZED']).default('INDIVIDUAL'), controlMode: z.enum(['AUTOMATIC', 'MANUAL']).default('AUTOMATIC'), shuffleQuestions: z.boolean().default(true), instructions: z.string().max(4000).optional(), institutionIds: z.array(uuid).min(1).max(200),
 });
 const decision = z.object({ decision: z.enum(['APPROVE', 'REJECT']), note: z.string().max(1000).optional() });
 
