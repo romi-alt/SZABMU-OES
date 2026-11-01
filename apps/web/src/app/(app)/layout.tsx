@@ -2,34 +2,51 @@
 import Link from 'next/link';
 import { BrandLogo } from '@/brand';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useMe } from '@/session';
 import { NAV, crumbFor, ruleFor } from '@/nav';
 import { get, post, fmtDT } from '@/api';
 import { Loading } from '@/ui';
 import { Icon, iconForRoute } from '@/icons';
-import { PERMISSIONS, ROLE_LABEL, isSafeAppLink, type Permission, type Role } from '@oes/shared';
+import { PERMISSIONS, ROLE_LABEL, isSafeAppLink, type Permission, type Role, type NotificationDto, type NotificationsDto } from '@oes/shared';
 
 function Bell() {
-  const [open, setOpen] = useState(false); const [unreadOnly, setUnreadOnly] = useState(false); const [data, setData] = useState<{ unread: number; items: any[] } | null>(null);
-  const load = () => get('/notifications').then(setData).catch(() => undefined);
-  useEffect(() => { void load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, []);
+  const [open, setOpen] = useState(false); const [unreadOnly, setUnreadOnly] = useState(false); const [data, setData] = useState<NotificationsDto | null>(null);
+  const root = useRef<HTMLDivElement>(null); const btn = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
+  const load = useCallback(() => get<NotificationsDto>('/notifications').then(setData).catch(() => undefined), []);
+  useEffect(() => { void load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
+  // Disclosure-menu behaviour: Escape closes and returns focus to the button; a click or focus outside closes without stealing focus.
+  useEffect(() => {
+    if (!open) return;
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { setOpen(false); btn.current?.focus(); } };
+    const away = (e: Event) => { if (root.current && !root.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('keydown', key); document.addEventListener('mousedown', away); document.addEventListener('focusin', away);
+    return () => { document.removeEventListener('keydown', key); document.removeEventListener('mousedown', away); document.removeEventListener('focusin', away); };
+  }, [open]);
+  const markRead = async (n: NotificationDto) => { if (!n.readAt) { await post(`/notifications/${n.id}/read`); await load(); } };
   return (
-    <div style={{ position: 'relative' }}>
-      <button className="btn btn-sm icon-btn bell-btn" aria-label={`Notifications, ${data?.unread ?? 0} unread`} aria-expanded={open} onClick={() => setOpen(!open)}><Icon name="bell" size={18} />{data?.unread ? <span className="pill-count" aria-hidden>{data.unread}</span> : null}</button>
+    <div className="bell" ref={root} style={{ position: 'relative' }}>
+      <button ref={btn} className="btn btn-sm icon-btn bell-btn" aria-label={`Notifications, ${data?.unread ?? 0} unread`} aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(!open)}>
+        <Icon name="bell" size={18} />{data?.unread ? <span className="pill-count" aria-hidden>{data.unread}</span> : null}
+      </button>
       {open && (
-        <div className="card bell-pop">
+        <section id={panelId} className="card bell-pop" aria-label="Notifications">
           <div className="card-h"><h3>Notifications</h3>{!!data?.unread && <button className="btn-link small" onClick={async () => { await post('/notifications/read-all'); await load(); }}>Mark all read</button>}</div>
           {!!data?.items.length && (
             <div className="row between small muted" style={{ padding: '8px 16px', borderBottom: '1px solid #F0E7E3' }}>
               <span data-testid="bell-summary">{data.unread > data.items.length ? `Showing the latest ${data.items.length} of ${data.unread} unread` : `${data.unread} unread of ${data.items.length}`}</span>
               <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} /> Unread only</label>
             </div>)}
-          {!data?.items.length ? <div className="empty">No notifications.</div> : data.items.filter((n) => !unreadOnly || !n.readAt).map((n) => (
-            <div key={n.id} style={{ padding: '10px 16px', borderBottom: '1px solid #F0E7E3', background: n.readAt ? 'transparent' : '#FDF6F4' }} onClick={async () => { if (!n.readAt) { await post(`/notifications/${n.id}/read`); await load(); } }}>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{isSafeAppLink(n.link) ? <Link href={n.link} data-testid="notification-link" onClick={() => setOpen(false)}>{n.title}</Link> : n.title}</div><div className="small muted">{n.body}</div><div className="small faint">{fmtDT(n.createdAt)}</div>
-            </div>))}
-        </div>)}
+          {!data?.items.length ? <div className="empty">No notifications.</div> : (
+            <ul className="bell-list">{data.items.filter((n) => !unreadOnly || !n.readAt).map((n) => (
+              <li key={n.id} className={n.readAt ? '' : 'unread'}>
+                <div className="bell-title">{!n.readAt && <span className="sr-only">Unread: </span>}{isSafeAppLink(n.link) ? <Link href={n.link} data-testid="notification-link" onClick={() => { setOpen(false); void markRead(n); }}>{n.title}</Link> : n.title}</div>
+                <div className="small muted">{n.body}</div>
+                <div className="row small faint"><span>{fmtDT(n.createdAt)}</span>{!n.readAt && <button className="btn-link small" onClick={() => void markRead(n)}>Mark read</button>}</div>
+              </li>))}
+            </ul>)}
+        </section>)}
     </div>
   );
 }
