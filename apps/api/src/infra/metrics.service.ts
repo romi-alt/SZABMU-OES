@@ -18,6 +18,8 @@ class Counter {
   constructor(readonly name: string, readonly help: string, readonly labels: string[] = []) {}
   inc(l: Labels = {}, by = 1) { const k = this.labels.map((n) => l[n] ?? '').join('\u0000'); const c = this.v.get(k); if (c) c.n += by; else this.v.set(k, { l, n: by }); }
   value(l: Labels = {}) { return this.v.get(this.labels.map((n) => l[n] ?? '').join('\u0000'))?.n ?? 0; }
+  /** Sum over all label sets matching the predicate (e.g. every 5xx). */
+  total(match: (l: Labels) => boolean = () => true) { let t = 0; for (const { l, n } of this.v.values()) if (match(l)) t += n; return t; }
   render() { const o = [`# HELP ${this.name} ${this.help}`, `# TYPE ${this.name} counter`]; if (!this.v.size && !this.labels.length) o.push(`${this.name} 0`); for (const { l, n } of this.v.values()) o.push(`${this.name}${lbl(this.labels, l)} ${fmt(n)}`); return o; }
 }
 class Histogram {
@@ -29,6 +31,11 @@ class Histogram {
     h.n++; h.sum += seconds; this.buckets.forEach((u, i) => { if (seconds <= u) h!.b[i]!++; });
   }
   count(l: Labels = {}) { return this.v.get(this.labels.map((n) => l[n] ?? '').join('\u0000'))?.n ?? 0; }
+  /** Upper bound of the bucket containing quantile q over all label sets (a bucket bound, not an interpolation); null when empty. */
+  quantile(q: number): number | null {
+    let n = 0; const b = this.buckets.map(() => 0); for (const h of this.v.values()) { n += h.n; h.b.forEach((c, i) => { b[i]! += c; }); }
+    if (!n) return null; const i = b.findIndex((c) => c >= q * n); return i < 0 ? Infinity : this.buckets[i]!;
+  }
   render() {
     const o = [`# HELP ${this.name} ${this.help}`, `# TYPE ${this.name} histogram`];
     for (const h of this.v.values()) { this.buckets.forEach((u, i) => o.push(`${this.name}_bucket${lbl(this.labels, h.l, `le="${u}"`)} ${h.b[i]}`)); o.push(`${this.name}_bucket${lbl(this.labels, h.l, 'le="+Inf"')} ${h.n}`, `${this.name}_sum${lbl(this.labels, h.l)} ${h.sum}`, `${this.name}_count${lbl(this.labels, h.l)} ${h.n}`); }
@@ -58,6 +65,17 @@ export class MetricsService {
   readonly authSuccess = new Counter('oes_auth_success_total', 'Successful authentications', ['kind']);
   readonly unauthorized = new Counter('oes_unauthorized_requests_total', 'Requests rejected as unauthenticated (401) or forbidden (403)', ['status', 'code']);
   readonly unhandled = new Counter('oes_unhandled_errors_total', 'Unexpected server errors (HTTP 500)');
+  // live exam control
+  readonly controlCommands = new Counter('oes_exam_control_commands_total', 'Exam control commands by command and outcome', ['command', 'outcome']);
+  readonly eventsPublished = new Counter('oes_exam_events_published_total', 'Outbox events published to Redis');
+  readonly eventsPublishFailed = new Counter('oes_exam_events_publish_failed_total', 'Outbox publish attempts that failed (retried, bounded)');
+  readonly monitorCompute = new Histogram('oes_monitor_snapshot_seconds', 'Time to compute the shared per-exam monitor aggregate (runs at most once per ~1.5 s per exam per process, regardless of viewers)', LAT);
+  readonly sseConnections = new Gauge('oes_sse_connections', 'Open SSE connections on this API process');
+  readonly lifecycleRuns = new Counter('oes_lifecycle_runs_total', 'Lifecycle reconciler runs by outcome (ok | error | skipped_not_leader)', ['outcome']);
+  readonly lifecycleTransitions = new Counter('oes_lifecycle_transitions_total', 'Automatic lifecycle transitions performed by the reconciler', ['kind']);
+  private readonly lifecycleAge = new Gauge('oes_lifecycle_last_success_age_seconds', 'Seconds since ANY API process last completed a lifecycle run (read from PostgreSQL)');
+  private readonly outboxPending = new Gauge('oes_exam_events_pending', 'Exam events not yet published to Redis');
+  private readonly outboxOldest = new Gauge('oes_exam_events_oldest_pending_seconds', 'Age of the oldest unpublished exam event');
   private readonly dbUp = new Gauge('oes_db_up', '1 if PostgreSQL answered a probe on this scrape');
   private readonly redisUp = new Gauge('oes_redis_up', '1 if Redis answered a probe on this scrape');
   private readonly active = new Gauge('oes_active_attempts', 'Attempts currently IN_PROGRESS');
@@ -65,7 +83,7 @@ export class MetricsService {
   private readonly loopLag = new Gauge('oes_event_loop_lag_seconds', 'p99 event-loop delay since last scrape');
   private readonly rss = new Gauge('oes_process_resident_memory_bytes', 'Resident set size');
   private readonly started = new Gauge('oes_process_start_time_seconds', 'Process start time (unix)');
-  private readonly all = [this.http, this.httpDuration, this.saves, this.saveDuration, this.submits, this.submitDuration, this.dbErrors, this.authFailures, this.authSuccess, this.unauthorized, this.unhandled, this.dbUp, this.redisUp, this.active, this.campus, this.loopLag, this.rss, this.started];
+  private readonly all = [this.http, this.httpDuration, this.saves, this.saveDuration, this.submits, this.submitDuration, this.dbErrors, this.authFailures, this.authSuccess, this.unauthorized, this.unhandled, this.controlCommands, this.eventsPublished, this.eventsPublishFailed, this.sseConnections, this.monitorCompute, this.lifecycleRuns, this.lifecycleTransitions, this.lifecycleAge, this.outboxPending, this.outboxOldest, this.dbUp, this.redisUp, this.active, this.campus, this.loopLag, this.rss, this.started];
   private readonly lag: ReturnType<typeof monitorEventLoopDelay> = monitorEventLoopDelay({ resolution: 20 });
   private campusAt = 0;
 
@@ -91,6 +109,13 @@ export class MetricsService {
     this.loopLag.set({}, this.lag.percentile(99) / 1e9); this.lag.reset(); this.rss.set({}, process.memoryUsage().rss);
     let db = true; try { await this.prisma.$queryRaw`SELECT 1`; } catch { db = false; }
     this.dbUp.set({}, db ? 1 : 0);
+    this.lifecycleAge.reset(); this.outboxPending.reset(); this.outboxOldest.reset();
+    if (db) {
+      const l = await this.prisma.$queryRaw<{ age: number | null }[]>`SELECT extract(epoch FROM clock_timestamp() - max("finishedAt"))::float AS age FROM lifecycle_runs WHERE error IS NULL AND "finishedAt" IS NOT NULL`.catch(() => null);
+      if (l?.[0]?.age != null) this.lifecycleAge.set({}, l[0].age);
+      const o = await this.prisma.$queryRaw<{ n: number; oldest: number | null }[]>`SELECT count(*)::int AS n, extract(epoch FROM clock_timestamp() - min("createdAt"))::float AS oldest FROM exam_events WHERE "deliveryStatus" = 'PENDING'`.catch(() => null);
+      if (o?.[0]) { this.outboxPending.set({}, o[0].n); this.outboxOldest.set({}, o[0].oldest ?? 0); }
+    }
     let rd = true; try { await this.redis.client.ping(); } catch { rd = false; }
     this.redisUp.set({}, rd ? 1 : 0);
     if (!db || (!force && Date.now() - this.campusAt < 15_000)) return; // campus view is cached 15 s (it reads every in-progress attempt)

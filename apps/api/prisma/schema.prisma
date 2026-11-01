@@ -71,6 +71,44 @@ enum ExamStatus {
   RESULT_PENDING
   PUBLISHED
   CANCELLED
+  // live control (additive): ADMISSION_OPEN = IN_PROGRESS precursor, SUSPENDED/CLOSING/SCORING = control-centre states
+  ADMISSION_OPEN
+  SUSPENDED
+  CLOSING
+  SCORING
+}
+
+enum TimingPolicy {
+  INDIVIDUAL
+  SYNCHRONIZED
+}
+
+enum ControlMode {
+  AUTOMATIC
+  MANUAL
+}
+
+enum SuspendTimePolicy {
+  FREEZE_CLOCK
+  CLOCK_CONTINUES
+}
+
+enum SuspensionScope {
+  EXAM
+  CAMPUS
+  CANDIDATES
+}
+
+enum ExtensionScope {
+  CANDIDATES
+  CAMPUS
+  EXAM
+}
+
+enum EventDelivery {
+  PENDING
+  DELIVERED
+  FAILED
 }
 
 enum AttemptStatus {
@@ -164,16 +202,16 @@ model Institution {
   createdAt   DateTime        @default(now()) @db.Timestamptz
   updatedAt   DateTime        @updatedAt @db.Timestamptz
 
-  departments Department[]
-  users       UserInstitution[]
-  students    Student[]
-  questions   Question[]
-  exams       ExamInstitution[]
-  candidates  ExamCandidate[]
-  incidents   Incident[]
+  departments       Department[]
+  users             UserInstitution[]
+  students          Student[]
+  questions         Question[]
+  exams             ExamInstitution[]
+  candidates        ExamCandidate[]
+  incidents         Incident[]
+  courseAssignments CourseAssignment[]
 
   @@map("institutions")
-  courseAssignments CourseAssignment[]
 }
 
 model Department {
@@ -189,71 +227,71 @@ model Department {
 }
 
 model Program {
-  id          String   @id @default(uuid()) @db.Uuid
-  code        String   @unique
+  id          String    @id @default(uuid()) @db.Uuid
+  code        String    @unique
   name        String
-  level       String   @default("UNDERGRADUATE")
-  durationYrs Int      @default(5)
-  active      Boolean  @default(true)
+  level       String    @default("UNDERGRADUATE")
+  durationYrs Int       @default(5)
+  active      Boolean   @default(true)
   courses     Course[]
   students    Student[]
-  createdAt   DateTime @default(now()) @db.Timestamptz
+  createdAt   DateTime  @default(now()) @db.Timestamptz
 
   @@map("programs")
 }
 
 /// A university-level subject/paper within a program and academic year/semester.
 model Course {
-  id        String    @id @default(uuid()) @db.Uuid
-  programId String    @db.Uuid
-  code      String    @unique
-  title     String
-  semester  Int
-  credits   Int       @default(3)
-  program   Program   @relation(fields: [programId], references: [id])
-  questions Question[]
-  exams     Exam[]
-  enrollments Enrollment[]
-  createdAt DateTime  @default(now()) @db.Timestamptz
+  id                String             @id @default(uuid()) @db.Uuid
+  programId         String             @db.Uuid
+  code              String             @unique
+  title             String
+  semester          Int
+  credits           Int                @default(3)
+  program           Program            @relation(fields: [programId], references: [id])
+  questions         Question[]
+  exams             Exam[]
+  enrollments       Enrollment[]
+  createdAt         DateTime           @default(now()) @db.Timestamptz
+  courseAssignments CourseAssignment[]
 
   @@index([programId, semester])
   @@map("courses")
-  courseAssignments CourseAssignment[]
 }
 
 // ───────────────────────── Identity ─────────────────────────
 
 model User {
-  id              String    @id @default(uuid()) @db.Uuid
-  email           String    @unique
-  fullName        String
-  phone           String?
-  role            Role
-  passwordHash    String
-  mustChangePw    Boolean   @default(false)
+  id                String    @id @default(uuid()) @db.Uuid
+  email             String    @unique
+  fullName          String
+  phone             String?
+  role              Role
+  passwordHash      String
+  mustChangePw      Boolean   @default(false)
   /// TOTP (RFC 6238). Secret is AES-256-GCM encrypted at rest; totpLastStep prevents code replay.
-  totpSecretEnc   String?
-  totpEnabledAt   DateTime? @db.Timestamptz
-  totpLastStep    Int?
-  active          Boolean   @default(true)
-  failedLogins    Int       @default(0)
-  lockedUntil     DateTime? @db.Timestamptz
-  lastLoginAt     DateTime? @db.Timestamptz
-  passwordChangedAt DateTime @default(now()) @db.Timestamptz
-  createdAt       DateTime  @default(now()) @db.Timestamptz
-  updatedAt       DateTime  @updatedAt @db.Timestamptz
+  totpSecretEnc     String?
+  totpEnabledAt     DateTime? @db.Timestamptz
+  totpLastStep      Int?
+  active            Boolean   @default(true)
+  failedLogins      Int       @default(0)
+  lockedUntil       DateTime? @db.Timestamptz
+  lastLoginAt       DateTime? @db.Timestamptz
+  passwordChangedAt DateTime  @default(now()) @db.Timestamptz
+  createdAt         DateTime  @default(now()) @db.Timestamptz
+  updatedAt         DateTime  @updatedAt @db.Timestamptz
 
-  institutions    UserInstitution[]
-  sessions        Session[]
-  resets          PasswordReset[]
-  passwordHistory PasswordHistory[]
-  student         Student?
-  notifications   Notification[]
+  institutions      UserInstitution[]
+  sessions          Session[]
+  resets            PasswordReset[]
+  passwordHistory   PasswordHistory[]
+  student           Student?
+  notifications     Notification[]
+  courseAssignments CourseAssignment[]
+  mfaRecoveryCodes  MfaRecoveryCode[]
 
   @@index([role])
   @@map("users")
-  courseAssignments CourseAssignment[]
-  mfaRecoveryCodes MfaRecoveryCode[]
 }
 
 /// Institution assignments. Campus-scoped roles may only act within these.
@@ -269,17 +307,17 @@ model UserInstitution {
 }
 
 model Session {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @db.Uuid
-  tokenHash  String    @unique
-  createdAt  DateTime  @default(now()) @db.Timestamptz
-  expiresAt  DateTime  @db.Timestamptz
-  revokedAt  DateTime? @db.Timestamptz
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @db.Uuid
+  tokenHash     String    @unique
+  createdAt     DateTime  @default(now()) @db.Timestamptz
+  expiresAt     DateTime  @db.Timestamptz
+  revokedAt     DateTime? @db.Timestamptz
   /// Set when the second factor was satisfied for THIS session.
   mfaVerifiedAt DateTime? @db.Timestamptz
-  ip         String?
-  userAgent  String?
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ip            String?
+  userAgent     String?
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("sessions")
@@ -313,44 +351,44 @@ model PasswordHistory {
 // ───────────────────────── Students & enrolment ─────────────────────────
 
 model Student {
-  id            String      @id @default(uuid()) @db.Uuid
-  userId        String      @unique @db.Uuid
-  institutionId String      @db.Uuid
-  programId     String      @db.Uuid
-  regNo         String      @unique
-  semester      Int
-  batchYear     Int
-  dateOfBirth   DateTime?   @db.Date
-  guardianPhone String?
-  address       String?
-  status        String      @default("ACTIVE")
-  user          User        @relation(fields: [userId], references: [id])
-  institution   Institution @relation(fields: [institutionId], references: [id])
-  program       Program     @relation(fields: [programId], references: [id])
-  enrollments   Enrollment[]
-  candidacies   ExamCandidate[]
-  attempts      Attempt[]
+  id                   String                @id @default(uuid()) @db.Uuid
+  userId               String                @unique @db.Uuid
+  institutionId        String                @db.Uuid
+  programId            String                @db.Uuid
+  regNo                String                @unique
+  semester             Int
+  batchYear            Int
+  dateOfBirth          DateTime?             @db.Date
+  guardianPhone        String?
+  address              String?
+  status               String                @default("ACTIVE")
+  user                 User                  @relation(fields: [userId], references: [id])
+  institution          Institution           @relation(fields: [institutionId], references: [id])
+  program              Program               @relation(fields: [programId], references: [id])
+  enrollments          Enrollment[]
+  candidacies          ExamCandidate[]
+  attempts             Attempt[]
   eligibilityOverrides EligibilityOverride[]
-  results       Result[]
-  createdAt     DateTime    @default(now()) @db.Timestamptz
+  results              Result[]
+  createdAt            DateTime              @default(now()) @db.Timestamptz
 
   @@index([institutionId, programId, semester])
   @@map("students")
 }
 
 model Enrollment {
-  id          String            @id @default(uuid()) @db.Uuid
-  studentId   String            @db.Uuid
-  courseId    String            @db.Uuid
-  term        String
-  status      EnrollmentStatus  @default(ENROLLED)
-  eligibility EligibilityStatus @default(ELIGIBLE)
-  attendancePct Float?
+  id              String            @id @default(uuid()) @db.Uuid
+  studentId       String            @db.Uuid
+  courseId        String            @db.Uuid
+  term            String
+  status          EnrollmentStatus  @default(ENROLLED)
+  eligibility     EligibilityStatus @default(ELIGIBLE)
+  attendancePct   Float?
   eligibilityNote String?
-  decidedBy   String?           @db.Uuid
-  createdAt   DateTime          @default(now()) @db.Timestamptz
-  student     Student           @relation(fields: [studentId], references: [id])
-  course      Course            @relation(fields: [courseId], references: [id])
+  decidedBy       String?           @db.Uuid
+  createdAt       DateTime          @default(now()) @db.Timestamptz
+  student         Student           @relation(fields: [studentId], references: [id])
+  course          Course            @relation(fields: [courseId], references: [id])
 
   @@unique([studentId, courseId, term])
   @@index([courseId, term])
@@ -380,10 +418,10 @@ model Question {
   createdAt     DateTime       @default(now()) @db.Timestamptz
   updatedAt     DateTime       @updatedAt @db.Timestamptz
 
-  course        Course         @relation(fields: [courseId], references: [id])
-  institution   Institution    @relation(fields: [institutionId], references: [id])
-  options       QuestionOption[]
-  paperUses     ExamQuestion[]
+  course      Course           @relation(fields: [courseId], references: [id])
+  institution Institution      @relation(fields: [institutionId], references: [id])
+  options     QuestionOption[]
+  paperUses   ExamQuestion[]
 
   @@index([courseId, status])
   @@index([institutionId, status])
@@ -393,7 +431,7 @@ model Question {
 model QuestionOption {
   id         String   @id @default(uuid()) @db.Uuid
   questionId String   @db.Uuid
-  label      String   // A..E
+  label      String // A..E
   text       String
   isCorrect  Boolean  @default(false)
   question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
@@ -405,43 +443,64 @@ model QuestionOption {
 // ───────────────────────── Exams ─────────────────────────
 
 model Exam {
-  id               String      @id @default(uuid()) @db.Uuid
-  code             String      @unique
-  title            String
-  courseId         String      @db.Uuid
-  createdBy        String      @db.Uuid
-  status           ExamStatus  @default(DRAFT)
-  paperStatus      PaperStatus @default(DRAFT)
-  term             String      @default("2026-SPRING")
-  paperSubmittedBy String?     @db.Uuid
-  paperApprovedBy  String?     @db.Uuid
-  paperApprovedAt  DateTime?   @db.Timestamptz
-  paperReviewNote  String?
-  opensAt          DateTime    @db.Timestamptz
-  closesAt         DateTime    @db.Timestamptz
-  durationMin      Int
-  totalMarks       Float       @default(0)
-  passPercent      Float       @default(50)
-  negativeMarking  Float       @default(0)
-  shuffleQuestions Boolean     @default(true)
-  instructions     String?
-  createdAt        DateTime    @default(now()) @db.Timestamptz
-  updatedAt        DateTime    @updatedAt @db.Timestamptz
+  id                      String             @id @default(uuid()) @db.Uuid
+  code                    String             @unique
+  title                   String
+  courseId                String             @db.Uuid
+  createdBy               String             @db.Uuid
+  status                  ExamStatus         @default(DRAFT)
+  paperStatus             PaperStatus        @default(DRAFT)
+  term                    String             @default("2026-SPRING")
+  paperSubmittedBy        String?            @db.Uuid
+  paperApprovedBy         String?            @db.Uuid
+  paperApprovedAt         DateTime?          @db.Timestamptz
+  paperReviewNote         String?
+  opensAt                 DateTime           @db.Timestamptz
+  closesAt                DateTime           @db.Timestamptz
+  durationMin             Int
+  totalMarks              Float              @default(0)
+  passPercent             Float              @default(50)
+  negativeMarking         Float              @default(0)
+  shuffleQuestions        Boolean            @default(true)
+  instructions            String?
+  /// INDIVIDUAL: each candidate's clock starts when they start. SYNCHRONIZED: one official clock starts at `officialStartAt`.
+  timingPolicy            TimingPolicy       @default(INDIVIDUAL)
+  /// AUTOMATIC: SCHEDULED→LIVE/CLOSED follow the window (legacy behaviour). MANUAL: staff commands drive the lifecycle.
+  controlMode             ControlMode        @default(AUTOMATIC)
+  /// How a suspension treats the clock. NULL = undecided: suspending is refused until an authorised approver sets it.
+  suspendTimePolicy       SuspendTimePolicy?
+  controlPolicyApprovedBy String?            @db.Uuid
+  controlPolicyApprovedAt DateTime?          @db.Timestamptz
+  officialStartAt         DateTime?          @db.Timestamptz
+  admissionOpenedAt       DateTime?          @db.Timestamptz
+  admissionClosedAt       DateTime?          @db.Timestamptz
+  closedAt                DateTime?          @db.Timestamptz
+  /// Set by CLOSE(force): reconciliation seals every remaining attempt (survives a crash mid-way).
+  forceCloseAt            DateTime?          @db.Timestamptz
+  /// Bumped by every control transition (optimistic concurrency + event ordering).
+  stateVersion            Int                @default(0)
+  createdAt               DateTime           @default(now()) @db.Timestamptz
+  updatedAt               DateTime           @updatedAt @db.Timestamptz
 
-  course        Course            @relation(fields: [courseId], references: [id])
-  institutions  ExamInstitution[]
-  questions     ExamQuestion[]
-  candidates    ExamCandidate[]
-  rosterVersions ExamRosterVersion[]
+  course               Course                @relation(fields: [courseId], references: [id])
+  institutions         ExamInstitution[]
+  questions            ExamQuestion[]
+  candidates           ExamCandidate[]
+  rosterVersions       ExamRosterVersion[]
   eligibilityOverrides EligibilityOverride[]
-  invigilators  ExamInvigilator[]
-  attempts      Attempt[]
-  incidents     Incident[]
-  keyActions    KeyAction[]
-  resultBatch   ResultBatch?
-  results       Result[]
+  invigilators         ExamInvigilator[]
+  attempts             Attempt[]
+  incidents            Incident[]
+  keyActions           KeyAction[]
+  resultBatch          ResultBatch?
+  results              Result[]
+  suspensions          ExamSuspension[]
+  extensions           ExamExtension[]
+  events               ExamEvent[]
+  commands             ExamCommand[]
 
   @@index([status, opensAt])
+  @@index([status, closesAt])
   @@map("exams")
 }
 
@@ -460,15 +519,15 @@ model ExamInstitution {
 /// A question placed on a paper. `snapshot` + `correctLabel` are frozen at paper approval;
 /// later edits to the bank never alter an approved paper.
 model ExamQuestion {
-  id           String    @id @default(uuid()) @db.Uuid
-  examId       String    @db.Uuid
-  questionId   String    @db.Uuid
+  id           String          @id @default(uuid()) @db.Uuid
+  examId       String          @db.Uuid
+  questionId   String          @db.Uuid
   position     Int
-  marks        Float     @default(1)
+  marks        Float           @default(1)
   snapshot     Json?
   correctLabel String?
-  exam         Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
-  question     Question  @relation(fields: [questionId], references: [id])
+  exam         Exam            @relation(fields: [examId], references: [id], onDelete: Cascade)
+  question     Question        @relation(fields: [questionId], references: [id])
   answers      AttemptAnswer[]
   keyActions   KeyAction[]
 
@@ -478,26 +537,27 @@ model ExamQuestion {
 }
 
 model ExamCandidate {
-  id            String      @id @default(uuid()) @db.Uuid
-  examId        String      @db.Uuid
-  studentId     String      @db.Uuid
-  institutionId String      @db.Uuid
-  extraTimeMin  Int         @default(0)
-  accommodation String?
+  id              String          @id @default(uuid()) @db.Uuid
+  examId          String          @db.Uuid
+  studentId       String          @db.Uuid
+  institutionId   String          @db.Uuid
+  extraTimeMin    Int             @default(0)
+  accommodation   String?
   /// Current admission decision. Re-validated when a NEW attempt starts; frozen on the attempt afterwards.
-  status        CandidateStatus @default(ADMITTED)
+  status          CandidateStatus @default(ADMITTED)
   /// ENROLMENT = derived from enrolment data by the roster build; OVERRIDE = set by an authorised manual decision (never auto-reverted).
-  decisionSource String     @default("ENROLMENT")
-  statusReason  String?
-  statusChangedAt DateTime? @db.Timestamptz
-  rosterVersion Int         @default(1)
-  createdAt     DateTime    @default(now()) @db.Timestamptz
-  exam          Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
-  student       Student     @relation(fields: [studentId], references: [id])
-  institution   Institution @relation(fields: [institutionId], references: [id])
+  decisionSource  String          @default("ENROLMENT")
+  statusReason    String?
+  statusChangedAt DateTime?       @db.Timestamptz
+  rosterVersion   Int             @default(1)
+  createdAt       DateTime        @default(now()) @db.Timestamptz
+  exam            Exam            @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student         Student         @relation(fields: [studentId], references: [id])
+  institution     Institution     @relation(fields: [institutionId], references: [id])
 
   @@unique([examId, studentId])
   @@index([institutionId, examId])
+  @@index([examId, institutionId])
   @@map("exam_candidates")
 }
 
@@ -515,54 +575,61 @@ model ExamInvigilator {
 // ───────────────────────── Live attempt ─────────────────────────
 
 model Attempt {
-  id             String        @id @default(uuid()) @db.Uuid
-  examId         String        @db.Uuid
-  studentId      String        @db.Uuid
-  status         AttemptStatus @default(IN_PROGRESS)
-  startedAt      DateTime      @db.Timestamptz
+  id               String                @id @default(uuid()) @db.Uuid
+  examId           String                @db.Uuid
+  studentId        String                @db.Uuid
+  status           AttemptStatus         @default(IN_PROGRESS)
+  startedAt        DateTime              @db.Timestamptz
   /// Authoritative server-computed deadline (includes accommodations, capped at window end).
-  deadlineAt     DateTime      @db.Timestamptz
-  extraTimeMin   Int           @default(0)
-  submittedAt    DateTime?     @db.Timestamptz
-  submitKey      String?
-  receiptCode    String?       @unique
-  answerDigest   String?
-  questionOrder  String[]
+  deadlineAt       DateTime              @db.Timestamptz
+  extraTimeMin     Int                   @default(0)
+  submittedAt      DateTime?             @db.Timestamptz
+  submitKey        String?
+  receiptCode      String?               @unique
+  answerDigest     String?
+  questionOrder    String[]
   /// Single active browser session claim; older tabs are rejected (stale-tab protection).
-  activeClientId String?
-  clientEpoch    Int           @default(0)
-  lastHeartbeatAt DateTime?    @db.Timestamptz
-  integrityFlags Int           @default(0)
+  activeClientId   String?
+  clientEpoch      Int                   @default(0)
+  lastHeartbeatAt  DateTime?             @db.Timestamptz
+  integrityFlags   Int                   @default(0)
   /// Eligibility decision frozen at start (source, roster version, enrolment, override). Never re-evaluated per save.
-  admission      Json?
-  ip             String?
-  userAgent      String?
-  exam           Exam          @relation(fields: [examId], references: [id])
-  student        Student       @relation(fields: [studentId], references: [id])
-  answers        AttemptAnswer[]
-  events         AttemptEvent[]
-  incidents      Incident[]
-  overrides      EligibilityOverride[]
+  admission        Json?
+  ip               String?
+  userAgent        String?
+  /// Set while the attempt is suspended: saves/submits are refused by the database predicate, independent of any worker.
+  suspendedAt      DateTime?             @db.Timestamptz
+  suspensionId     String?               @db.Uuid
+  /// Bounded retry bookkeeping for the lifecycle reconciler (never loops forever on a poison attempt).
+  lifecycleRetries Int                   @default(0)
+  lifecycleError   String?
+  exam             Exam                  @relation(fields: [examId], references: [id])
+  student          Student               @relation(fields: [studentId], references: [id])
+  answers          AttemptAnswer[]
+  events           AttemptEvent[]
+  incidents        Incident[]
+  overrides        EligibilityOverride[]
 
   @@unique([examId, studentId])
   @@index([examId, status])
   @@index([status, deadlineAt])
+  @@index([examId, suspensionId])
   @@map("attempts")
 }
 
 /// Authoritative current answer per question. `revision` is a client-monotonic counter;
 /// writes with revision <= stored revision are rejected or treated as idempotent replays.
 model AttemptAnswer {
-  attemptId      String       @db.Uuid
-  examQuestionId String       @db.Uuid
-  selectedLabel  String?
-  state          AnswerState  @default(SKIPPED)
-  markedForReview Boolean     @default(false)
-  visited        Boolean      @default(true)
-  revision       Int
-  savedAt        DateTime     @default(now()) @db.Timestamptz
-  attempt        Attempt      @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  examQuestion   ExamQuestion @relation(fields: [examQuestionId], references: [id])
+  attemptId       String       @db.Uuid
+  examQuestionId  String       @db.Uuid
+  selectedLabel   String?
+  state           AnswerState  @default(SKIPPED)
+  markedForReview Boolean      @default(false)
+  visited         Boolean      @default(true)
+  revision        Int
+  savedAt         DateTime     @default(now()) @db.Timestamptz
+  attempt         Attempt      @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  examQuestion    ExamQuestion @relation(fields: [examQuestionId], references: [id])
 
   @@id([attemptId, examQuestionId])
   @@map("attempt_answers")
@@ -570,14 +637,14 @@ model AttemptAnswer {
 
 /// Append-only journal of every accepted answer write — evidence for disputes and recovery.
 model AnswerEvent {
-  id             BigInt   @id @default(autoincrement())
-  attemptId      String   @db.Uuid
-  examQuestionId String   @db.Uuid
-  revision       Int
-  selectedLabel  String?
-  state          AnswerState
+  id              BigInt      @id @default(autoincrement())
+  attemptId       String      @db.Uuid
+  examQuestionId  String      @db.Uuid
+  revision        Int
+  selectedLabel   String?
+  state           AnswerState
   markedForReview Boolean
-  at             DateTime @default(now()) @db.Timestamptz
+  at              DateTime    @default(now()) @db.Timestamptz
 
   @@index([attemptId, examQuestionId, revision])
   @@map("answer_events")
@@ -586,7 +653,7 @@ model AnswerEvent {
 model AttemptEvent {
   id        BigInt   @id @default(autoincrement())
   attemptId String   @db.Uuid
-  kind      String   // TAB_HIDDEN, FULLSCREEN_EXIT, OFFLINE, ONLINE, PASTE_BLOCKED, TIME_EXTENDED, SESSION_CLAIMED, FORCE_SUBMITTED
+  kind      String // TAB_HIDDEN, FULLSCREEN_EXIT, OFFLINE, ONLINE, PASTE_BLOCKED, TIME_EXTENDED, SESSION_CLAIMED, FORCE_SUBMITTED
   detail    Json?
   actorId   String?  @db.Uuid
   at        DateTime @default(now()) @db.Timestamptz
@@ -829,4 +896,111 @@ model MfaRecoveryCode {
 
   @@unique([userId, codeHash])
   @@map("mfa_recovery_codes")
+}
+
+/// A suspension of the whole exam, a campus cohort or selected candidates. History is never deleted.
+model ExamSuspension {
+  id            String            @id @default(uuid()) @db.Uuid
+  examId        String            @db.Uuid
+  scope         SuspensionScope
+  institutionId String?           @db.Uuid
+  studentIds    String[]          @db.Uuid
+  reason        String
+  incidentId    String?           @db.Uuid
+  timePolicy    SuspendTimePolicy
+  suspendedBy   String            @db.Uuid
+  suspendedAt   DateTime          @default(now()) @db.Timestamptz
+  affectedCount Int               @default(0)
+  resumedBy     String?           @db.Uuid
+  resumedAt     DateTime?         @db.Timestamptz
+  resumeNote    String?
+  /// Seconds added to deadlines at resume (FREEZE_CLOCK) — 0 under CLOCK_CONTINUES.
+  pausedSeconds Int?
+  exam          Exam              @relation(fields: [examId], references: [id])
+
+  @@index([examId, resumedAt])
+  @@map("exam_suspensions")
+}
+
+/// A group extension (selected candidates, campus cohort or the whole active cohort). (examId, idempotencyKey) is unique: a repeat is never applied twice.
+model ExamExtension {
+  id             String         @id @default(uuid()) @db.Uuid
+  examId         String         @db.Uuid
+  scope          ExtensionScope
+  institutionId  String?        @db.Uuid
+  studentIds     String[]       @db.Uuid
+  minutes        Int
+  reason         String
+  approvedBy     String         @db.Uuid
+  idempotencyKey String
+  affectedCount  Int
+  closesAtBefore DateTime?      @db.Timestamptz
+  closesAtAfter  DateTime?      @db.Timestamptz
+  createdAt      DateTime       @default(now()) @db.Timestamptz
+  exam           Exam           @relation(fields: [examId], references: [id])
+
+  @@unique([examId, idempotencyKey])
+  @@map("exam_extensions")
+}
+
+/// Idempotency ledger for control commands: the same (examId, key) returns the stored result and never re-executes.
+model ExamCommand {
+  id             String   @id @default(uuid()) @db.Uuid
+  examId         String   @db.Uuid
+  idempotencyKey String
+  command        String
+  actorId        String   @db.Uuid
+  result         Json
+  createdAt      DateTime @default(now()) @db.Timestamptz
+  exam           Exam     @relation(fields: [examId], references: [id])
+
+  @@unique([examId, idempotencyKey])
+  @@map("exam_commands")
+}
+
+/// Transactional outbox + durable state-transition log. Written in the SAME transaction as the state change.
+/// `id` is the stream cursor (monotonic per database); delivery to Redis is retried and consumers must tolerate duplicates.
+model ExamEvent {
+  id               BigInt        @id @default(autoincrement())
+  eventId          String        @unique @default(uuid()) @db.Uuid
+  examId           String        @db.Uuid
+  /// NULL = exam-wide; otherwise only that campus's staff (and its candidates) may see it.
+  institutionId    String?       @db.Uuid
+  /// NULL = every candidate in scope; otherwise targeted at one candidate.
+  studentId        String?       @db.Uuid
+  aggregateVersion Int
+  type             String
+  payload          Json          @default("{}")
+  createdAt        DateTime      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz
+  deliveryStatus   EventDelivery @default(PENDING)
+  retryCount       Int           @default(0)
+  deliveredAt      DateTime?     @db.Timestamptz
+  exam             Exam          @relation(fields: [examId], references: [id])
+
+  @@index([examId, id])
+  @@index([deliveryStatus, id])
+  @@map("exam_events")
+}
+
+/// Ownership claim for the lifecycle reconciler (works without Redis; a crashed owner's lease simply expires).
+model LifecycleLease {
+  name      String   @id
+  owner     String
+  expiresAt DateTime @db.Timestamptz
+  updatedAt DateTime @default(now()) @db.Timestamptz
+
+  @@map("lifecycle_leases")
+}
+
+model LifecycleRun {
+  id         String    @id @default(uuid()) @db.Uuid
+  instance   String
+  startedAt  DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz
+  finishedAt DateTime? @db.Timestamptz
+  durationMs Int?
+  stats      Json      @default("{}")
+  error      String?
+
+  @@index([startedAt])
+  @@map("lifecycle_runs")
 }

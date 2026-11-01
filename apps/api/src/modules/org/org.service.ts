@@ -28,9 +28,22 @@ export class OrgService {
     await this.audit.log({ actor: u, action: 'institution.create', entity: 'institution', entityId: i.id, institutionId: i.id, meta: { code: i.code }, ip });
     return i;
   }
-  async updateInstitution(u: AuthUser, id: string, d: Prisma.InstitutionUpdateInput, ip?: string) {
-    const i = await this.prisma.institution.update({ where: { id }, data: d });
-    await this.audit.log({ actor: u, action: 'institution.update', entity: 'institution', entityId: id, institutionId: id, meta: d as never, ip });
+  /**
+   * Partial update. Only fields that were sent AND differ from the stored value are written; an empty or no-op PATCH changes nothing and
+   * writes no audit entry. The audit trail records the real before/after of each changed field.
+   */
+  async updateInstitution(u: AuthUser, id: string, d: { code?: string; name?: string; type?: string; affiliation?: string; city?: string; active?: boolean }, ip?: string) {
+    const current = await this.prisma.institution.findUnique({ where: { id } });
+    if (!current) throw notFound('Institution');
+    const changes: Record<string, { from: unknown; to: unknown }> = {}; const data: Record<string, unknown> = {};
+    for (const key of ['code', 'name', 'type', 'affiliation', 'city', 'active'] as const) {
+      const next = d[key]; if (next === undefined) continue;
+      const prev = (current as Record<string, unknown>)[key];
+      if (prev !== next) { changes[key] = { from: prev, to: next }; data[key] = next; }
+    }
+    if (!Object.keys(changes).length) return current;
+    const i = await this.prisma.institution.update({ where: { id }, data: data as Prisma.InstitutionUpdateInput });
+    await this.audit.log({ actor: u, action: 'institution.update', entity: 'institution', entityId: id, institutionId: id, meta: { changes } as never, ip });
     return i;
   }
   listDepartments(u: AuthUser, institutionId: string) {

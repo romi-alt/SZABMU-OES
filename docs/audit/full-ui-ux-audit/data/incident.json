@@ -1,0 +1,26 @@
+{
+ "rowButtons": [
+  "Report"
+ ],
+ "title": "Report incident — DMC-A-2024-0002",
+ "labels": [
+  "Type CONNECTIVITY TECHNICAL IDENTITY MISCONDUCT ENVIRONMENT OTHER",
+  "Severity LOW MEDIUM HIGH",
+  "Description (min. 10 characters)"
+ ],
+ "buttons": [
+  {
+   "t": "✕",
+   "d": false
+  },
+  {
+   "t": "Cancel",
+   "d": false
+  },
+  {
+   "t": "File report",
+   "d": false
+  }
+ ],
+ "text": "Report incident — DMC-A-2024-0002 ✕ Type CONNECTIVITY TECHNICAL IDENTITY MISCONDUCT ENVIRONMENT OTHER Severity LOW MEDIUM HIGH Description (min. 10 characters) Cancel File report"
+}

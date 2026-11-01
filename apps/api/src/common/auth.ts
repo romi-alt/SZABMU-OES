@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, Inject, Injectable, SetMetadata, createP
 import { Reflector } from '@nestjs/core';
 import { createHash } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
-import { can, isCampusScoped, type Permission, type Role } from '@oes/shared';
+import { PORTAL_HEADER, can, isCampusScoped, portalOf, roleAllowedOnPortal, type Permission, type Role } from '@oes/shared';
 import { PrismaService } from '../infra/prisma.service';
 import { RedisService } from '../infra/redis.service';
 import { AppError, forbidden } from './errors';
@@ -95,6 +95,11 @@ export class AuthGuard implements CanActivate {
     const user = await loadSession(this.prisma, this.redis, token, this.cfg.MFA_ENFORCE === 'true');
     if (!user) throw new AppError(401, 'UNAUTHENTICATED', 'Session expired or invalid');
     req.user = user;
+    // Two-portal deployment: a session is only honoured on the portal its role belongs to (fail closed when the proxy header is missing).
+    if (this.cfg.PORTAL_ENFORCE === 'true') {
+      const portal = portalOf(req.headers[PORTAL_HEADER]);
+      if (!portal || !roleAllowedOnPortal(user.role, portal)) throw new AppError(403, 'WRONG_PORTAL', 'This account cannot be used on this portal');
+    }
     if (user.mfa !== 'ok' && !this.reflector.getAllAndOverride<boolean>('allowMfaPending', [handler, cls])) {
       throw new AppError(403, 'MFA_REQUIRED', user.mfa === 'enroll' ? 'Your role requires two-factor authentication. Set it up to continue.' : 'Enter your authentication code to continue.', { mfa: user.mfa });
     }

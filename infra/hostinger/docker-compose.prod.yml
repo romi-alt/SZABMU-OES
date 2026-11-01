@@ -1,0 +1,96 @@
+# SZABMU/PIMS Online Examination System — production stack for ONE Hostinger VPS (Docker Compose).
+# TEMPLATE. Not executed anywhere yet; deployment is behind a separate release gate (docs/deployment/hostinger/08-implementation-checklist.md).
+#
+#   Public:   host nginx (TLS) on 80/443 only → oes.szabmu.site (students) and dashboard.szabmu.site (staff)
+#   Loopback: api 127.0.0.1:4000 · web-student 127.0.0.1:3101 · web-staff 127.0.0.1:3102   (nginx reaches them; nothing else can)
+#   Private:  postgres and redis publish NO ports at all and live on an internal Docker network the internet cannot reach.
+#
+# One image build serves both portals: the same web image runs twice, PORTAL=student and PORTAL=staff.
+name: oes
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: ./env/postgres.env            # POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB (never in git)
+    # synchronous_commit stays ON: an answer may show "Saved" only after a durable commit (docs/exam-engine.md).
+    # TLS inside the private network because production config validation requires sslmode=require on DATABASE_URL.
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/certs/server.crt
+      - -c
+      - ssl_key_file=/certs/server.key
+      - -c
+      - synchronous_commit=on
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=3GB
+      - -c
+      - effective_cache_size=8GB
+      - -c
+      - wal_compression=on
+      - -c
+      - log_min_duration_statement=500
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./certs/postgres:/certs:ro           # server.crt / server.key generated on the VPS (owner 999, mode 600); see 06-database-migration-plan.md
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    shm_size: 512mb
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    env_file: ./env/redis.env               # REDIS_PASSWORD (never in git)
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction"]
+    volumes: [redisdata:/data]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: { context: ../.., dockerfile: infra/Dockerfile.api }
+    restart: unless-stopped
+    env_file: ./env/api.env                 # see env/api.env.example; production config validation refuses unsafe values at boot
+    ports: ["127.0.0.1:4000:4000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [backend, edge]               # edge = outbound (SMTP); backend = postgres/redis
+    # Migrations are NEVER applied on boot. They run as a separate, gated release step (see the checklist).
+
+  web-student:
+    build: { context: ../.., dockerfile: infra/Dockerfile.web }
+    restart: unless-stopped
+    env_file: ./env/web-student.env
+    ports: ["127.0.0.1:3101:3000"]
+    depends_on: [api]
+    networks: [edge]
+
+  web-staff:
+    build: { context: ../.., dockerfile: infra/Dockerfile.web }
+    restart: unless-stopped
+    env_file: ./env/web-staff.env
+    ports: ["127.0.0.1:3102:3000"]
+    depends_on: [api]
+    networks: [edge]
+
+networks:
+  backend:
+    internal: true                          # no route to or from the internet
+  edge: {}
+
+volumes:
+  pgdata: {}
+  redisdata: {}

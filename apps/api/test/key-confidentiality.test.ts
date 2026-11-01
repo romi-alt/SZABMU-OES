@@ -17,6 +17,9 @@ afterAll(async () => { await ctx.app.close(); });
 
 const KEY_FIELDS = /"(correctLabel|isCorrect|correct|answerKey|key)"\s*:/;
 
+/** Long-lived SSE streams never end, so `inject` would wait forever; their content is asserted over a real connection in exam-control-stream.test.ts. */
+const STREAMS = new Set(['ExamControlController.studentStream', 'ExamControlController.staffStream']);
+
 function getRoutes(role: Parameters<typeof can>[0]) {
   const reflector = new Reflector(); const out: { path: string; handler: string }[] = [];
   const controllers: (new (...a: never[]) => object)[] = Reflect.getMetadata('controllers', AppModule) ?? [];
@@ -26,6 +29,7 @@ function getRoutes(role: Parameters<typeof can>[0]) {
       const fn = (cls.prototype as Record<string, unknown>)[name] as () => unknown; if (typeof fn !== 'function') continue;
       const m = Reflect.getMetadata(METHOD_METADATA, fn); if (m !== RequestMethod.GET) continue;
       const perm = reflector.getAllAndOverride<Permission>('perm', [fn, cls]); if (!perm || !can(role, perm)) continue;
+      if (STREAMS.has(`${cls.name}.${name}`)) continue;
       out.push({ path: ('/' + [base, String(Reflect.getMetadata(PATH_METADATA, fn) ?? '')].filter(Boolean).join('/')).replace(/\/+/g, '/'), handler: `${cls.name}.${name}` });
     }
   }

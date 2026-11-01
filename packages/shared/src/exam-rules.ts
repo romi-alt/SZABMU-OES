@@ -18,6 +18,23 @@ export function computeDeadline(i: ExamTimingInput): Date {
   return new Date(Math.min(byDuration, i.windowEndsAt.getTime()));
 }
 
+export interface SyncTimingInput {
+  officialStartAt: Date;
+  durationMin: number;
+  extraTimeMin: number;
+  /** Sum of exam-wide extensions (minutes). */
+  examExtensionMin: number;
+  /** Total seconds the exam clock was frozen by completed exam-wide FREEZE_CLOCK suspensions. */
+  pausedSeconds: number;
+  windowEndsAt: Date;
+}
+
+/** Synchronized exam: every candidate shares the official clock; accommodations/extensions/pauses move it, the window end caps it. */
+export function computeSyncDeadline(i: SyncTimingInput): Date {
+  const t = i.officialStartAt.getTime() + (i.durationMin + i.extraTimeMin + i.examExtensionMin) * 60_000 + i.pausedSeconds * 1000;
+  return new Date(Math.min(t, i.windowEndsAt.getTime()));
+}
+
 /** Palette classification shown on the question sidebar. */
 export function paletteState(a: { visited: boolean; state?: AnswerState | null; selectedLabel?: string | null }): PaletteState {
   if (a.state === 'ANSWERED' && a.selectedLabel) return 'ANSWERED';

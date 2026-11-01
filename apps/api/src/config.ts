@@ -23,8 +23,14 @@ const schema = z.object({
   RUN_WORKERS: z.enum(['true', 'false']).default('true'),
   /** Must be 'true' behind a load balancer/reverse proxy so req.ip (rate limits, audit) is the client's, not the proxy's. */
   TRUST_PROXY: z.enum(['true', 'false']).default('false'),
+  /** Two-portal deployment: when 'true', every request must arrive with a valid X-OES-Portal header (set by the reverse proxy) and the account's role must belong to that portal (STUDENT ↔ student, all others ↔ staff). Mandatory in production. */
+  PORTAL_ENFORCE: z.enum(['true', 'false']).default('false'),
   /** Require TOTP for privileged staff roles (see MFA_ROLES). Mandatory in production. */
   MFA_ENFORCE: z.enum(['true', 'false']).default('false'),
+  /** Sign-in attempts allowed per client IP per 15 minutes. Default 60. Raised only by the automated browser-test environment; production refuses any other value. */
+  LOGIN_RATE_IP_MAX: z.coerce.number().int().min(1).max(100000).default(60),
+  /** Sign-in attempts allowed per account per 15 minutes. Default 20; same rule as above. */
+  LOGIN_RATE_ID_MAX: z.coerce.number().int().min(1).max(100000).default(20),
   /** Key material for encrypting TOTP seeds at rest. Required in production; in development it is derived from COOKIE_SECRET. */
   MFA_KEY: z.string().min(32).optional(),
   /** Bearer token for GET /api/metrics. Unset ⇒ the endpoint is disabled (404). Mandatory in production: you cannot run an exam blind. */
@@ -56,6 +62,8 @@ export function productionProblems(cfg: Config, env: NodeJS.ProcessEnv = process
   try { const r = new URL(cfg.REDIS_URL); if (!r.password && r.protocol !== 'rediss:' && env.REDIS_ALLOW_NOAUTH !== 'true') p.push('REDIS_URL must carry a password (or use rediss://); set REDIS_ALLOW_NOAUTH=true only for an isolated network'); } catch { p.push('REDIS_URL is not a valid URL'); }
   if (cfg.S3_SECRET_KEY && /oes_dev_minio/.test(cfg.S3_SECRET_KEY + (cfg.S3_ACCESS_KEY ?? ''))) p.push('S3 credentials are the development MinIO defaults');
   if (cfg.TRUST_PROXY !== 'true' && env.ALLOW_NO_PROXY !== 'true') p.push('TRUST_PROXY=true is required behind a load balancer (otherwise every client shares the proxy IP for rate limiting and audit); set ALLOW_NO_PROXY=true if the API is directly exposed');
+  if (cfg.LOGIN_RATE_IP_MAX !== 60 || cfg.LOGIN_RATE_ID_MAX !== 20) p.push('LOGIN_RATE_IP_MAX / LOGIN_RATE_ID_MAX must be left at their defaults (60 / 20) in production; they exist only for automated browser tests');
+  if (cfg.PORTAL_ENFORCE !== 'true') p.push('PORTAL_ENFORCE=true is required in production (students and staff must not share a portal; the reverse proxy sets X-OES-Portal per hostname)');
   if (cfg.MFA_ENFORCE !== 'true') p.push('MFA_ENFORCE=true is required in production (TOTP for CCE, Super Admin, Examiner and Campus Admin)');
   if (!cfg.MFA_KEY) p.push('MFA_KEY (≥32 random characters) is required in production to encrypt TOTP seeds');
   else if (WEAK_SECRET.test(cfg.MFA_KEY) || cfg.MFA_KEY === cfg.COOKIE_SECRET || cfg.MFA_KEY === cfg.RECEIPT_SECRET) p.push('MFA_KEY must be a distinct, non-example secret');
