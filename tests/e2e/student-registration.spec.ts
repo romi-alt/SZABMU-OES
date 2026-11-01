@@ -27,16 +27,16 @@ test.describe.serial('student registration', () => {
   test('registration page validates inline, then the emailed code creates the account', async ({ page }) => {
     await page.goto('/login'); await page.getByRole('link', { name: 'Create your account' }).click(); await expect(page).toHaveURL(/\/register/);
     await expect(page.getByRole('heading', { name: 'Student registration' })).toBeVisible(); await expect.poll(() => page.title()).toMatch(/Student registration/);
-    await page.getByRole('button', { name: /Continue/ }).click();                                                    // nothing filled: every field explains itself
+    await page.getByRole('button', { name: /Create Account/ }).click();                                                    // nothing filled: every field explains itself
     for (const m of [/Enter your registration number\./, /Enter your date of birth/, /Enter a valid email address\./]) await expect(page.getByText(m)).toBeVisible();
     await fill(page, { regNo: reg, dob: '2004-03-09', email, pw: PW, pw2: PW + 'x' }); await expect(page.getByText('Passwords do not match.')).toBeVisible();
     await page.getByLabel(/Confirm password/).fill(PW); await expect(page.getByText('Passwords do not match.')).toHaveCount(0);
-    await page.getByRole('button', { name: /Continue/ }).click();
+    await page.getByRole('button', { name: /Create Account/ }).click();
     await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible(); await expect(page.getByTestId('register-info')).toContainText('If your details match');
     const code = (await page.getByTestId('dev-code').innerText()).replace(/\D/g, '').slice(-6);
-    await page.getByLabel('Digit 1').click(); await page.keyboard.type('000000' === code ? '111111' : '000000'); await page.getByRole('button', { name: /Create my account/ }).click();
+    await page.getByLabel('Digit 1').click(); await page.keyboard.type('000000' === code ? '111111' : '000000'); await page.getByRole('button', { name: /Create Account/ }).click();
     await expect(page.getByRole('alert').filter({ hasText: /incorrect or has expired/ })).toBeVisible();
-    await page.getByLabel('Digit 1').click(); await page.keyboard.type(code); await page.getByRole('button', { name: /Create my account/ }).click();
+    await page.getByLabel('Digit 1').click(); await page.keyboard.type(code); await page.getByRole('button', { name: /Create Account/ }).click();
     await expect(page.getByRole('heading', { name: 'Account created' })).toBeVisible();
   });
 
@@ -50,7 +50,7 @@ test.describe.serial('student registration', () => {
   test('wrong date of birth, an unknown number and a claimed number all look the same to the visitor', async ({ page }) => {
     const seen: string[] = [];
     for (const v of [{ regNo: reg, dob: '2004-03-09' }, { regNo: reg, dob: '2001-01-01' }, { regNo: 'NOPE-' + letters(5), dob: '2004-03-09' }]) {
-      await page.goto('/register'); await fill(page, { ...v, email: `${letters(8).toLowerCase()}@example.test`, pw: PW }); await page.getByRole('button', { name: /Continue/ }).click();
+      await page.goto('/register'); await fill(page, { ...v, email: `${letters(8).toLowerCase()}@example.test`, pw: PW }); await page.getByRole('button', { name: /Create Account/ }).click();
       await expect(page.getByTestId('register-info')).toBeVisible(); seen.push(await page.getByTestId('register-info').innerText()); await expect(page.getByTestId('dev-code')).toHaveCount(0);
     }
     expect(new Set(seen).size).toBe(1);
