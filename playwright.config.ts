@@ -17,5 +17,7 @@ export default defineConfig({
     { command: 'node --env-file=.env apps/api/dist/main.js', url: 'http://localhost:4000/api/health', reuseExistingServer: true, timeout: 60_000, env: { RUN_WORKERS: 'true', LOGIN_RATE_IP_MAX: '5000', LOGIN_RATE_ID_MAX: '500' } },
     // NODE_ENV=production so the production Content-Security-Policy (no 'unsafe-eval') is what the browser tests exercise
     { command: 'npm run start -w @oes/web', url: 'http://localhost:3000/login', reuseExistingServer: true, timeout: 60_000, env: { NODE_ENV: 'production' } },
+    // a second web process pinned to the staff portal (PORTAL=staff) on :3002, for the portal-specific sign-in wording test
+    { command: 'npm run start -w @oes/web', url: 'http://localhost:3002/login', reuseExistingServer: true, timeout: 60_000, env: { NODE_ENV: 'production', PORT: '3002', PORTAL: 'staff' } },
   ],
 });
