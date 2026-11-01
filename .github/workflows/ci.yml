@@ -28,4 +28,5 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium
+      - run: cp .env.example .env   # e2e starts the API/seed with `node --env-file=.env`; job-level env vars still take precedence
       - run: npm run test:e2e
