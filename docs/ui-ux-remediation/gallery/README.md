@@ -9,107 +9,111 @@ Captured from the real app (built web + real API, disposable seeded database) at
 | 003 | [forgot password](003-forgot-password.jpg) |
 | 004 | [student registration form](004-student-registration-form.jpg) |
 | 005 | [registration validation errors](005-registration-validation-errors.jpg) |
-| 006 | [page not found](006-page-not-found.jpg) |
-| 007 | [sign in on phone](007-sign-in-on-phone.jpg) |
-| 008 | [registration on phone](008-registration-on-phone.jpg) |
-| 009 | [student dashboard](009-student-dashboard.jpg) |
-| 010 | [student schedule](010-student-schedule.jpg) |
-| 011 | [student results](011-student-results.jpg) |
-| 012 | [student performance](012-student-performance.jpg) |
-| 013 | [student profile](013-student-profile.jpg) |
-| 014 | [student notifications panel](014-student-notifications-panel.jpg) |
-| 015 | [student dashboard on phone](015-student-dashboard-on-phone.jpg) |
-| 016 | [student menu drawer on phone](016-student-menu-drawer-on-phone.jpg) |
-| 017 | [lecturer dashboard](017-lecturer-dashboard.jpg) |
-| 018 | [lecturer questions](018-lecturer-questions.jpg) |
-| 019 | [lecturer exams](019-lecturer-exams.jpg) |
-| 020 | [lecturer students](020-lecturer-students.jpg) |
-| 021 | [lecturer profile](021-lecturer-profile.jpg) |
-| 022 | [lecturer notifications panel](022-lecturer-notifications-panel.jpg) |
-| 023 | [lecturer dashboard on phone](023-lecturer-dashboard-on-phone.jpg) |
-| 024 | [lecturer menu drawer on phone](024-lecturer-menu-drawer-on-phone.jpg) |
-| 025 | [examiner dashboard](025-examiner-dashboard.jpg) |
-| 026 | [examiner questions](026-examiner-questions.jpg) |
-| 027 | [examiner exams](027-examiner-exams.jpg) |
-| 028 | [examiner monitor](028-examiner-monitor.jpg) |
-| 029 | [examiner incidents](029-examiner-incidents.jpg) |
-| 030 | [examiner profile](030-examiner-profile.jpg) |
-| 031 | [examiner notifications panel](031-examiner-notifications-panel.jpg) |
-| 032 | [examiner dashboard on phone](032-examiner-dashboard-on-phone.jpg) |
-| 033 | [examiner menu drawer on phone](033-examiner-menu-drawer-on-phone.jpg) |
-| 034 | [controller dashboard](034-controller-dashboard.jpg) |
-| 035 | [controller exams](035-controller-exams.jpg) |
-| 036 | [controller monitor](036-controller-monitor.jpg) |
-| 037 | [controller incidents](037-controller-incidents.jpg) |
-| 038 | [controller enrolment](038-controller-enrolment.jpg) |
-| 039 | [controller audit](039-controller-audit.jpg) |
-| 040 | [controller profile](040-controller-profile.jpg) |
-| 041 | [controller notifications panel](041-controller-notifications-panel.jpg) |
-| 042 | [controller dashboard on phone](042-controller-dashboard-on-phone.jpg) |
-| 043 | [controller menu drawer on phone](043-controller-menu-drawer-on-phone.jpg) |
-| 044 | [campus admin dashboard](044-campus-admin-dashboard.jpg) |
-| 045 | [campus admin students](045-campus-admin-students.jpg) |
-| 046 | [campus admin roster](046-campus-admin-roster.jpg) |
-| 047 | [campus admin enrolment](047-campus-admin-enrolment.jpg) |
-| 048 | [campus admin assignments](048-campus-admin-assignments.jpg) |
-| 049 | [campus admin users](049-campus-admin-users.jpg) |
-| 050 | [campus admin exams](050-campus-admin-exams.jpg) |
-| 051 | [campus admin monitor](051-campus-admin-monitor.jpg) |
-| 052 | [campus admin incidents](052-campus-admin-incidents.jpg) |
-| 053 | [campus admin audit](053-campus-admin-audit.jpg) |
-| 054 | [campus admin profile](054-campus-admin-profile.jpg) |
-| 055 | [campus admin notifications panel](055-campus-admin-notifications-panel.jpg) |
-| 056 | [campus admin dashboard on phone](056-campus-admin-dashboard-on-phone.jpg) |
-| 057 | [campus admin menu drawer on phone](057-campus-admin-menu-drawer-on-phone.jpg) |
-| 058 | [invigilator dashboard](058-invigilator-dashboard.jpg) |
-| 059 | [invigilator monitor](059-invigilator-monitor.jpg) |
-| 060 | [invigilator incidents](060-invigilator-incidents.jpg) |
-| 061 | [invigilator profile](061-invigilator-profile.jpg) |
-| 062 | [invigilator notifications panel](062-invigilator-notifications-panel.jpg) |
-| 063 | [invigilator dashboard on phone](063-invigilator-dashboard-on-phone.jpg) |
-| 064 | [invigilator menu drawer on phone](064-invigilator-menu-drawer-on-phone.jpg) |
-| 065 | [super admin dashboard](065-super-admin-dashboard.jpg) |
-| 066 | [super admin institutions](066-super-admin-institutions.jpg) |
-| 067 | [super admin programs](067-super-admin-programs.jpg) |
-| 068 | [super admin assignments](068-super-admin-assignments.jpg) |
-| 069 | [super admin users](069-super-admin-users.jpg) |
-| 070 | [super admin students](070-super-admin-students.jpg) |
-| 071 | [super admin roster](071-super-admin-roster.jpg) |
-| 072 | [super admin exams](072-super-admin-exams.jpg) |
-| 073 | [super admin monitor](073-super-admin-monitor.jpg) |
-| 074 | [super admin incidents](074-super-admin-incidents.jpg) |
-| 075 | [super admin audit](075-super-admin-audit.jpg) |
-| 076 | [super admin profile](076-super-admin-profile.jpg) |
-| 077 | [super admin notifications panel](077-super-admin-notifications-panel.jpg) |
-| 078 | [super admin dashboard on phone](078-super-admin-dashboard-on-phone.jpg) |
-| 079 | [super admin menu drawer on phone](079-super-admin-menu-drawer-on-phone.jpg) |
-| 080 | [register institution dialog](080-register-institution-dialog.jpg) |
-| 081 | [discard changes prompt](081-discard-changes-prompt.jpg) |
-| 082 | [deactivate institution confirmation](082-deactivate-institution-confirmation.jpg) |
-| 083 | [new staff account dialog](083-new-staff-account-dialog.jpg) |
-| 084 | [assign lecturer dialog](084-assign-lecturer-dialog.jpg) |
-| 085 | [profile phone validation](085-profile-phone-validation.jpg) |
-| 086 | [add student dialog](086-add-student-dialog.jpg) |
-| 087 | [student register import with line errors](087-student-register-import-with-line-errors.jpg) |
-| 088 | [enrolment with cohort and eligibility](088-enrolment-with-cohort-and-eligibility.jpg) |
-| 089 | [live monitor for campus admin](089-live-monitor-for-campus-admin.jpg) |
-| 090 | [schedule a new examination dialog](090-schedule-a-new-examination-dialog.jpg) |
-| 091 | [new question dialog](091-new-question-dialog.jpg) |
-| 092 | [exam detail](092-exam-detail.jpg) |
-| 093 | [no access page](093-no-access-page.jpg) |
-| 094 | [control centre](094-control-centre.jpg) |
-| 095 | [end examination dialog](095-end-examination-dialog.jpg) |
-| 096 | [student exam schedule with live exam](096-student-exam-schedule-with-live-exam.jpg) |
-| 097 | [exam entry instructions](097-exam-entry-instructions.jpg) |
-| 098 | [question 1](098-question-1.jpg) |
-| 099 | [answer saved](099-answer-saved.jpg) |
-| 100 | [answer cleared with undo](100-answer-cleared-with-undo.jpg) |
-| 101 | [marked for review](101-marked-for-review.jpg) |
-| 102 | [skipped a question palette states](102-skipped-a-question-palette-states.jpg) |
-| 103 | [offline answer kept on this device](103-offline-answer-kept-on-this-device.jpg) |
-| 104 | [review your answers](104-review-your-answers.jpg) |
-| 105 | [submit examination confirmation](105-submit-examination-confirmation.jpg) |
-| 106 | [student schedule on phone](106-student-schedule-on-phone.jpg) |
-| 107 | [exam entry on phone](107-exam-entry-on-phone.jpg) |
-| 108 | [exam player on phone](108-exam-player-on-phone.jpg) |
-| 109 | [question palette sheet on phone](109-question-palette-sheet-on-phone.jpg) |
+| 006 | [certificate verification](006-certificate-verification.jpg) |
+| 007 | [page not found](007-page-not-found.jpg) |
+| 008 | [sign in on phone](008-sign-in-on-phone.jpg) |
+| 009 | [registration on phone](009-registration-on-phone.jpg) |
+| 010 | [forgot password on phone](010-forgot-password-on-phone.jpg) |
+| 011 | [student dashboard](011-student-dashboard.jpg) |
+| 012 | [student schedule](012-student-schedule.jpg) |
+| 013 | [student results](013-student-results.jpg) |
+| 014 | [student performance](014-student-performance.jpg) |
+| 015 | [student profile](015-student-profile.jpg) |
+| 016 | [student notifications panel](016-student-notifications-panel.jpg) |
+| 017 | [student dashboard on phone](017-student-dashboard-on-phone.jpg) |
+| 018 | [student menu drawer on phone](018-student-menu-drawer-on-phone.jpg) |
+| 019 | [lecturer dashboard](019-lecturer-dashboard.jpg) |
+| 020 | [lecturer questions](020-lecturer-questions.jpg) |
+| 021 | [lecturer exams](021-lecturer-exams.jpg) |
+| 022 | [lecturer students](022-lecturer-students.jpg) |
+| 023 | [lecturer profile](023-lecturer-profile.jpg) |
+| 024 | [lecturer notifications panel](024-lecturer-notifications-panel.jpg) |
+| 025 | [lecturer dashboard on phone](025-lecturer-dashboard-on-phone.jpg) |
+| 026 | [lecturer menu drawer on phone](026-lecturer-menu-drawer-on-phone.jpg) |
+| 027 | [examiner dashboard](027-examiner-dashboard.jpg) |
+| 028 | [examiner questions](028-examiner-questions.jpg) |
+| 029 | [examiner exams](029-examiner-exams.jpg) |
+| 030 | [examiner monitor](030-examiner-monitor.jpg) |
+| 031 | [examiner incidents](031-examiner-incidents.jpg) |
+| 032 | [examiner profile](032-examiner-profile.jpg) |
+| 033 | [examiner notifications panel](033-examiner-notifications-panel.jpg) |
+| 034 | [examiner dashboard on phone](034-examiner-dashboard-on-phone.jpg) |
+| 035 | [examiner menu drawer on phone](035-examiner-menu-drawer-on-phone.jpg) |
+| 036 | [controller dashboard](036-controller-dashboard.jpg) |
+| 037 | [controller exams](037-controller-exams.jpg) |
+| 038 | [controller monitor](038-controller-monitor.jpg) |
+| 039 | [controller incidents](039-controller-incidents.jpg) |
+| 040 | [controller enrolment](040-controller-enrolment.jpg) |
+| 041 | [controller audit](041-controller-audit.jpg) |
+| 042 | [controller profile](042-controller-profile.jpg) |
+| 043 | [controller notifications panel](043-controller-notifications-panel.jpg) |
+| 044 | [controller dashboard on phone](044-controller-dashboard-on-phone.jpg) |
+| 045 | [controller menu drawer on phone](045-controller-menu-drawer-on-phone.jpg) |
+| 046 | [campus admin dashboard](046-campus-admin-dashboard.jpg) |
+| 047 | [campus admin students](047-campus-admin-students.jpg) |
+| 048 | [campus admin roster](048-campus-admin-roster.jpg) |
+| 049 | [campus admin enrolment](049-campus-admin-enrolment.jpg) |
+| 050 | [campus admin assignments](050-campus-admin-assignments.jpg) |
+| 051 | [campus admin users](051-campus-admin-users.jpg) |
+| 052 | [campus admin exams](052-campus-admin-exams.jpg) |
+| 053 | [campus admin monitor](053-campus-admin-monitor.jpg) |
+| 054 | [campus admin incidents](054-campus-admin-incidents.jpg) |
+| 055 | [campus admin audit](055-campus-admin-audit.jpg) |
+| 056 | [campus admin profile](056-campus-admin-profile.jpg) |
+| 057 | [campus admin notifications panel](057-campus-admin-notifications-panel.jpg) |
+| 058 | [campus admin dashboard on phone](058-campus-admin-dashboard-on-phone.jpg) |
+| 059 | [campus admin menu drawer on phone](059-campus-admin-menu-drawer-on-phone.jpg) |
+| 060 | [invigilator dashboard](060-invigilator-dashboard.jpg) |
+| 061 | [invigilator monitor](061-invigilator-monitor.jpg) |
+| 062 | [invigilator incidents](062-invigilator-incidents.jpg) |
+| 063 | [invigilator profile](063-invigilator-profile.jpg) |
+| 064 | [invigilator notifications panel](064-invigilator-notifications-panel.jpg) |
+| 065 | [invigilator dashboard on phone](065-invigilator-dashboard-on-phone.jpg) |
+| 066 | [invigilator menu drawer on phone](066-invigilator-menu-drawer-on-phone.jpg) |
+| 067 | [super admin dashboard](067-super-admin-dashboard.jpg) |
+| 068 | [super admin institutions](068-super-admin-institutions.jpg) |
+| 069 | [super admin programs](069-super-admin-programs.jpg) |
+| 070 | [super admin assignments](070-super-admin-assignments.jpg) |
+| 071 | [super admin users](071-super-admin-users.jpg) |
+| 072 | [super admin students](072-super-admin-students.jpg) |
+| 073 | [super admin roster](073-super-admin-roster.jpg) |
+| 074 | [super admin exams](074-super-admin-exams.jpg) |
+| 075 | [super admin monitor](075-super-admin-monitor.jpg) |
+| 076 | [super admin incidents](076-super-admin-incidents.jpg) |
+| 077 | [super admin audit](077-super-admin-audit.jpg) |
+| 078 | [super admin profile](078-super-admin-profile.jpg) |
+| 079 | [super admin notifications panel](079-super-admin-notifications-panel.jpg) |
+| 080 | [super admin dashboard on phone](080-super-admin-dashboard-on-phone.jpg) |
+| 081 | [super admin menu drawer on phone](081-super-admin-menu-drawer-on-phone.jpg) |
+| 082 | [register institution dialog](082-register-institution-dialog.jpg) |
+| 083 | [discard changes prompt](083-discard-changes-prompt.jpg) |
+| 084 | [deactivate institution confirmation](084-deactivate-institution-confirmation.jpg) |
+| 085 | [new staff account dialog](085-new-staff-account-dialog.jpg) |
+| 086 | [assign lecturer dialog](086-assign-lecturer-dialog.jpg) |
+| 087 | [profile phone validation](087-profile-phone-validation.jpg) |
+| 088 | [two factor setup](088-two-factor-setup.jpg) |
+| 089 | [add student dialog](089-add-student-dialog.jpg) |
+| 090 | [student register import with line errors](090-student-register-import-with-line-errors.jpg) |
+| 091 | [enrolment with cohort and eligibility](091-enrolment-with-cohort-and-eligibility.jpg) |
+| 092 | [live monitor for campus admin](092-live-monitor-for-campus-admin.jpg) |
+| 093 | [schedule a new examination dialog](093-schedule-a-new-examination-dialog.jpg) |
+| 094 | [new question dialog](094-new-question-dialog.jpg) |
+| 095 | [exam detail](095-exam-detail.jpg) |
+| 096 | [no access page](096-no-access-page.jpg) |
+| 097 | [control centre](097-control-centre.jpg) |
+| 098 | [end examination dialog](098-end-examination-dialog.jpg) |
+| 099 | [student exam schedule with live exam](099-student-exam-schedule-with-live-exam.jpg) |
+| 100 | [exam entry instructions](100-exam-entry-instructions.jpg) |
+| 101 | [question 1](101-question-1.jpg) |
+| 102 | [answer saved](102-answer-saved.jpg) |
+| 103 | [answer cleared with undo](103-answer-cleared-with-undo.jpg) |
+| 104 | [marked for review](104-marked-for-review.jpg) |
+| 105 | [skipped a question palette states](105-skipped-a-question-palette-states.jpg) |
+| 106 | [all questions on one page](106-all-questions-on-one-page.jpg) |
+| 107 | [offline answer kept on this device](107-offline-answer-kept-on-this-device.jpg) |
+| 108 | [review your answers](108-review-your-answers.jpg) |
+| 109 | [submit examination confirmation](109-submit-examination-confirmation.jpg) |
+| 110 | [student schedule on phone](110-student-schedule-on-phone.jpg) |
+| 111 | [exam entry on phone](111-exam-entry-on-phone.jpg) |
+| 112 | [exam player on phone](112-exam-player-on-phone.jpg) |
+| 113 | [question palette sheet on phone](113-question-palette-sheet-on-phone.jpg) |
