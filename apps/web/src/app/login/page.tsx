@@ -18,8 +18,8 @@ export default function Login() {
     catch (x) { setErr(errMsg(x)); } finally { setBusy(false); }
   }
   return (
-    <AuthFrame>
-      <AuthHeading icon="user" title="Sign in" />
+    <AuthFrame note={<><p>Check your exam schedule and guidelines before attempting your examination.</p><small>Accounts lock for 15 minutes after 5 failed attempts. Trouble signing in? Contact your campus administrator or the IT helpdesk.</small></>}>
+      <AuthHeading icon="user" title="Sign in" lead="Access your SZABMU examination account" />
       {expired && <div className="notice warn" role="status" data-testid="session-expired">Your session has expired or was ended. Please sign in again — answers already saved are kept.</div>}
       <form onSubmit={submit} noValidate>
         <AuthField label="University email" icon="mail" type="email" value={email} onChange={setEmail} autoFocus autoComplete="username" placeholder="Enter your university email" />
@@ -28,8 +28,7 @@ export default function Login() {
         <div className="auth-row"><Link href="/forgot" className="auth-link">Forgot password?</Link></div>
         <AuthButton busy={busy} disabled={!email || !password}>{busy ? 'Signing in…' : 'Sign in'}</AuthButton>
       </form>
-      <p className="auth-alt">New student? <Link href="/register" className="auth-link">Create your account</Link></p>
-      <p className="small faint" style={{ margin: 0, textAlign: 'center' }}>Accounts lock for 15 minutes after 5 failed attempts. Trouble signing in? Contact your campus administrator or the IT helpdesk.</p>
+      <p className="auth-alt"><span>New student?</span><Link href="/register" className="auth-link">Create your account</Link></p>
     </AuthFrame>
   );
 }

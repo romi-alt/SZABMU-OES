@@ -5,16 +5,28 @@ import { Icon, type IconName } from '@/icons';
 
 export { Icon };
 
-/** Minimal split layout: brand panel with a curved edge on the left, one calm card on the right. Phones get a slim brand header. */
-export function AuthFrame({ children }: { children: ReactNode; headline?: string; body?: string }) {
+/** Split layout: burgundy brand panel with the campus photo in a curved window on the left, one calm card (and an optional note) on the right. Phones get a slim brand header. */
+export function AuthFrame({ children, note }: { children: ReactNode; note?: ReactNode }) {
   return (
     <div className="auth">
       <section className="auth-art">
-        <BrandLogo white priority className="auth-logo" />
-        <div className="auth-title"><i className="auth-bar" aria-hidden /><p className="auth-brand">OES Portal<br />SZABMU</p></div>
-        <small className="auth-foot">Secure, role-based access with a full audit trail.</small>
+        <div className="auth-photo" aria-hidden />
+        <div className="auth-art-text">
+          <BrandLogo white priority className="auth-logo" />
+          <div className="auth-title"><i className="auth-bar" aria-hidden /><p className="auth-brand">OES Portal<br />SZABMU</p></div>
+          <p className="auth-sub">Online Examination System</p>
+          <p className="auth-desc">A secure and role-based platform for managing and taking online examinations at SZABMU.</p>
+          <ul className="auth-feats">
+            <li><Icon name="laptop" size={30} /><span>Take Exams<br />Online</span></li>
+            <li><Icon name="calendar" size={30} /><span>Exam<br />Schedule</span></li>
+            <li><Icon name="shieldCheck" size={30} /><span>Secure &amp;<br />Monitored</span></li>
+          </ul>
+        </div>
       </section>
-      <main className="auth-form"><div className="auth-card">{children}</div></main>
+      <main className="auth-form">
+        <div className="auth-card">{children}</div>
+        {note && <aside className="auth-note"><Icon name="info" size={26} /><b>Important</b><div>{note}</div></aside>}
+      </main>
     </div>
   );
 }
