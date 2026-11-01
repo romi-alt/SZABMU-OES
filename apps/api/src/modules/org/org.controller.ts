@@ -6,7 +6,16 @@ import { page, parse, uuid } from '../../common/validate';
 import { OrgService } from './org.service';
 
 const role = z.enum(ROLES);
-const instDto = z.object({ code: z.string().min(2).max(20).regex(/^[A-Z0-9-]+$/), name: z.string().min(3).max(200), type: z.enum(INSTITUTION_TYPES), affiliation: z.enum(['CONSTITUENT', 'AFFILIATED']).default('CONSTITUENT'), city: z.string().max(100).optional() });
+const instCode = z.string().min(2).max(20).regex(/^[A-Z0-9-]+$/);
+const instName = z.string().min(3).max(200);
+const instAffiliation = z.enum(['CONSTITUENT', 'AFFILIATED']);
+const instCity = z.string().max(100);
+const instDto = z.object({ code: instCode, name: instName, type: z.enum(INSTITUTION_TYPES), affiliation: instAffiliation.default('CONSTITUENT'), city: instCity.optional() });
+/**
+ * PATCH semantics: a field that is not sent is never touched. This schema is deliberately NOT derived from `instDto.partial()` —
+ * zod keeps `.default()` on partial fields, which silently injected affiliation=CONSTITUENT into every partial update (UI-002).
+ */
+const instPatch = z.object({ code: instCode.optional(), name: instName.optional(), type: z.enum(INSTITUTION_TYPES).optional(), affiliation: instAffiliation.optional(), city: instCity.optional(), active: z.boolean().optional() });
 const deptDto = z.object({ code: z.string().min(1).max(20), name: z.string().min(2).max(200) });
 const programDto = z.object({ code: z.string().min(2).max(20), name: z.string().min(2).max(200), durationYrs: z.number().int().min(1).max(8), level: z.string().max(40).optional() });
 const courseDto = z.object({ code: z.string().min(2).max(30), title: z.string().min(2).max(200), semester: z.number().int().min(1).max(12), credits: z.number().int().min(0).max(30).optional() });
@@ -23,7 +32,7 @@ export class OrgController {
 
   @Perm('institution.read') @Get('institutions') institutions(@CurrentUser() u: AuthUser) { return this.org.listInstitutions(u); }
   @Perm('institution.manage') @Post('institutions') createInst(@CurrentUser() u: AuthUser, @Body() b: unknown, @Ip() ip: string) { return this.org.createInstitution(u, parse(instDto, b), ip); }
-  @Perm('institution.manage') @Patch('institutions/:id') updInst(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.org.updateInstitution(u, id, parse(instDto.partial().extend({ active: z.boolean().optional() }), b), ip); }
+  @Perm('institution.manage') @Patch('institutions/:id') updInst(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.org.updateInstitution(u, id, parse(instPatch, b), ip); }
   @Perm('institution.read') @Get('institutions/:id/departments') deps(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.org.listDepartments(u, id); }
   @Perm('department.manage') @Post('institutions/:id/departments') addDep(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.org.createDepartment(u, id, parse(deptDto, b), ip); }
 
