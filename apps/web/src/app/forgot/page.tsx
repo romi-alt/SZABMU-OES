@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { checkPassword } from '@oes/shared';
 import { post } from '@/api';
 import { errMsg } from '@/ui';
-import { AuthFrame } from '../AuthFrame';
+import { AuthButton, AuthField, AuthFrame, AuthHeading, Icon } from '../AuthFrame';
 
 export default function Forgot() {
   const [step, setStep] = useState<'email' | 'code' | 'reset' | 'done'>('email');
@@ -25,43 +25,45 @@ export default function Forgot() {
   function onPaste(e: React.ClipboardEvent) { const t = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6); if (t.length === 6) { e.preventDefault(); setDigits(t.split('')); } }
 
   return (
-    <AuthFrame headline="A complete examination platform — from enrolment to certification." body="Secure authentication, role-based access and a full audit trail across every role.">
+    <AuthFrame>
       {step === 'email' && <>
-        <div><h1>Forgot password?</h1><p className="muted" style={{ margin: '4px 0 0' }}>Enter your university email — we'll send a 6-digit verification code.</p></div>
-        <form className="stack" onSubmit={(e) => { e.preventDefault(); void sendCode(); }}>
-          <label className="f">University email<input className="in" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus autoComplete="username" /></label>
-          <span className="hint">The code expires in 10 minutes.</span>
+        <AuthHeading icon="mail" title="Forgot Password" lead="Enter your university email — we'll send a 6-digit verification code." />
+        <form onSubmit={(e) => { e.preventDefault(); void sendCode(); }}>
+          <AuthField label="University email" icon="mail" type="email" value={email} onChange={setEmail} autoFocus autoComplete="username" placeholder="Enter your email" hint="The code expires in 10 minutes." />
           {err && <div className="notice bad" role="alert">{err}</div>}
-          <button className="btn btn-primary" disabled={busy || !email} style={{ justifyContent: 'center', padding: 10 }}>Send verification code →</button>
+          <AuthButton busy={busy} disabled={!email}>Send verification code</AuthButton>
         </form>
-        <div className="notice"><b>Trouble signing in?</b> Contact your campus administrator or the IT helpdesk.</div>
+        <p className="small faint" style={{ margin: 0, textAlign: 'center' }}>Trouble signing in? Contact your campus administrator or the IT helpdesk.</p>
       </>}
       {step === 'code' && <>
-        <div><h1>Verify it&apos;s you</h1><p className="muted" style={{ margin: '4px 0 0' }}>If that address is registered, a 6-digit code has been sent to it.</p></div>
-        <form className="stack" onSubmit={(e) => { e.preventDefault(); void verify(); }}>
-          <span className="f">Verification code</span>
-          <div className="otp" onPaste={onPaste}>{digits.map((d, i) => <input key={i} ref={(el) => { refs.current[i] = el; }} inputMode="numeric" aria-label={`Digit ${i + 1}`} value={d} onChange={(e) => onDigit(i, e.target.value)} onKeyDown={(e) => { if (e.key === 'Backspace' && !digits[i] && i > 0) refs.current[i - 1]?.focus(); }} autoFocus={i === 0} />)}</div>
+        <AuthHeading icon="mail" title="Verify it's you" lead="If that address is registered, a 6-digit code has been sent to it." />
+        <form onSubmit={(e) => { e.preventDefault(); void verify(); }}>
+          <span className="f" id="otp-label" style={{ fontWeight: 600, fontSize: 13.5 }}>Verification code</span>
+          <div className="otp" role="group" aria-labelledby="otp-label" onPaste={onPaste}>{digits.map((d, i) => <input key={i} ref={(el) => { refs.current[i] = el; }} inputMode="numeric" aria-label={`Digit ${i + 1}`} value={d} onChange={(e) => onDigit(i, e.target.value)} onKeyDown={(e) => { if (e.key === 'Backspace' && !digits[i] && i > 0) refs.current[i - 1]?.focus(); }} autoFocus={i === 0} />)}</div>
           {devCode && <div className="notice warn small" data-testid="dev-code">Development mode — code: <b className="mono">{devCode}</b></div>}
           {err && <div className="notice bad" role="alert">{err}</div>}
-          <button className="btn btn-primary" disabled={busy || code.length !== 6} style={{ justifyContent: 'center', padding: 10 }}>Verify →</button>
+          <AuthButton busy={busy} disabled={code.length !== 6}>Verify</AuthButton>
           <button type="button" className="btn-link small" onClick={() => void sendCode()}>Resend code</button>
         </form>
       </>}
       {step === 'reset' && <>
-        <div><h1>Set a new password</h1><p className="muted" style={{ margin: '4px 0 0' }}>You cannot reuse any of your last 5 passwords.</p></div>
-        <form className="stack" onSubmit={(e) => { e.preventDefault(); void reset(); }}>
-          <label className="f">New password<input className="in" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus /></label>
+        <AuthHeading icon="lock" title="Set a new password" lead="You cannot reuse any of your last 5 passwords." />
+        <form onSubmit={(e) => { e.preventDefault(); void reset(); }}>
+          <AuthField label="New password" icon="lock" type="password" value={pw} onChange={setPw} autoFocus autoComplete="new-password" placeholder="Create a password" />
           <div className="meter" aria-hidden>{[1, 2, 3, 4].map((n) => <i key={n} className={strength.score >= n ? (strength.score <= 2 ? 'weak' : 'on') : ''} />)}</div>
-          <span className="small" style={{ color: strength.ok ? 'var(--green)' : 'var(--ink-3)' }}>{pw ? (strength.ok ? 'Strong password' : strength.problems[0]) : 'At least 10 characters, three of four character types.'}</span>
-          <label className="f">Confirm password<input className="in" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></label>
-          {pw2 && pw !== pw2 && <span className="err-text">Passwords do not match.</span>}
+          <span className="small" style={{ color: strength.ok ? 'var(--green)' : 'var(--ink-3)', minHeight: 20 }}>{pw ? (strength.ok ? 'Strong password' : strength.problems[0]) : 'At least 10 characters, three of four character types.'}</span>
+          <AuthField label="Confirm password" icon="lock" type="password" value={pw2} onChange={setPw2} autoComplete="new-password" placeholder="Re-enter your password" error={pw2 && pw !== pw2 ? 'Passwords do not match.' : ''} />
           {err && <div className="notice bad" role="alert">{err}</div>}
-          <button className="btn btn-primary" disabled={busy || !strength.ok || pw !== pw2} style={{ justifyContent: 'center', padding: 10 }}>Update password →</button>
+          <AuthButton busy={busy} disabled={!strength.ok || pw !== pw2}>Update password</AuthButton>
           <div className="notice ok small">You&apos;ll be signed out of all other devices for security.</div>
         </form>
       </>}
-      {step === 'done' && <><h1>Password updated</h1><div className="notice ok">Your password has been changed. Other devices have been signed out.</div><Link className="btn btn-primary" href="/login" style={{ justifyContent: 'center' }}>Back to sign in</Link></>}
-      {step !== 'done' && <div className="small muted">Remembered it? <Link href="/login">Back to sign in</Link></div>}
+      {step === 'done' && <>
+        <AuthHeading icon="lock" title="Password updated" />
+        <div className="notice ok">Your password has been changed. Other devices have been signed out.</div>
+        <Link className="auth-btn" href="/login" style={{ textDecoration: 'none' }}>Back to sign in<Icon name="arrow" size={18} /></Link>
+      </>}
+      {step !== 'done' && <p className="auth-alt">Remembered it? <Link href="/login" className="auth-link">Back to sign in</Link></p>}
     </AuthFrame>
   );
 }

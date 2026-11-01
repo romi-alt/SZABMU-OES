@@ -1,6 +1,8 @@
 'use client';
 import { cloneElement, createContext, isValidElement, type ReactElement, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Icon, iconForRoute } from './icons';
 import { ApiError } from './api';
 
 /* ── toasts ── */
@@ -25,8 +27,9 @@ export const errMsg = (e: unknown) => (e instanceof ApiError ? (e.body?.issues?.
 /* ── primitives ── */
 /** Every page names itself in the browser tab/history and to screen readers (WCAG 2.4.2): "<page> · SZABMU OES". */
 export function PageHead({ title, sub, children }: { title: string; sub?: ReactNode; children?: ReactNode }) {
+  const path = usePathname();
   useEffect(() => { document.title = `${title} · SZABMU OES`; }, [title]);
-  return <div className="page-head"><div><h1>{title}</h1>{sub && <p>{sub}</p>}</div><div className="row wrap">{children}</div></div>;
+  return <div className="page-head"><div className="page-title"><span className="page-ico"><Icon name={iconForRoute(path)} size={22} /></span><div><h1>{title}</h1>{sub && <p>{sub}</p>}</div></div><div className="row wrap">{children}</div></div>;
 }
 export function Card({ title, actions, children, flush }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; flush?: boolean }) {
   return <section className="card">{title && <div className="card-h"><h2>{title}</h2><div className="row">{actions}</div></div>}<div className={flush ? '' : 'card-b'}>{children}</div></section>;
