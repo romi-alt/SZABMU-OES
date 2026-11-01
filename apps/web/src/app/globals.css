@@ -338,3 +338,8 @@ a:has(> .stat) { display: block; border-radius: 16px; transition: transform .12s
 .conn { border-radius: 0 0 14px 14px; }
 .receipt { padding: 40px 28px; } .receipt .code { font-family: var(--font); }
 @media (max-width: 960px) { .exam-bar { border-radius: 0 0 18px 18px; padding: 10px 14px; } .q-body { padding: 18px; } .q-foot { padding: 12px 14px; } }
+
+.paper-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.paper-list li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #F2E8E4; border-radius: 12px; background: #fff; }
+.paper-n { flex: none; width: 28px; height: 28px; border-radius: 8px; background: #F6DEDB; color: var(--maroon); display: grid; place-items: center; font-weight: 700; font-size: 12px; } .paper-stem { flex: 1; min-width: 0; }
+@media (max-width: 640px) { .paper-list li { flex-wrap: wrap; } .paper-stem { flex: 1 1 100%; } }

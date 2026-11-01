@@ -3,7 +3,8 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { post, put, useGet } from '@/api';
 import { useMe } from '@/session';
-import { Async, Badge, Card, Field, Modal, PageHead, Pager, Status, Table, useAction, Confirm, CancelButton } from '@/ui';
+import { useUrlState } from '@/url-state';
+import { Async, Badge, Card, Field, Modal, PageHead, Pager, Status, Table, useAction, Confirm, CancelButton, ListEmpty } from '@/ui';
 
 const blankOpts = () => ['A', 'B', 'C', 'D', 'E'].map((label, i) => ({ label, text: '', isCorrect: i === 0 }));
 const DIFF: Record<string, string> = { EASY: 'green', MEDIUM: 'amber', HARD: 'red' };
@@ -39,7 +40,7 @@ function Editor({ q, courses, institutionId, onClose, onSaved }: { q?: any; cour
 
 function Inner() {
   const { me, can } = useMe(); const sp = useSearchParams(); const { run } = useAction();
-  const [status, setStatus] = useState(sp.get('status') ?? ''); const [courseId, setCourseId] = useState(''); const [search, setSearch] = useState(''); const [page, setPage] = useState(1);
+  const url = useUrlState({ status: sp.get('status') ?? '', courseId: '', search: '', page: '1' }); const status = url.vals.status; const courseId = url.vals.courseId; const search = url.vals.search; const page = Number(url.vals.page) || 1; const setStatus = (v: string) => url.set('status', v); const setCourseId = (v: string) => url.set('courseId', v); const setSearch = (v: string) => url.set('search', v); const setPage = (n: number) => url.set('page', String(n));
   const [edit, setEdit] = useState<any | 'new' | null>(null); const [rej, setRej] = useState<any>(null); const [note, setNote] = useState(''); const [view, setView] = useState<any>(null);
   const programs = useGet<any[]>('/programs'); const mine = useGet<any[]>(me?.role === 'LECTURER' ? '/me/course-assignments' : null);
   // Lecturers work only on assigned courses; everyone else sees the full catalogue (server enforces either way).
@@ -61,7 +62,7 @@ function Inner() {
           <Field label="Search"><input className="in" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search question text…" /></Field>
         </div>
         <Async state={list}>{(d) => <>
-          <Table rowKey={(r: any) => r.id} empty="No questions match." rows={d.items} cols={[
+          <Table rowKey={(r: any) => r.id} empty={<ListEmpty noun="questions" filters={[search && `“${search}”`, status && status.toLowerCase(), courseId && 'this course'].filter(Boolean) as string[]} onClear={url.reset} />} rows={d.items} cols={[
             { h: 'Question', cell: (r: any) => <button className="btn-link" style={{ textAlign: 'left', textDecoration: 'none', color: 'var(--ink)', fontWeight: 500 }} onClick={() => open(r.id)}>{r.stem.length > 90 ? r.stem.slice(0, 90) + '…' : r.stem}</button> },
             { h: 'Course', cell: (r: any) => <span className="code">{r.course.code}</span> }, { h: 'Type', cell: (r: any) => <Badge tone="blue">{r.type === 'CLINICAL_MCQ' ? 'Clinical' : 'MCQ'}</Badge> },
             { h: 'Diff.', cell: (r: any) => <Badge tone={DIFF[r.difficulty]!}>{r.difficulty.toLowerCase()}</Badge> }, { h: 'Used', num: true, cell: (r: any) => r.usedCount }, { h: 'Key', cell: (r: any) => <b className="mono">{r.correct}</b> }, { h: 'Status', cell: (r: any) => <Status s={r.status} /> },

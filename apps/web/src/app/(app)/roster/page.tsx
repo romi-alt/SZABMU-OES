@@ -2,7 +2,8 @@
 import { useState } from 'react';
 import { post, useGet } from '@/api';
 import { useMe } from '@/session';
-import { Async, Badge, Card, Field, Modal, Notice, PageHead, Pager, Table, useAction, CancelButton } from '@/ui';
+import { useUrlState } from '@/url-state';
+import { Async, Badge, Card, Field, Modal, Notice, PageHead, Pager, Table, useAction, CancelButton, ListEmpty } from '@/ui';
 
 const HEADER = 'regNo,fullName,dateOfBirth,programCode,semester,batchYear';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -29,7 +30,7 @@ function parseCsv(text: string): { rows: Row[]; problems: string[] } {
 
 export default function Roster() {
   const { me } = useMe(); const { run, busy } = useAction();
-  const [page, setPage] = useState(1); const [search, setSearch] = useState(''); const [status, setStatus] = useState(''); const [inst, setInst] = useState('');
+  const url = useUrlState({ page: '1', search: '', status: '', inst: '' }); const page = Number(url.vals.page) || 1; const search = url.vals.search; const status = url.vals.status; const inst = url.vals.inst; const setPage = (n: number) => url.set('page', String(n)); const setSearch = (v: string) => url.set('search', v); const setStatus = (v: string) => url.set('status', v); const setInst = (v: string) => url.set('inst', v);
   const insts = useGet<any[]>('/institutions');
   const st = useGet<any>(`/roster?page=${page}&pageSize=25${search ? `&search=${encodeURIComponent(search)}` : ''}${status ? `&status=${status}` : ''}${inst ? `&institutionId=${inst}` : ''}`);
   const [imp, setImp] = useState(false); const [csv, setCsv] = useState(''); const [target, setTarget] = useState(''); const [done, setDone] = useState('');
@@ -48,7 +49,7 @@ export default function Roster() {
         </div>
         <Async state={st}>{(d) => <>
           <div className="small muted" style={{ padding: '8px 16px' }} data-testid="roster-summary">{d.claimed} of {d.total} on this list have registered.</div>
-          <Table rowKey={(r: any) => r.id} rows={d.items} empty="No entries yet. Import the register to let students sign up." cols={[
+          <Table rowKey={(r: any) => r.id} rows={d.items} empty={search || status || inst ? <ListEmpty noun="entries" filters={[search && `“${search}”`, status && (status === 'claimed' ? 'registered' : 'not registered yet'), inst && 'this institution'].filter(Boolean) as string[]} onClear={url.reset} /> : 'No entries yet. Import the register to let students sign up.'} cols={[
             { h: 'Reg. no.', cell: (r: any) => <span className="code">{r.regNo}</span> }, { h: 'Name', cell: (r: any) => <b>{r.fullName}</b> }, { h: 'Institution', cell: (r: any) => r.institution.code },
             { h: 'Programme', cell: (r: any) => r.program.code }, { h: 'Semester', num: true, cell: (r: any) => r.semester }, { h: 'Batch', num: true, cell: (r: any) => r.batchYear },
             { h: 'Status', cell: (r: any) => r.claimedAt ? <Badge tone="green">Registered</Badge> : <Badge tone="grey">Not registered yet</Badge> },

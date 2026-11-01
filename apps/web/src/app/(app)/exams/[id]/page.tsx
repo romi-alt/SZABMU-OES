@@ -1,27 +1,77 @@
 'use client';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { post, put, patch, fmtDT, useGet } from '@/api';
 import { useMe } from '@/session';
-import { Async, Badge, Card, Confirm, Field, Modal, Notice, PageHead, Stat, Status, Table, useAction, CancelButton } from '@/ui';
+import { Async, Badge, Card, Confirm, Field, Modal, Notice, PageHead, Stat, Status, Table, useAction, CancelButton, ListEmpty } from '@/ui';
 
+interface PaperItem { id: string; marks: number }
+/**
+ * Paper builder (UI-027): search and filter the approved bank, pick one question or everything that matches, set marks per question or for all,
+ * order the paper, and see live totals. Nothing is written until "Save paper"; leaving with unsaved changes is flagged.
+ */
 function PaperBuilder({ exam, reload }: { exam: any; reload: () => void }) {
-  const { run, busy } = useAction(); const cur = useGet<any[]>(`/exams/${exam.id}/paper`); const bank = useGet<any>(`/questions?status=APPROVED&courseId=${exam.courseId}&pageSize=200`);
-  const [sel, setSel] = useState<Record<string, number> | null>(null);
-  const chosen: Record<string, number> = sel ?? Object.fromEntries((cur.data ?? []).map((q) => [q.questionId, q.marks as number]));
-  const total = (Object.values(chosen) as number[]).reduce((a, b) => a + b, 0);
-  const toggle = (id: string) => setSel((s) => { const c = { ...(s ?? chosen) }; if (id in c) delete c[id]; else c[id] = 1; return c; });
+  const { run, busy } = useAction(); const cur = useGet<any[]>(`/exams/${exam.id}/paper`);
+  const [search, setSearch] = useState(''); const [diff, setDiff] = useState(''); const [type, setType] = useState(''); const [tab, setTab] = useState<'bank' | 'paper'>('bank'); const [bulk, setBulk] = useState('1');
+  const bank = useGet<any>(`/questions?status=APPROVED&courseId=${exam.courseId}&pageSize=200${search ? `&search=${encodeURIComponent(search)}` : ''}${diff ? `&difficulty=${diff}` : ''}${type ? `&type=${type}` : ''}`);
+  const [items, setItems] = useState<PaperItem[] | null>(null);
+  const known = useRef(new Map<string, any>());
+  for (const q of cur.data ?? []) known.current.set(q.questionId, q.question);
+  for (const q of bank.data?.items ?? []) known.current.set(q.id, q);
+  const chosen: PaperItem[] = items ?? (cur.data ?? []).map((q) => ({ id: q.questionId, marks: q.marks as number }));
+  const ids = new Set(chosen.map((c) => c.id)); const dirty = items !== null;
+  const total = chosen.reduce((a, b) => a + b.marks, 0);
+  const byDiff = chosen.reduce<Record<string, number>>((m, c) => { const d = String(known.current.get(c.id)?.difficulty ?? '?').toLowerCase(); m[d] = (m[d] ?? 0) + 1; return m; }, {});
+  const edit = (fn: (c: PaperItem[]) => PaperItem[]) => setItems(fn(chosen));
+  const rows: any[] = bank.data?.items ?? [];
+  const filters = [search && `“${search}”`, diff && diff.toLowerCase(), type && (type === 'CLINICAL_MCQ' ? 'clinical' : 'MCQ')].filter(Boolean) as string[];
+  useEffect(() => { if (!dirty) return; const h = (e: BeforeUnloadEvent) => { e.preventDefault(); }; window.addEventListener('beforeunload', h); return () => window.removeEventListener('beforeunload', h); }, [dirty]);
+  const move = (i: number, d: -1 | 1) => edit((c) => { const n = [...c]; const j = i + d; if (j < 0 || j >= n.length) return c; [n[i], n[j]] = [n[j]!, n[i]!]; return n; });
+  const setMarks = (id: string, m: number) => edit((c) => c.map((x) => x.id === id ? { ...x, marks: Math.max(0.5, m || 0.5) } : x));
   return (
-    <Card title={`Question paper (${Object.keys(chosen).length} questions · ${total} marks)`} actions={<>
-      <button className="btn btn-sm" disabled={busy || !Object.keys(chosen).length} onClick={() => run(async () => { await put(`/exams/${exam.id}/paper`, { items: Object.entries(chosen).map(([questionId, marks]) => ({ questionId, marks })) }); setSel(null); cur.reload(); reload(); }, 'Paper saved')}>Save paper</button>
-      <button className="btn btn-sm btn-green" disabled={busy || !cur.data?.length || sel !== null} onClick={() => run(async () => { await post(`/exams/${exam.id}/paper/submit`); reload(); }, 'Submitted for approval')}>Submit for approval</button></>}>
+    <Card title={`Question paper (${chosen.length} questions · ${total} marks)`} actions={<>
+      {dirty && <span className="small" style={{ color: 'var(--amber)', fontWeight: 600 }} data-testid="paper-unsaved">Unsaved changes</span>}
+      <button className="btn btn-sm" disabled={busy || !chosen.length || !dirty} onClick={() => run(async () => { await put(`/exams/${exam.id}/paper`, { items: chosen.map((c) => ({ questionId: c.id, marks: c.marks })) }); setItems(null); cur.reload(); reload(); }, 'Paper saved')}>Save paper</button>
+      <button className="btn btn-sm btn-green" disabled={busy || !cur.data?.length || dirty} title={dirty ? 'Save the paper first' : undefined} onClick={() => run(async () => { await post(`/exams/${exam.id}/paper/submit`); reload(); }, 'Submitted for approval')}>Submit for approval</button></>}>
       {exam.paperReviewNote && <Notice tone="warn"><b>Returned:</b> {exam.paperReviewNote}</Notice>}
-      <Async state={bank}>{(d) => <Table rowKey={(r: any) => r.id} empty="No approved questions exist for this course yet." rows={d.items} cols={[
-        { h: '', cell: (r: any) => <input type="checkbox" aria-label="Include on paper" checked={r.id in chosen} onChange={() => toggle(r.id)} /> },
-        { h: 'Question', cell: (r: any) => r.stem }, { h: 'Type', cell: (r: any) => r.type === 'CLINICAL_MCQ' ? 'Clinical' : 'MCQ' }, { h: 'Diff.', cell: (r: any) => r.difficulty.toLowerCase() },
-        { h: 'Marks', num: true, cell: (r: any) => r.id in chosen ? <input className="in mono" style={{ width: 70 }} type="number" min={0.5} step={0.5} value={chosen[r.id]} onChange={(e) => setSel((s) => ({ ...(s ?? chosen), [r.id]: Math.max(0.5, +e.target.value) }))} aria-label="Marks" /> : null },
-      ]} />}</Async>
+      <div className="row between wrap" style={{ marginBottom: 12 }}>
+        <div className="row" role="tablist" aria-label="Paper builder views">
+          <button role="tab" aria-selected={tab === 'bank'} className={`btn btn-sm ${tab === 'bank' ? 'btn-primary' : ''}`} onClick={() => setTab('bank')}>Question bank</button>
+          <button role="tab" aria-selected={tab === 'paper'} className={`btn btn-sm ${tab === 'paper' ? 'btn-primary' : ''}`} onClick={() => setTab('paper')} data-testid="tab-paper">On the paper ({chosen.length})</button>
+        </div>
+        <div className="small muted" data-testid="paper-summary">Easy {byDiff.easy ?? 0} · Medium {byDiff.medium ?? 0} · Hard {byDiff.hard ?? 0}</div>
+      </div>
+      {tab === 'bank' && <>
+        <div className="filters" style={{ padding: '0 0 12px', border: 0 }}>
+          <Field label="Search"><input className="in" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Words in the question" /></Field>
+          <Field label="Difficulty"><select className="in" value={diff} onChange={(e) => setDiff(e.target.value)}><option value="">All</option><option value="EASY">Easy</option><option value="MEDIUM">Medium</option><option value="HARD">Hard</option></select></Field>
+          <Field label="Type"><select className="in" value={type} onChange={(e) => setType(e.target.value)}><option value="">All</option><option value="MCQ">MCQ</option><option value="CLINICAL_MCQ">Clinical</option></select></Field>
+        </div>
+        <div className="row between wrap small" style={{ marginBottom: 8 }}>
+          <span className="muted" data-testid="bank-count">Showing {rows.length}{bank.data && bank.data.total > rows.length ? ` of ${bank.data.total} — refine the search to see the rest` : ''}.</span>
+          <span className="row"><button className="btn btn-sm" disabled={!rows.length} onClick={() => edit((c) => [...c, ...rows.filter((r) => !ids.has(r.id)).map((r) => ({ id: r.id, marks: 1 }))])} data-testid="select-matching">Add all {rows.length} shown</button>
+            <button className="btn btn-sm" disabled={!rows.some((r) => ids.has(r.id))} onClick={() => edit((c) => c.filter((x) => !rows.some((r) => r.id === x.id)))}>Remove shown</button></span>
+        </div>
+        <Async state={bank}>{(d) => <Table rowKey={(r: any) => r.id} empty={<ListEmpty noun="approved questions" filters={filters} onClear={() => { setSearch(''); setDiff(''); setType(''); }} />} rows={d.items} cols={[
+          { h: '', cell: (r: any) => <input type="checkbox" aria-label={`Include on paper: ${String(r.stem).slice(0, 60)}`} checked={ids.has(r.id)} onChange={() => edit((c) => ids.has(r.id) ? c.filter((x) => x.id !== r.id) : [...c, { id: r.id, marks: 1 }])} /> },
+          { h: 'Question', cell: (r: any) => r.stem }, { h: 'Type', cell: (r: any) => r.type === 'CLINICAL_MCQ' ? 'Clinical' : 'MCQ' }, { h: 'Diff.', cell: (r: any) => r.difficulty.toLowerCase() },
+          { h: 'Marks', num: true, cell: (r: any) => ids.has(r.id) ? <input className="in mono" style={{ width: 70 }} type="number" min={0.5} step={0.5} value={chosen.find((x) => x.id === r.id)!.marks} onChange={(e) => setMarks(r.id, +e.target.value)} aria-label="Marks" /> : null },
+        ]} />}</Async>
+      </>}
+      {tab === 'paper' && <>
+        <div className="row wrap" style={{ marginBottom: 10 }}>
+          <Field label="Marks for every question"><input className="in mono" style={{ width: 90 }} type="number" min={0.5} step={0.5} value={bulk} onChange={(e) => setBulk(e.target.value)} /></Field>
+          <button className="btn btn-sm" style={{ alignSelf: 'flex-end' }} disabled={!chosen.length || !(+bulk >= 0.5)} onClick={() => edit((c) => c.map((x) => ({ ...x, marks: +bulk })))}>Apply to all {chosen.length}</button>
+        </div>
+        {!chosen.length ? <div className="empty">No questions on the paper yet. Choose some from the question bank.</div> :
+          <ol className="paper-list" data-testid="paper-list">{chosen.map((c, i) => { const q = known.current.get(c.id); return (
+            <li key={c.id}><span className="paper-n mono">{i + 1}</span><span className="paper-stem">{q?.stem ?? 'Question'}<span className="small faint"> · {String(q?.difficulty ?? '').toLowerCase()}</span></span>
+              <input className="in mono" style={{ width: 70 }} type="number" min={0.5} step={0.5} value={c.marks} onChange={(e) => setMarks(c.id, +e.target.value)} aria-label={`Marks for question ${i + 1}`} />
+              <button className="btn btn-sm" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move question ${i + 1} up`}>↑</button>
+              <button className="btn btn-sm" onClick={() => move(i, 1)} disabled={i === chosen.length - 1} aria-label={`Move question ${i + 1} down`}>↓</button>
+              <button className="btn btn-sm btn-danger" onClick={() => edit((x) => x.filter((y) => y.id !== c.id))} aria-label={`Remove question ${i + 1}`}>Remove</button></li>); })}</ol>}
+      </>}
     </Card>
   );
 }
