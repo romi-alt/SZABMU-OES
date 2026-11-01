@@ -2,7 +2,7 @@
 import { cloneElement, createContext, isValidElement, type ReactElement, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Icon, iconForRoute } from './icons';
+import { Icon, iconForRoute, type IconName } from './icons';
 import { ApiError } from './api';
 
 /* ── toasts ── */
@@ -34,8 +34,8 @@ export function PageHead({ title, sub, children }: { title: string; sub?: ReactN
 export function Card({ title, actions, children, flush }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; flush?: boolean }) {
   return <section className="card">{title && <div className="card-h"><h2>{title}</h2><div className="row">{actions}</div></div>}<div className={flush ? '' : 'card-b'}>{children}</div></section>;
 }
-export function Stat({ k, v, s }: { k: string; v: ReactNode; s?: ReactNode }) {
-  return <div className="card stat"><div className="k">{k}</div><div className="v">{v}</div>{s && <div className="s">{s}</div>}</div>;
+export function Stat({ k, v, s, icon }: { k: string; v: ReactNode; s?: ReactNode; icon?: IconName }) {
+  return <div className="card stat">{icon && <span className="stat-ico"><Icon name={icon} size={20} /></span>}<div className="k">{k}</div><div className="v">{v}</div>{s && <div className="s">{s}</div>}</div>;
 }
 const TONES: Record<string, string> = {
   green: 'b-green', amber: 'b-amber', red: 'b-red', blue: 'b-blue', grey: 'b-grey',

@@ -23,7 +23,7 @@ test.describe('app shell accessibility', () => {
   });
 
   test('text input borders and muted text meet WCAG contrast (3:1 / 4.5:1)', async ({ page }) => {
-    await login(page, 'admin.a'); await page.goto('/profile');
+    await login(page, 'admin.a'); await page.goto('/profile'); await page.locator('input.in:not([readonly])').first().waitFor();
     const c = await page.evaluate(() => {
       const lum = (rgb: string) => { const v = rgb.match(/\d+/g)!.slice(0, 3).map((n) => { const x = +n / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * v[0]! + 0.7152 * v[1]! + 0.0722 * v[2]!; };
       const ratio = (a: string, b: string) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x! + 0.05) / (y! + 0.05); };

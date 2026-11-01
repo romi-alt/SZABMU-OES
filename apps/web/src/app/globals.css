@@ -299,3 +299,42 @@ input.in:focus, select.in:focus, textarea.in:focus { outline: 0; border-color: v
 .card.pal-aside { overflow-y: auto; overflow-x: hidden; }
 .tbl th { position: relative; }  /* keeps the visually-hidden "Actions" header text inside the scrolling table wrapper */
 .pal-aside > * { flex-shrink: 0; }  /* cards clip their own content now; keep them full height so the aside is what scrolls */
+
+.auth-btn-ghost { background: transparent; color: var(--maroon); border: 1px solid var(--rose); margin-top: 0; } .auth-btn-ghost:hover:not(:disabled) { background: #F6DEDB; }
+a.auth-btn { text-decoration: none; }
+
+/* Dashboards */
+.stat { position: relative; } .stat-ico { position: absolute; top: 16px; right: 16px; width: 38px; height: 38px; border-radius: 12px; background: #F6DEDB; color: var(--maroon); display: grid; place-items: center; }
+a:has(> .stat) { display: block; border-radius: 16px; transition: transform .12s; } a:has(> .stat):hover { transform: translateY(-2px); } a:has(> .stat):hover .stat { border-color: var(--maroon); }
+.dash-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 1023px) { .dash-grid { grid-template-columns: minmax(0, 1fr); } }
+.shortcuts { list-style: none; margin: 0; padding: 8px; } .shortcuts li + li { margin-top: 2px; }
+.shortcut { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; text-decoration: none; color: var(--ink); } .shortcut:hover { background: #FBF3F0; color: var(--ink); }
+.shortcut-ico { flex: none; width: 36px; height: 36px; border-radius: 10px; background: #F6DEDB; color: var(--maroon); display: grid; place-items: center; }
+.shortcut-t { flex: 1; min-width: 0; display: flex; flex-direction: column; } .shortcut-t small { color: var(--ink-2); font-size: 12px; } .shortcut > .ico:last-child { color: var(--ink-3); }
+.activity { list-style: none; margin: 0; padding: 4px 8px 8px; } .activity li { display: flex; gap: 12px; padding: 12px; border-radius: 12px; } .activity li + li { border-top: 1px solid #F4ECE8; } .activity li.unread { background: #FDF7F5; }
+.act-dot { flex: none; width: 9px; height: 9px; margin-top: 6px; border-radius: 50%; background: #D8C9C5; } li.unread .act-dot { background: var(--crimson); } .act-b { min-width: 0; }
+
+/* Exam player — same premium skin; behaviour and layout metrics unchanged */
+.exam { background: var(--ivory); }
+.exam-bar { border-bottom: 0; border-radius: 0 0 22px 22px; padding: 12px 28px; box-shadow: 0 6px 24px rgba(36, 23, 22, .08); }
+.exam-bar .title { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.exam-clock { border: 0; border-radius: 14px; padding: 6px 16px; background: #F6EEEB; } .exam-clock .v { font-family: var(--font); font-size: 22px; letter-spacing: .02em; font-variant-numeric: tabular-nums; } .exam-clock.low { background: #FBE4E1; }
+.exam .btn { min-height: 38px; }
+.q-card { border-radius: 20px; border: 1px solid #EFE3DF; box-shadow: var(--shadow-1); }
+.q-head { background: linear-gradient(90deg, #0F4A30, var(--green)); padding: 12px 24px; font-family: var(--font); font-weight: 700; letter-spacing: .08em; }
+.q-body { padding: 26px 28px; gap: 18px; } .q-stem { font-size: 18px; font-weight: 600; letter-spacing: -0.005em; }
+.vignette { border-left: 0; border-radius: 14px; background: #F8F0ED; padding: 14px 18px; }
+.opt { border-radius: 14px; padding: 14px 18px; border: 1.5px solid #E9DDDA; transition: border-color .12s, background .12s, box-shadow .12s; }
+.opt:hover { border-color: var(--maroon); background: #FDFAF8; }
+.opt[aria-checked="true"] { border-color: var(--green); border-width: 1.5px; background: #F1F8F4; box-shadow: 0 0 0 3px rgba(21, 91, 60, .12); }
+.opt .radio { width: 20px; height: 20px; border-width: 2px; } .opt .lab { font-family: var(--font); color: var(--ink-2); }
+.q-foot { padding: 14px 24px; background: #FBF7F5; border-top-color: #F2E8E4; gap: 10px; }
+.save-state { padding: 5px 12px; border-radius: 999px; background: #EFE9E6; } .save-state.ok { background: var(--green-bg); } .save-state.wait { background: var(--amber-bg); } .save-state.bad { background: var(--red-bg); }
+.pal { gap: 8px; } .pal button { height: 38px; border-radius: 10px; font-family: var(--font); font-weight: 700; border-color: #E3D3CF; }
+.pal button.current { outline: 3px solid var(--maroon); outline-offset: 2px; }
+.pal button.marked::after { border-top-right-radius: 9px; }
+.exam .card, .pal-aside > .card { border-radius: 18px; }
+.conn { border-radius: 0 0 14px 14px; }
+.receipt { padding: 40px 28px; } .receipt .code { font-family: var(--font); }
+@media (max-width: 960px) { .exam-bar { border-radius: 0 0 18px 18px; padding: 10px 14px; } .q-body { padding: 18px; } .q-foot { padding: 12px 14px; } }
