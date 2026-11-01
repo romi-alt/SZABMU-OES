@@ -11,6 +11,9 @@ const schema = z.object({
   RECEIPT_SECRET: z.string().min(32),
   SESSION_TTL_HOURS: z.coerce.number().default(12),
   DB_POOL_MAX: z.coerce.number().default(20),
+  /** Default interactive-transaction limits (ms). Raised from Prisma's 2 s / 5 s because the database may be remote. */
+  DB_TX_MAX_WAIT_MS: z.coerce.number().int().min(100).default(10_000),
+  DB_TX_TIMEOUT_MS: z.coerce.number().int().min(1000).default(30_000),
   S3_ENDPOINT: z.string().optional(),
   S3_REGION: z.string().default('us-east-1'),
   S3_BUCKET: z.string().default('oes-artifacts'),
