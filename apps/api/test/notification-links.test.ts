@@ -28,6 +28,15 @@ describe('notification links', () => {
     walk(root); expect(bad).toEqual([]);
   });
 
+  it('staff-role notifications never link to the candidate-only /results page', () => {
+    const root = path.resolve(__dirname, '../src/modules'); const bad: string[] = [];
+    const walk = (d: string) => { for (const n of readdirSync(d)) { const f = path.join(d, n); if (statSync(f).isDirectory()) walk(f); else if (f.endsWith('.ts')) {
+      const src = readFileSync(f, 'utf8');
+      for (const m of src.matchAll(/notifications\.notifyRole\(([^;]*)\);/g)) if (/LINKS\.results\b/.test(m[1]!)) bad.push(`${path.relative(root, f)}: ${m[0].slice(0, 90)}`);
+    } } };
+    walk(root); expect(bad).toEqual([]);
+  });
+
   it('the client only follows plain same-origin paths', () => {
     for (const ok of ['/schedule', '/exams/abc-123', '/results']) expect(isSafeAppLink(ok)).toBe(true);
     for (const bad of ['//evil.example/x', 'https://evil.example', 'javascript:alert(1)', '/a b', '/x?y=<script>', '', null, undefined, 42]) expect(isSafeAppLink(bad), String(bad)).toBe(false);

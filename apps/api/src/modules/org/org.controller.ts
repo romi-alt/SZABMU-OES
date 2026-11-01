@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
-import { ROLES, INSTITUTION_TYPES } from '@oes/shared';
+import { ROLES, INSTITUTION_TYPES, isValidPhone, PHONE_HINT } from '@oes/shared';
 import { CurrentUser, Ip, Perm, type AuthUser } from '../../common/auth';
 import { page, parse, uuid } from '../../common/validate';
 import { OrgService } from './org.service';
@@ -19,11 +19,12 @@ const instPatch = z.object({ code: instCode.optional(), name: instName.optional(
 const deptDto = z.object({ code: z.string().min(1).max(20), name: z.string().min(2).max(200) });
 const programDto = z.object({ code: z.string().min(2).max(20), name: z.string().min(2).max(200), durationYrs: z.number().int().min(1).max(8), level: z.string().max(40).optional() });
 const courseDto = z.object({ code: z.string().min(2).max(30), title: z.string().min(2).max(200), semester: z.number().int().min(1).max(12), credits: z.number().int().min(0).max(30).optional() });
-const userDto = z.object({ email: z.string().email().max(254), fullName: z.string().min(2).max(200), role, institutionIds: z.array(uuid).max(50), phone: z.string().max(30).optional() });
+const phoneField = z.string().max(30).refine(isValidPhone, PHONE_HINT);
+const userDto = z.object({ email: z.string().email().max(254), fullName: z.string().min(2).max(200), role, institutionIds: z.array(uuid).max(50), phone: phoneField.optional() });
 const userPatch = z.object({ active: z.boolean().optional(), institutionIds: z.array(uuid).max(50).optional(), fullName: z.string().min(2).max(200).optional() });
 const studentDto = z.object({ email: z.string().email().max(254), fullName: z.string().min(2).max(200), institutionId: uuid, programId: uuid, regNo: z.string().min(3).max(40), semester: z.number().int().min(1).max(12), batchYear: z.number().int().min(1990).max(2100), dateOfBirth: z.string().date().optional() });
 const importDto = z.object({ institutionId: uuid, rows: z.array(studentDto.omit({ institutionId: true, dateOfBirth: true })).min(1).max(1000) });
-const studentPatch = z.object({ semester: z.number().int().min(1).max(12).optional(), status: z.enum(['ACTIVE', 'SUSPENDED', 'GRADUATED', 'WITHDRAWN']).optional(), address: z.string().max(300).optional(), guardianPhone: z.string().max(30).optional() });
+const studentPatch = z.object({ semester: z.number().int().min(1).max(12).optional(), status: z.enum(['ACTIVE', 'SUSPENDED', 'GRADUATED', 'WITHDRAWN']).optional(), address: z.string().max(300).optional(), guardianPhone: phoneField.optional() });
 const enrolDto = z.object({ courseId: uuid, term: z.string().min(3).max(30), institutionId: uuid, studentIds: z.array(uuid).max(5000).optional() });
 
 @Controller()

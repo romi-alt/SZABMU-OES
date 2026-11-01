@@ -216,7 +216,7 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
       });
       if (moved) {
         stats.pending++; this.metrics.lifecycleTransitions.inc({ kind: 'results_pending' });
-        await this.notifications.notifyRole('EXAMINER', 'Results ready for review', `${ex.code} — ${ex.title} has been graded.`, LINKS.results);
+        await this.notifications.notifyRole('EXAMINER', 'Results ready for review', `${ex.code} — ${ex.title} has been graded.`, LINKS.exam(ex.id));
       }
     }
   }
