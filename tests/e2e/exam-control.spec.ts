@@ -103,6 +103,7 @@ test.describe.serial('central examination control', () => {
   test('campus staff see only their campus and have no exam-wide control; a candidate cannot open the command centre', async ({ browser, playwright }) => {
     const ctx = await browser.newContext(); const p = await ctx.newPage(); await login(p, 'admin.a');
     await p.goto(`/monitor/${examId}`); await expect(p.getByRole('heading', { name: 'Live monitor' })).toBeVisible();
+    await expect(p.locator('tbody tr td:nth-child(3)').first()).toBeVisible();
     const campus = await p.locator('tbody tr td:nth-child(3)').allInnerTexts(); expect(campus.length).toBeGreaterThan(0); expect(new Set(campus)).toEqual(new Set(['DMC-A']));
     await p.goto(`/exams/${examId}/control`); await expect(p.getByTestId('error-forbidden')).toBeVisible();
     const api = await apiAs(playwright, 'admin.a'); for (const slug of ['suspend', 'start', 'close']) expect((await api.post(`/api/exams/${examId}/control/${slug}`, { data: {} })).status()).toBe(403);

@@ -23,7 +23,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 export const errMsg = (e: unknown) => (e instanceof ApiError ? (e.body?.issues?.length ? `${e.message}: ${e.body.issues.map((i: any) => `${i.path} ${i.message}`).join('; ')}` : e.message) : (e as Error)?.message ?? 'Something went wrong');
 
 /* ── primitives ── */
+/** Every page names itself in the browser tab/history and to screen readers (WCAG 2.4.2): "<page> · SZABMU OES". */
 export function PageHead({ title, sub, children }: { title: string; sub?: ReactNode; children?: ReactNode }) {
+  useEffect(() => { document.title = `${title} · SZABMU OES`; }, [title]);
   return <div className="page-head"><div><h1>{title}</h1>{sub && <p>{sub}</p>}</div><div className="row wrap">{children}</div></div>;
 }
 export function Card({ title, actions, children, flush }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; flush?: boolean }) {
