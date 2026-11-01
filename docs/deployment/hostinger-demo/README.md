@@ -24,11 +24,13 @@
    Both are therefore external managed services (Neon + Upstash free tiers), reached over TLS.
 2. **Only one Node.js slot was free** on the account (9 Node.js sites already exist; limit ≈10). The production plan wants three sites
    (student web, staff web, API). The demo collapses them into **one process tree**:
-   - the launcher spawns the NestJS API as a child bound to `127.0.0.1:47321` (never public);
-   - the launcher serves Next.js in-process on Hostinger's `PORT`;
-   - the browser only calls same-origin `/api/*`; Next rewrites it to the API (`apps/web/next.config.mjs`).
-3. **The rewrite target is baked in at build time.** `API_INTERNAL_URL=http://127.0.0.1:47321` must be in the site's environment
-   **before** the build runs; changing it requires a rebuild, not just a restart.
+   - one Node HTTP server listens on Hostinger's `PORT`;
+   - requests to `/api/*` are handed to the NestJS API **in the same process** (its Fastify instance, `fastify.routing(req, res)`);
+   - everything else goes to the Next.js request handler.
+   The browser still only calls same-origin `/api/*`, exactly as in development.
+3. **No second port.** A first version ran the API as a child process on `127.0.0.1:47321` behind Next's rewrite. On Hostinger's shared
+   web server that failed: the child got `EADDRINUSE` on the loopback port while connections to it were refused (see "Lessons").
+   `API_INTERNAL_URL` / `API_PORT` are therefore unused by the demo (left set; harmless).
 4. **Remote database latency.** Every query is an internet round trip, so Prisma's default 5 s interactive-transaction timeout was too tight
    (the seed's paper-approval transaction failed with `P2028`). Defaults are now `DB_TX_MAX_WAIT_MS=10000` / `DB_TX_TIMEOUT_MS=30000`
    (`apps/api/src/config.ts`, `apps/api/src/infra/prisma.service.ts`); explicit per-transaction options in the code still take precedence.
@@ -73,7 +75,8 @@
 | Task | How |
 |---|---|
 | Redeploy | push to `main` (auto-deploy), or `hosting_nodejs_start-build` / `hosting_deploy` |
-| Restart without rebuild | `hosting_nodejs_restart-application` (picks up runtime env changes; **not** `API_INTERNAL_URL`) |
+| Restart without rebuild | `hosting_nodejs_restart-application` (picks up runtime env changes) |
+| Runtime logs | `hosting_nodejs_runtime-logs` (only `console.*` output is captured — raw child-process stdio is not) |
 | New migration | run `npm run db:migrate` from a workstation with the Neon `DATABASE_URL`, **before** pushing code that needs it |
 | Reset demo data | `NODE_ENV=development node apps/api/dist/seed/seed.js --reset` against Neon (wipes everything) |
 | Build logs / failure analysis | `hosting_get-deployment` with the domain |
@@ -92,6 +95,16 @@
 
 Free-tier limits to watch: Upstash 500k commands/month (BullMQ polling consumes some continuously); Neon free compute auto-suspends when idle,
 so the first request after a quiet period is slower.
+
+## Lessons (things that cost time)
+
+- **Loopback ports between processes don't work on Hostinger web hosting.** A child API on `127.0.0.1:<port>` reported `EADDRINUSE`
+  while the parent got `ECONNREFUSED` — the host's process layer owns `listen()`. Serve everything from the one process on `PORT`.
+- **Hostinger's runtime log only records `console.*`.** Child output written with `stdio: 'inherit'` vanished; forward it via `console`.
+- **Remote PostgreSQL needs longer transaction timeouts** (Prisma `P2028` at 5 s). Seeding over the internet takes many minutes.
+- **The account is near its Node.js site limit** (10 slots); this demo uses the last one.
+- **Login lockout:** 5 failed sign-ins lock an account for 15 min. A failed attempt while the API was down returns 500 and does not count,
+  but repeated wrong passwords do — if locked, wait 15 min or re-run the seed.
 
 ## Never
 
