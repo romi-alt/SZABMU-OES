@@ -12,7 +12,7 @@ import { CourseAccessService } from '../org/course-access.service';
 
 export interface ExamInput {
   code: string; title: string; courseId: string; term: string;
-  opensAt: Date; closesAt: Date; durationMin: number; passPercent: number; negativeMarking: number;
+  opensAt: Date; closesAt: Date; durationMin: number; passPercent: number; negativeMarking: number; timingPolicy?: 'INDIVIDUAL' | 'SYNCHRONIZED'; controlMode?: 'AUTOMATIC' | 'MANUAL';
   shuffleQuestions: boolean; instructions?: string; institutionIds: string[];
 }
 
@@ -68,7 +68,7 @@ export class ExamsService {
     const insts = await this.prisma.institution.count({ where: { id: { in: d.institutionIds }, active: true } });
     if (insts !== d.institutionIds.length || !insts) throw badRequest('One or more participating institutions are invalid or inactive');
     const e = await this.prisma.exam.create({
-      data: { code: d.code, title: d.title, courseId: d.courseId, term: d.term, createdBy: u.id, opensAt: d.opensAt, closesAt: d.closesAt, durationMin: d.durationMin, passPercent: d.passPercent, negativeMarking: d.negativeMarking, shuffleQuestions: d.shuffleQuestions, instructions: d.instructions, institutions: { create: d.institutionIds.map((institutionId) => ({ institutionId })) } },
+      data: { code: d.code, title: d.title, courseId: d.courseId, term: d.term, createdBy: u.id, opensAt: d.opensAt, closesAt: d.closesAt, durationMin: d.durationMin, passPercent: d.passPercent, negativeMarking: d.negativeMarking, timingPolicy: d.timingPolicy ?? 'INDIVIDUAL', controlMode: d.controlMode ?? 'AUTOMATIC', shuffleQuestions: d.shuffleQuestions, instructions: d.instructions, institutions: { create: d.institutionIds.map((institutionId) => ({ institutionId })) } },
     });
     await this.audit.log({ actor: u, action: 'exam.create', entity: 'exam', entityId: e.id, meta: { code: e.code, institutions: d.institutionIds.length }, ip });
     return e;

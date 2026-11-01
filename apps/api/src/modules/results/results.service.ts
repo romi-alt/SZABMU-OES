@@ -50,37 +50,6 @@ export class ResultsService {
     return attempts.length;
   }
 
-  // ───────────── lifecycle tick (called by the BullMQ sweeper) ─────────────
-  async tick(finalizeFn: (attemptId: string) => Promise<unknown>) {
-    const stats = { autoSubmitted: 0, graded: 0, opened: 0, closed: 0, pending: 0 };
-    const expired = await this.prisma.$queryRaw<{ id: string }[]>`SELECT id FROM attempts WHERE status = 'IN_PROGRESS' AND "deadlineAt" + interval '5 seconds' < clock_timestamp() LIMIT 500`;
-    for (const e of expired) { await finalizeFn(e.id).then(() => stats.autoSubmitted++).catch((err) => this.log.warn(`auto-submit ${e.id}: ${err.message}`)); }
-    const ungraded = await this.prisma.$queryRaw<{ id: string }[]>`
-      SELECT a.id FROM attempts a LEFT JOIN results r ON r."examId" = a."examId" AND r."studentId" = a."studentId"
-      WHERE a.status IN ('SUBMITTED','AUTO_SUBMITTED') AND r.id IS NULL LIMIT 500`;
-    for (const g of ungraded) { await this.gradeAttempt(g.id).then(() => stats.graded++).catch((err) => this.log.warn(`grade ${g.id}: ${err.message}`)); }
-    stats.opened = await this.prisma.$executeRaw`UPDATE exams SET status = 'LIVE' WHERE status = 'SCHEDULED' AND "opensAt" <= clock_timestamp() AND "closesAt" > clock_timestamp()`;
-    // window over and nobody still writing → CLOSED
-    stats.closed = await this.prisma.$executeRaw`
-      UPDATE exams e SET status = 'CLOSED' WHERE e.status IN ('SCHEDULED','LIVE') AND e."closesAt" <= clock_timestamp()
-        AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a."examId" = e.id AND a.status = 'IN_PROGRESS')`;
-    // CLOSED and fully graded → mark absentees, move to RESULT_PENDING
-    const closed = await this.prisma.exam.findMany({ where: { status: 'CLOSED' }, select: { id: true, code: true, title: true, totalMarks: true } });
-    for (const ex of closed) {
-      const pendingGrade = await this.prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM attempts a LEFT JOIN results r ON r."examId" = a."examId" AND r."studentId" = a."studentId" WHERE a."examId" = ${ex.id}::uuid AND a.status IN ('SUBMITTED','AUTO_SUBMITTED') AND r.id IS NULL`;
-      if (pendingGrade[0]!.n > 0) continue;
-      const absent = await this.prisma.$queryRaw<{ studentId: string }[]>`SELECT c."studentId" FROM exam_candidates c WHERE c."examId" = ${ex.id}::uuid AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a."examId" = c."examId" AND a."studentId" = c."studentId")`;
-      await this.prisma.$transaction([
-        this.prisma.result.createMany({ data: absent.map((s) => ({ examId: ex.id, studentId: s.studentId, rawScore: 0, totalMarks: ex.totalMarks, percent: 0, status: 'ABSENT' as const })), skipDuplicates: true }),
-        this.prisma.resultBatch.upsert({ where: { examId: ex.id }, create: { examId: ex.id }, update: {} }),
-        this.prisma.exam.update({ where: { id: ex.id }, data: { status: 'RESULT_PENDING' } }),
-      ]);
-      stats.pending++;
-      await this.notifications.notifyRole('EXAMINER', 'Results ready for review', `${ex.code} — ${ex.title} has been graded.`, LINKS.results);
-    }
-    return stats;
-  }
-
   // ───────────── analysis & review ─────────────
   private async loadExam(u: AuthUser, examId: string) {
     const exam = await this.prisma.exam.findFirst({ where: { id: examId, ...(u.institutionIds === null ? {} : { institutions: { some: { institutionId: { in: u.institutionIds } } } }) }, include: { resultBatch: true, institutions: { select: { institutionId: true } }, course: { select: { code: true, title: true } } } });
