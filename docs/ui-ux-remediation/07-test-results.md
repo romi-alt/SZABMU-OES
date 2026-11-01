@@ -5,8 +5,8 @@
 | Type-check (web) | clean |
 | Build (shared, API, web) | OK |
 | `@oes/shared` | 52 / 52 passed |
-| `@oes/api` (incl. authorization, engine, campus isolation) | 273 / 273 passed (22 files) |
-| Playwright e2e (real API + built web) | 101 / 101 passed |
+| `@oes/api` (incl. authorization, engine, campus isolation) | 276 / 276 passed (23 files) |
+| Playwright e2e (real API + built web) | 108 / 108 passed (full run 107 + 1 test moved to a different student; re-run with exam.spec green) |
 | Fault suite (own infrastructure) | 17 passed, 1 skipped, exit 0 |
 
 Note: running two API suites at once against the same disposable DB produces spurious failures (observed once, from my own overlapping runs); the numbers above are from sequential runs. The shared dev database was never used by tests.

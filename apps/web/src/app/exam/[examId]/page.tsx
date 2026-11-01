@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { ApiError, fmtDT, get, openStream, post } from '@/api';
 import { ExamEngine, paletteKind } from '@/exam-engine';
 import { useMe } from '@/session';
+import { NotEligibleNotice, type NotEligible } from '@/exam-status-ui';
 import { describeExam } from '@oes/shared';
 import { Loading, Modal, Notice, errMsg } from '@/ui';
 import { QuestionPalette, GLYPH, labelFor, type Filter, type PalItem } from './palette';
@@ -19,7 +20,7 @@ const uid = () => (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2) 
 
 export default function ExamPage() {
   const { examId } = useParams<{ examId: string }>(); const router = useRouter(); const { me, loading } = useMe();
-  const [info, setInfo] = useState<any>(null); const [error, setError] = useState(''); const [starting, setStarting] = useState(false);
+  const [info, setInfo] = useState<any>(null); const [notElig, setNotElig] = useState<NotEligible[]>([]); const [error, setError] = useState(''); const [starting, setStarting] = useState(false);
   const [session, setSession] = useState<{ engine: ExamEngine; questions: Q[]; exam: any; attemptId: string } | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [lobby, setLobby] = useState<{ status: string } | null>(null);
@@ -29,7 +30,7 @@ export default function ExamPage() {
     clientId.current = sessionStorage.getItem('oes:client') ?? `c${uid()}`; sessionStorage.setItem('oes:client', clientId.current);
   }
 
-  useEffect(() => { if (loading || !me) return; get('/me/exams').then((d) => setInfo(d.items.find((x: any) => x.examId === examId) ?? false)).catch((e) => setError(errMsg(e))); }, [examId, me, loading]);
+  useEffect(() => { if (loading || !me) return; get('/me/exams').then((d) => { setNotElig((d.notEligible ?? []).filter((x: { examId: string }) => x.examId === examId)); setInfo(d.items.find((x: any) => x.examId === examId) ?? false); }).catch((e) => setError(errMsg(e))); }, [examId, me, loading]);
 
   const begin = useCallback(async () => {
     setStarting(true); setError('');
@@ -38,14 +39,25 @@ export default function ExamPage() {
       const engine = new ExamEngine(r.attempt.id, clientId.current, r.questions.map((q: Q) => q.id), r.answers, r.attempt.deadlineAt, r.serverNow);
       engine.suspended = !!r.control?.suspended; engine.examStatus = r.control?.examStatus ?? '';
       setLobby(null); setSession({ engine, questions: r.questions, exam: r.exam, attemptId: r.attempt.id });
+      try { sessionStorage.setItem(`oes:run:${examId}`, '1'); } catch { /* storage unavailable */ }
     } catch (e) {
       if (e instanceof ApiError && e.code === 'WAITING_FOR_START') { setLobby({ status: e.body?.status ?? 'ADMISSION_OPEN' }); }
-      else if (e instanceof ApiError && e.code === 'ALREADY_SUBMITTED') { setReceipt({ receiptCode: e.body.receiptCode, submittedAt: e.body.submittedAt, answered: 0, total: 0, status: 'SUBMITTED' }); }
+      else if (e instanceof ApiError && e.code === 'ALREADY_SUBMITTED') { try { sessionStorage.removeItem(`oes:run:${examId}`); } catch { /* */ } setReceipt({ receiptCode: e.body.receiptCode, submittedAt: e.body.submittedAt, answered: 0, total: 0, status: 'SUBMITTED' }); }
       else setError(errMsg(e));
     } finally { setStarting(false); }
   }, [examId]);
 
   useEffect(() => () => session?.engine.dispose(), [session]);
+
+  // Reloading the page of an examination you are sitting resumes it directly, with a one-line notice (UI-040). Only a genuine reload of this tab does:
+  // arriving from the schedule still shows the instructions, and another device or window is never taken over silently.
+  const autoTried = useRef(false); const [resumedNote, setResumedNote] = useState('');
+  useEffect(() => {
+    if (autoTried.current || !info || session || receipt || lobby || starting) return;
+    let reloaded = false, ran = false;
+    try { reloaded = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload'; ran = sessionStorage.getItem(`oes:run:${examId}`) === '1'; } catch { /* */ }
+    if (reloaded && ran && info.canStart && info.attempt?.status === 'IN_PROGRESS') { autoTried.current = true; setResumedNote('Welcome back — you were taken straight to your examination. Your saved answers and the server clock are unchanged.'); void begin(); }
+  }, [info, session, receipt, lobby, starting, examId, begin]);
 
   // Synchronized exam: the candidate waits in the lobby; the server pushes EXAM_STARTED (events are hints — we re-ask the server, which decides).
   useEffect(() => {
@@ -58,9 +70,9 @@ export default function ExamPage() {
 
   if (loading || !me) return <div style={{ padding: 40 }}><Loading /></div>;
   if (receipt) return <ReceiptView receipt={receipt} attemptId={session?.attemptId} examTitle={session?.exam?.title ?? info?.title} onDone={() => router.push('/dashboard')} />;
-  if (session) return <Player key={session.attemptId} {...session} clientId={clientId.current} onSubmitted={(r) => { session.engine.clearBuffer(); session.engine.dispose(); setReceipt(r); }} onTakeover={() => { session.engine.dispose(); setSession(null); void begin(); }} />;
+  if (session) return <Player key={session.attemptId} {...session} clientId={clientId.current} initialMsg={resumedNote} onSubmitted={(r) => { session.engine.clearBuffer(); session.engine.dispose(); try { sessionStorage.removeItem(`oes:run:${examId}`); } catch { /* */ } setReceipt(r); }} onTakeover={() => { session.engine.dispose(); setSession(null); void begin(); }} />;
   if (lobby) return <Shell><h1>{info?.title ?? 'Examination'}</h1><div className="card" role="status" data-testid="lobby"><div className="card-b stack"><h2>You are admitted — waiting for the examination to start</h2><p className="muted" style={{ margin: 0 }}>The examination office starts this paper for every candidate at the same time. Stay on this page: it will open automatically. Your clock begins when the examination starts, not before.</p></div></div></Shell>;
-  if (info === false) return <Shell><Notice tone="bad">You are not registered for this examination.</Notice><Link href="/schedule">Back to schedule</Link></Shell>;
+  if (info === false) return <Shell>{notElig.length ? <NotEligibleNotice items={notElig} /> : <Notice tone="bad">You are not registered for this examination.</Notice>}<Link href="/schedule">Back to schedule</Link></Shell>;
   if (!info) return <Shell>{error ? <Notice tone="bad">{error}</Notice> : <Loading />}</Shell>;
 
   const resuming = info.attempt?.status === 'IN_PROGRESS';
@@ -86,15 +98,15 @@ export default function ExamPage() {
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return <div style={{ maxWidth: 760, margin: '0 auto', padding: '32px 20px' }}><BrandLogo plate className="shell-logo" />{children}</div>;
+  return <main id="main" style={{ maxWidth: 760, margin: '0 auto', padding: '32px 20px' }}><BrandLogo plate className="shell-logo" />{children}</main>;
 }
 
-function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onTakeover }: { engine: ExamEngine; questions: Q[]; exam: any; attemptId: string; clientId: string; onSubmitted: (r: Receipt) => void; onTakeover: () => void }) {
+function Player({ engine, questions, exam, attemptId, clientId, initialMsg = '', onSubmitted, onTakeover }: { initialMsg?: string; engine: ExamEngine; questions: Q[]; exam: any; attemptId: string; clientId: string; onSubmitted: (r: Receipt) => void; onTakeover: () => void }) {
   useSyncExternalStore(engine.subscribe, engine.getVersion, engine.getVersion);
   const [idx, setIdx] = useState(0); const [filter, setFilter] = useState<Filter>('all'); const [view, setView] = useState<'q' | 'review'>('q');
   const [layout, setLayout] = useState<'single' | 'all'>(() => (typeof window !== 'undefined' && sessionStorage.getItem('oes:layout') === 'all' ? 'all' : 'single'));
   const chooseLayout = (l: 'single' | 'all') => { setLayout(l); setView('q'); sessionStorage.setItem('oes:layout', l); };
-  const [palOpen, setPalOpen] = useState(false); const [remaining, setRemaining] = useState(engine.remainingMs()); const [msg, setMsg] = useState('');
+  const [palOpen, setPalOpen] = useState(false); const [remaining, setRemaining] = useState(engine.remainingMs()); const [msg, setMsg] = useState(initialMsg);
   const submitKey = useRef(''); if (!submitKey.current) { submitKey.current = sessionStorage.getItem(`oes:sk:${attemptId}`) ?? `sk${uid()}`; sessionStorage.setItem(`oes:sk:${attemptId}`, submitKey.current); }
   const q = questions[idx]!; const st = engine.get(q.id); const counts = engine.counts();
   const timeUp = useRef(false);
@@ -174,7 +186,7 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
     <div className="exam">
       <header className="exam-bar">
         <BrandLogo className="exam-logo" />
-        <div className="grow exam-title"><div className="title">{exam.title}</div><div className="small muted">{questions.length} questions · {exam.totalMarks} marks</div></div>
+        <div className="grow exam-title"><h1 className="title">{exam.title}</h1><div className="small muted">{questions.length} questions · {exam.totalMarks} marks</div></div>
         <div className="small muted exam-answered" aria-live="polite">Answered <b className="mono" style={{ color: 'var(--ink)' }}>{counts.answered}</b> / {questions.length}</div>
         <div className={`exam-clock ${low ? 'low' : ''}`} role="timer" aria-label="Time remaining"><div className="k">Remaining</div><div className="v" data-testid="remaining">{clock(remaining)}</div></div>
         <button ref={toggleRef} className="btn pal-toggle" data-testid="palette-toggle" aria-expanded={palOpen} aria-controls="question-navigator" onClick={() => setPalOpen(!palOpen)}>Questions {counts.answered}/{questions.length}</button>
@@ -187,7 +199,7 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
       {msg && <div className="conn" style={{ background: '#FFFBEF', borderBottom: '1px solid #EBD9A8' }} role="status">{msg}</div>}
       {ctlMsg && <div className="conn" style={{ background: '#EEF6F1', borderBottom: '1px solid #BBD9C8' }} role="status" data-testid="control-message">{ctlMsg} <button className="btn-link small" onClick={() => setCtlMsg('')}>Dismiss</button></div>}
       {engine.suspended && <div className="conn off" role="alert" data-testid="suspended-banner"><b>Examination suspended.</b> You cannot answer or submit until it resumes. Do not close this window — your saved answers are safe and it resumes automatically.</div>}
-      <div className="exam-body" style={engine.suspended ? { opacity: 0.5, pointerEvents: 'none' } : undefined} aria-disabled={engine.suspended}>
+      <main className="exam-body" id="main" style={engine.suspended ? { opacity: 0.5, pointerEvents: 'none' } : undefined} aria-disabled={engine.suspended}>
         <div className="stack" style={{ minWidth: 0 }}>
         <div className="row layout-toggle no-print" role="group" aria-label="Question layout">
           <span className="small muted">View</span>
@@ -229,7 +241,7 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
           <div className="notice small">Press <b className="mono">A–E</b> to choose an option, <b className="mono">←</b> <b className="mono">→</b> to move and <b className="mono">G</b> to go to a question number. Answers save automatically.</div>
         </aside>
         {palOpen && <div className="nav-scrim pal-scrim" onClick={() => setPalOpen(false)} aria-hidden />}
-      </div>
+      </main>
     </div>
   );
 }

@@ -25,8 +25,8 @@ test('all MCQs on one page: answer several, skip and mark in place, palette jump
   await page.locator('#question-navigator').getByRole('button', { name: /^Question 11,/ }).click();             // palette jumps to question 11
   await expect(cards.nth(10)).toBeInViewport();
 
-  await page.reload();                                                            // layout and answers survive a reload
-  await page.getByRole('button', { name: /begin|resume/i }).click();
+  await page.reload();                                                            // layout and answers survive a reload; it resumes directly (UI-040)
+  await expect(page.getByRole('timer')).toBeVisible();
   await page.getByTestId('layout-all').click();
   await expect(page.getByTestId('all-opt-3-B')).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByTestId('all-opt-7-D')).toHaveAttribute('aria-checked', 'true');
