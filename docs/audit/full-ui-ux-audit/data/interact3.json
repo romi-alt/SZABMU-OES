@@ -1,0 +1,175 @@
+{
+ "forms_disabled_until_valid": {
+  "buttons": [
+   {
+    "t": "✕",
+    "disabled": false
+   },
+   {
+    "t": "Cancel",
+    "disabled": false
+   },
+   {
+    "t": "Create draft",
+    "disabled": true
+   }
+  ],
+  "labels": [
+   "Exam title",
+   "Code",
+   "Course BSN-FUND-1 — Fundamentals of Nursing MBBS-ANAT-1 — An",
+   "Term",
+   "Window opens",
+   "Window closes",
+   "Duration (min)",
+   "Pass mark (%)",
+   "Negative marking Fraction of marks lost per wrong answer (0–",
+   "DNC-C",
+   "DMC-A",
+   "DMC-B",
+   "Shuffle question order per candidate",
+   "Candidate instructions"
+  ],
+  "requiredMarked": 0,
+  "modalHeight": 666,
+  "viewportH": 900
+ },
+ "exam_filter_options": [
+  "All",
+  "DRAFT",
+  "PAPER PENDING",
+  "APPROVED",
+  "SCHEDULED",
+  "LIVE",
+  "CLOSED",
+  "RESULT PENDING",
+  "PUBLISHED",
+  "CANCELLED"
+ ],
+ "question_form": {
+  "buttons": [
+   {
+    "t": "✕",
+    "disabled": false
+   },
+   {
+    "t": "Cancel",
+    "disabled": false
+   },
+   {
+    "t": "Save draft",
+    "disabled": true
+   }
+  ],
+  "labels": [
+   "Course MBBS-PHARM-4 — Pharmacology MBBS-PATH-4 — Pathology",
+   "Type Single best answer MCQ Clinical MCQ (vignette)",
+   "Question stem",
+   "Difficulty EASY MEDIUM HARD",
+   "Explanation (reviewers only)"
+  ],
+  "inputs": [
+   "select[select-one]",
+   "select[select-one]",
+   "textarea[textarea]",
+   "input[radio]",
+   "input[text]",
+   "input[radio]",
+   "input[text]",
+   "input[radio]",
+   "input[text]",
+   "input[radio]",
+   "input[text]",
+   "input[radio]",
+   "input[text]",
+   "select[select-one]",
+   "textarea[textarea]"
+  ],
+  "modalH": 769,
+  "afterTypingStem": [
+   {
+    "t": "✕",
+    "disabled": false
+   },
+   {
+    "t": "Cancel",
+    "disabled": false
+   },
+   {
+    "t": "Save draft",
+    "disabled": true
+   }
+  ],
+  "escapeDiscardsTypedText": true
+ },
+ "superadmin_deactivate_confirmation": {
+  "confirmationDialog": false,
+  "toasts": [],
+  "rowAfter": "DNC-C Demo College of Nursing C (synthetic) nursing college constituent Lahore 0 Cancelled Activate",
+  "restoredBy": "Activate"
+ },
+ "exam_detail_results_panel": {
+  "resultsSection": "Results workflow Published Export CSV Graded → lecturer review → examiner approval → publication by the Controller (a different person from the approver). Open incidents block approval. Candidate results REG. NO. NAME CAMPUS SCORE % RESULT CERTIFICATE DMC-A-2024-0002 Subhan Khan (demo) DMC-A 8 / 8 100.0 Pass SZABMU/2026/1000 DMC-A-2024-0003 Adil Farooq (demo) DMC-A 4 / 8 50.0 Pass SZABMU/2026/1001 DMC-A-2024-0004 Bilal Bukhari (demo) DMC-A 0 / 8 0.0 Absent — DMC-A-2024-0005 Hira Chaudhry (demo) ",
+  "buttons": [
+   "Notifications",
+   "Sign out"
+  ]
+ },
+ "students_row_actions": {
+  "cols": [
+   "REG. NO.",
+   "NAME",
+   "EMAIL",
+   "PROGRAMME",
+   "SEM",
+   "CAMPUS",
+   "STATUS"
+  ],
+  "rowButtons": [],
+  "rowLinks": [],
+  "clickable": "auto"
+ },
+ "student_results_certificate": {
+  "resultsText": "Results Published results only. Results appear here after examiner approval and publication by the Controller of Examinations. Subject result view CODE SUBJECT COURSE SEM DATE TOTAL OBTAINED % STATUS AU-197179896 Pathology MBBS 4 01 Nov 2026 8 8 100.0 Pass Certificate ›",
+  "certificateLink": 1,
+  "rowActions": [
+   "Certificate ›"
+  ],
+  "certificatePage": "Certificate Print certificate Certificate of Examination Success This is to certify that Subhan Khan (demo) Registration No. DMC-A-2024-0002 · Demo Medical College A (synthetic) has successfully passed the examination in Pathology (Bachelor of Medicine, Bachelor of Surgery) — Audit — Completed Paper",
+  "printBtn": 1,
+  "performance": "Performance Computed from your published results. AVERAGE 100.0% BEST SCORE 100% Pathology PASSED 1/1 PASS RATE 100% Score by subject 0 50 100 100 Pathology",
+  "dashboard": "Welcome back, Subhan MBBS · Semester 4 · Reg. DMC-A-2024-0002 View exam schedule UPCOMING EXAMS 3 COMPLETED 1 Published results AVERAGE SCORE 100% Across published results PASSED 1 Next examination Pathology Mid-term (DEMO) Opens 01 Nov 2026 13:27 Go to schedule"
+ },
+ "controller_find_disconnected": {
+  "selects": [
+   {
+    "label": "Campus",
+    "opts": [
+     "All campuses",
+     "DMC-A",
+     "DMC-B"
+    ]
+   },
+   {
+    "label": "Status",
+    "opts": [
+     "All",
+     "not started",
+     "in progress",
+     "suspended",
+     "submitted",
+     "auto submitted"
+    ]
+   }
+  ],
+  "searchBox": 1
+ },
+ "campus_admin_find_student_attendance": {
+  "foundRows": [
+   "DMC-A-2024-0009 Zainab Akhtar (demo) student.a009@demo.szabmu.invalid MBBS 4 DMC-A Active"
+  ],
+  "rowHasAnyAction": 0,
+  "enrolmentPage": "This page hit a problem An unexpected error stopped this page from displaying. Your saved work is not affected. Please t",
+  "dashboard": "Welcome back, Abbas Demo Medical College A (synthetic) STUDENTS 40 ACCOUNTS 43 UPCOMING EXAMS 3 OPEN INCIDENTS 0"
+ }
+}

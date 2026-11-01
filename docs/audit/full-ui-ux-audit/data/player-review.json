@@ -1,0 +1,202 @@
+{
+ "http500": [
+  {
+   "sec": 2,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Not yet saved — retrying"
+  },
+  {
+   "sec": 4,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Not yet saved — retrying"
+  },
+  {
+   "sec": 6,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Not yet saved — retrying"
+  },
+  {
+   "sec": 8,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Not yet saved — retrying"
+  },
+  {
+   "sec": 10,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Not yet saved — retrying"
+  },
+  {
+   "sec": 12,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Not yet saved — retrying"
+  },
+  {
+   "sec": 14,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Not yet saved — retrying"
+  },
+  {
+   "sec": 16,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Not yet saved — retrying"
+  },
+  {
+   "sec": 18,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Not yet saved — retrying"
+  },
+  {
+   "sec": 20,
+   "reviewShown": 0,
+   "btnDisabled": false,
+   "msg": "1 answer(s) could not be stored yet. Check your connection — they will keep retrying. Do not close this window.",
+   "saveState": "Not yet saved — retrying"
+  },
+  {
+   "sec": 22,
+   "reviewShown": 0,
+   "btnDisabled": false,
+   "msg": "1 answer(s) could not be stored yet. Check your connection — they will keep retrying. Do not close this window.",
+   "saveState": "Not yet saved — retrying"
+  },
+  {
+   "sec": 24,
+   "reviewShown": 0,
+   "btnDisabled": false,
+   "msg": "1 answer(s) could not be stored yet. Check your connection — they will keep retrying. Do not close this window.",
+   "saveState": "Not yet saved — retrying"
+  },
+  {
+   "sec": 26,
+   "reviewShown": 0,
+   "btnDisabled": false,
+   "msg": "1 answer(s) could not be stored yet. Check your connection — they will keep retrying. Do not close this window.",
+   "saveState": "Not yet saved — retrying"
+  },
+  {
+   "sec": 28,
+   "reviewShown": 0,
+   "btnDisabled": false,
+   "msg": "1 answer(s) could not be stored yet. Check your connection — they will keep retrying. Do not close this window.",
+   "saveState": "Not yet saved — retrying"
+  }
+ ],
+ "hang": [
+  {
+   "sec": 2,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Saving…"
+  },
+  {
+   "sec": 4,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Saving…"
+  },
+  {
+   "sec": 6,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Saving…"
+  },
+  {
+   "sec": 8,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Saving…"
+  },
+  {
+   "sec": 10,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Saving…"
+  },
+  {
+   "sec": 12,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Saving…"
+  },
+  {
+   "sec": 14,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Saving…"
+  },
+  {
+   "sec": 16,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Saving…"
+  },
+  {
+   "sec": 18,
+   "reviewShown": 0,
+   "btnDisabled": true,
+   "msg": "Checking that every answer is stored…",
+   "saveState": "Saving…"
+  },
+  {
+   "sec": 20,
+   "reviewShown": 0,
+   "btnDisabled": false,
+   "msg": "1 answer(s) could not be stored yet. Check your connection — they will keep retrying. Do not close this window.",
+   "saveState": "Saving…"
+  },
+  {
+   "sec": 22,
+   "reviewShown": 0,
+   "btnDisabled": false,
+   "msg": "1 answer(s) could not be stored yet. Check your connection — they will keep retrying. Do not close this window.",
+   "saveState": "Saving…"
+  },
+  {
+   "sec": 24,
+   "reviewShown": 0,
+   "btnDisabled": false,
+   "msg": "1 answer(s) could not be stored yet. Check your connection — they will keep retrying. Do not close this window.",
+   "saveState": "Saving…"
+  },
+  {
+   "sec": 26,
+   "reviewShown": 0,
+   "btnDisabled": false,
+   "msg": "1 answer(s) could not be stored yet. Check your connection — they will keep retrying. Do not close this window.",
+   "saveState": "Saving…"
+  },
+  {
+   "sec": 28,
+   "reviewShown": 0,
+   "btnDisabled": false,
+   "msg": "1 answer(s) could not be stored yet. Check your connection — they will keep retrying. Do not close this window.",
+   "saveState": "Saving…"
+  }
+ ]
+}

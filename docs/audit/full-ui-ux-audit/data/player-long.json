@@ -1,0 +1,293 @@
+{
+ "long-d1440": {
+  "tag": "long-d1440",
+  "who": "student.a016",
+  "vp": {
+   "width": 1440,
+   "height": 900
+  },
+  "exam": "longtext",
+  "first": {
+   "timer": {
+    "x": 1173,
+    "y": 10,
+    "w": 91,
+    "h": 54
+   },
+   "submit": {
+    "x": 1283,
+    "y": 19,
+    "w": 133,
+    "h": 35
+   },
+   "palette": {
+    "x": 1006,
+    "y": 96,
+    "w": 330,
+    "h": 1037
+   },
+   "optionA": {
+    "x": 129,
+    "y": 771,
+    "w": 832,
+    "h": 48
+   },
+   "saveNext": {
+    "x": 765,
+    "y": 1085,
+    "w": 119,
+    "h": 35
+   },
+   "skip": {
+    "x": 231,
+    "y": 1085,
+    "w": 115,
+    "h": 35
+   },
+   "next": {
+    "x": 765,
+    "y": 1085,
+    "w": 119,
+    "h": 35
+   },
+   "inView": {
+    "timer": true,
+    "submit": true,
+    "palette": false,
+    "optionA": true,
+    "saveNext": false,
+    "skip": false,
+    "next": false
+   }
+  },
+  "palette": {
+   "buttons": 10,
+   "firstScreenVisible": 10,
+   "btnSize": [
+    44,
+    34
+   ],
+   "roles": "listitem",
+   "paletteBox": {
+    "x": 1023,
+    "y": 236,
+    "w": 296,
+    "h": 74
+   }
+  },
+  "docHeight": 1153,
+  "afterScrollBottom": {
+   "timerVisible": true,
+   "submitVisible": true,
+   "paletteAnyVisible": 4,
+   "saveNextVisible": true
+  },
+  "save": {
+   "textRightAfterClick": "Saving…",
+   "msToSaved": 77,
+   "afterText": "✓ Saved",
+   "reqs": [
+    "POST /api/attempts/start",
+    "POST /api/attempts/<id>/heartbeat",
+    "PUT /api/attempts/<id>/answers/<id>"
+   ]
+  },
+  "paletteStatesAfterNextNextSkip": [
+   "Question 1, answered",
+   "Question 2, unanswered",
+   "Question 3, skipped",
+   "Question 4, unanswered",
+   "Question 5, not visited",
+   "Question 6, not visited"
+  ],
+  "clear": {
+   "checkedBefore": "true",
+   "checkedAfter": "false",
+   "dialogShown": 0,
+   "toast": 0
+  },
+  "jump": {
+   "target": 10,
+   "paletteToggle": 0,
+   "scrollsNeeded": 0,
+   "clicks": 1,
+   "scrollsAndClicks": 1,
+   "landedOn": "QUESTION 10 / 10"
+  },
+  "chips": [
+   "All",
+   "Answered 1",
+   "Skipped 1",
+   "Unanswered 3",
+   "Not visited 5",
+   "Marked 1"
+  ],
+  "offline": {
+   "banner": "Connection lost. Keep working — your answers are held on this device and are saved automatically once the connection returns. 1 not yet saved.",
+   "saveState": "Not saved — offline, will retry",
+   "reviewBtnEnabled": true
+  },
+  "reconnected": {
+   "banner": 0,
+   "saveState": "✓ Saved"
+  },
+  "review": {
+   "text": "View One question at a time All questions on one page Review your answers ← Back to questions ANSWERED 2 SKIPPED 1 UNANSWERED 2 NOT VISITED 5 1 question(s) are marked for review. 8 question(s) have no answer. Select a number to return to it. 01 02 03 04 05 06 07 08 09 10 Submit examination… You cannot change answers after submission. Question palette 2/10 All Answered 2 Skipped 1 Unanswered 2 Not visited 5 Marked 1 0",
+   "submitBtn": {
+    "x": 121,
+    "y": 459,
+    "w": 167,
+    "h": 35
+   },
+   "palette": {
+    "x": 121,
+    "y": 413,
+    "w": 848,
+    "h": 34
+   }
+  },
+  "confirm": {
+   "text": "Submit examination? ✕ You answered 2 of 10 questions. 8 will be marked as unanswered. I have reviewed my answers and understand that submission is final. Cancel Confirm and submit",
+   "confirmDisabledUntilTick": true
+  }
+ },
+ "long-p390": {
+  "tag": "long-p390",
+  "who": "student.a017",
+  "vp": {
+   "width": 390,
+   "height": 844
+  },
+  "exam": "longtext",
+  "first": {
+   "timer": {
+    "x": 12,
+    "y": 59,
+    "w": 87,
+    "h": 50
+   },
+   "submit": {
+    "x": 244,
+    "y": 63,
+    "w": 134,
+    "h": 40
+   },
+   "palette": null,
+   "optionA": {
+    "x": 29,
+    "y": 1813,
+    "w": 332,
+    "h": 48
+   },
+   "saveNext": {
+    "x": 25,
+    "y": 2215,
+    "w": 119,
+    "h": 40
+   },
+   "skip": {
+    "x": 133,
+    "y": 2119,
+    "w": 115,
+    "h": 40
+   },
+   "next": {
+    "x": 25,
+    "y": 2215,
+    "w": 119,
+    "h": 40
+   },
+   "inView": {
+    "timer": true,
+    "submit": true,
+    "palette": false,
+    "optionA": false,
+    "saveNext": false,
+    "skip": false,
+    "next": false
+   }
+  },
+  "palette": {
+   "buttons": 10,
+   "firstScreenVisible": 0,
+   "btnSize": null,
+   "roles": "listitem",
+   "paletteBox": null
+  },
+  "docHeight": 2278,
+  "afterScrollBottom": {
+   "timerVisible": true,
+   "submitVisible": true,
+   "paletteAnyVisible": 0,
+   "saveNextVisible": true
+  },
+  "save": {
+   "textRightAfterClick": "Saving…",
+   "msToSaved": 66,
+   "afterText": "✓ Saved",
+   "reqs": [
+    "POST /api/attempts/start",
+    "POST /api/attempts/<id>/heartbeat",
+    "PUT /api/attempts/<id>/answers/<id>"
+   ]
+  },
+  "paletteStatesAfterNextNextSkip": [
+   "Question 1, answered",
+   "Question 2, unanswered",
+   "Question 3, skipped",
+   "Question 4, unanswered",
+   "Question 5, not visited",
+   "Question 6, not visited"
+  ],
+  "clear": {
+   "checkedBefore": "true",
+   "checkedAfter": "false",
+   "dialogShown": 0,
+   "toast": 0
+  },
+  "jump": {
+   "target": 10,
+   "paletteToggle": 1,
+   "scrollsNeeded": 0,
+   "clicks": 2,
+   "scrollsAndClicks": 2,
+   "landedOn": "QUESTION 10 / 10"
+  },
+  "chips": [
+   "All",
+   "Answered 1",
+   "Skipped 1",
+   "Unanswered 3",
+   "Not visited 5",
+   "Marked 1"
+  ],
+  "offline": {
+   "banner": "Connection lost. Keep working — your answers are held on this device and are saved automatically once the connection returns. 1 not yet saved.",
+   "saveState": "Not saved — offline, will retry",
+   "reviewBtnEnabled": true
+  },
+  "reconnected": {
+   "banner": 0,
+   "saveState": "✓ Saved"
+  },
+  "review": {
+   "text": "View One question at a time All questions on one page Review your answers ← Back to questions ANSWERED 2 SKIPPED 1 UNANSWERED 2 NOT VISITED 5 1 question(s) are marked for review. 8 question(s) have no answer. Select a number to return to it. 01 02 03 04 05 06 07 08 09 10 Submit examination… You cannot change answers after submission.",
+   "submitBtn": {
+    "x": 29,
+    "y": 775,
+    "w": 167,
+    "h": 40
+   },
+   "palette": {
+    "x": 29,
+    "y": 719,
+    "w": 332,
+    "h": 44
+   }
+  },
+  "confirm": {
+   "text": "Submit examination? ✕ You answered 2 of 10 questions. 8 will be marked as unanswered. I have reviewed my answers and understand that submission is final. Cancel Confirm and submit",
+   "confirmDisabledUntilTick": true
+  }
+ }
+}

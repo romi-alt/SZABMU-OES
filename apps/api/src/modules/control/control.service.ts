@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { LINKS } from '@oes/shared';
 import { Prisma } from '../../generated/prisma/client';
 import type { AuthUser } from '../../common/auth';
@@ -16,7 +16,7 @@ import { finishTransition, type FinishSpec } from './transition';
 
 interface ExamRow { id: string; code: string; title: string; status: ExamState; controlMode: 'AUTOMATIC' | 'MANUAL'; timingPolicy: 'INDIVIDUAL' | 'SYNCHRONIZED'; suspendTimePolicy: 'FREEZE_CLOCK' | 'CLOCK_CONTINUES' | null;
   stateVersion: number; opensAt: Date; closesAt: Date; durationMin: number; paperStatus: string; officialStartAt: Date | null; admissionClosedAt: Date | null; forceCloseAt: Date | null; now: Date }
-interface Outcome { changed: boolean; result?: Record<string, unknown>; finish?: Omit<FinishSpec, 'examId' | 'actor' | 'ip'>; after?: () => Promise<unknown> }
+interface Outcome { changed: boolean; result?: Record<string, unknown>; finish?: Omit<FinishSpec, 'examId' | 'actor' | 'ip'>; /** Runs after the response is sent (reconciliation kicks); never blocks the HTTP request. */ background?: () => Promise<unknown> }
 type Tx = Prisma.TransactionClient;
 export interface CommandInput { idempotencyKey?: string; expectedVersion?: number; ip?: string }
 export type SuspendInput = { scope: 'EXAM' | 'CAMPUS' | 'CANDIDATES'; institutionId?: string; studentIds?: string[]; reason: string; incidentId?: string; confirm: boolean };
@@ -31,6 +31,7 @@ const LOCK_COLS = Prisma.sql`id, code, title, status::text AS status, "controlMo
  */
 @Injectable()
 export class ExamControlService {
+  private readonly log = new Logger('ExamControl');
   constructor(
     private readonly prisma: PrismaService, readonly audit: AuditService, readonly events: ExamEventsService, private readonly lifecycle: LifecycleService,
     private readonly monitor: MonitorService, private readonly notifications: NotificationsService, private readonly metrics: MetricsService, private readonly redis: RedisService,
@@ -38,7 +39,7 @@ export class ExamControlService {
 
   // ───────────── command runner ─────────────
   private async command(u: AuthUser, examId: string, command: Command, input: CommandInput, fn: (c: { tx: Tx; exam: ExamRow; now: Date }) => Promise<Outcome>) {
-    let after: (() => Promise<unknown>) | undefined; let payload: Record<string, unknown>;
+    let background: (() => Promise<unknown>) | undefined; let payload: Record<string, unknown>;
     try {
       payload = await this.prisma.$transaction(async (tx) => {
         const exam = (await tx.$queryRaw<ExamRow[]>`SELECT ${LOCK_COLS} FROM exams WHERE id = ${examId}::uuid FOR UPDATE`)[0];
@@ -53,13 +54,13 @@ export class ExamControlService {
         if (o.changed && o.finish) version = await finishTransition(tx, this, { examId, actor: u, ip: input.ip, ...o.finish });
         const out = { command, changed: o.changed, version, ...(o.result ?? {}) };
         if (input.idempotencyKey) await tx.examCommand.create({ data: { examId, idempotencyKey: input.idempotencyKey, command, actorId: u.id, result: out as never } });
-        after = o.after;
+        background = o.background;
         return out;
       }, { maxWait: 10_000, timeout: 60_000 });
     } catch (e) { this.metrics.controlCommands.inc({ command, outcome: e instanceof AppError ? 'refused' : 'error' }); throw e; }
     this.metrics.controlCommands.inc({ command, outcome: payload.replayed ? 'replayed' : payload.changed ? 'applied' : 'noop' });
     if (payload.changed) this.events.nudge();
-    if (after) await after().catch(() => undefined);
+    if (background) void background().catch((e) => this.log.warn(`background work failed: ${String(e).slice(0, 200)}`));   // e.g. sealing thousands of attempts: not in the request path
     return { ...payload, state: await this.stateOf(examId) };
   }
 
@@ -99,6 +100,11 @@ export class ExamControlService {
       const n = await tx.examCandidate.count({ where: { examId, studentId: { in: studentIds } } });
       if (n !== new Set(studentIds).size) throw badRequest('One or more selected candidates are not on this examination roster');
     }
+  }
+
+  /** Set-based notification of the attempts a statement touched: the database fans out (no ids travel to Node, no event-loop work). */
+  private notifySql(title: string, body: string) {
+    return Prisma.sql`INSERT INTO notifications (id, "userId", title, body, link) SELECT gen_random_uuid(), s."userId", ${title}, ${body}, ${LINKS.schedule} FROM upd JOIN students s ON s.id = upd."studentId" RETURNING 1`;
   }
 
   // ───────────── commands ─────────────
@@ -167,16 +173,16 @@ export class ExamControlService {
       await this.assertScope(tx, exam.id, d.scope, d.institutionId, d.studentIds);
       if (d.incidentId && !(await tx.incident.count({ where: { id: d.incidentId, examId: exam.id } }))) throw badRequest('That incident does not belong to this examination');
       const sus = await tx.examSuspension.create({ data: { examId: exam.id, scope: d.scope, institutionId: d.institutionId ?? null, studentIds: d.studentIds ?? [], reason: d.reason, incidentId: d.incidentId ?? null, timePolicy: exam.suspendTimePolicy, suspendedBy: u.id, suspendedAt: now } });
-      const hit = await tx.$queryRaw<{ id: string }[]>`
-        WITH upd AS (UPDATE attempts a SET "suspendedAt" = ${now}, "suspensionId" = ${sus.id}::uuid WHERE a."examId" = ${exam.id}::uuid AND a.status = 'IN_PROGRESS' AND a."suspendedAt" IS NULL ${this.scopeSql(d.scope, d.institutionId, d.studentIds)} RETURNING a.id),
-             ev AS (INSERT INTO attempt_events ("attemptId", kind, "actorId", detail) SELECT id, 'SUSPENDED', ${u.id}::uuid, ${JSON.stringify({ suspensionId: sus.id, scope: d.scope, policy: exam.suspendTimePolicy })}::jsonb FROM upd RETURNING 1)
-        SELECT id FROM upd`;
-      await tx.examSuspension.update({ where: { id: sus.id }, data: { affectedCount: hit.length } });
+      const affected = (await tx.$queryRaw<{ n: number }[]>`
+        WITH upd AS (UPDATE attempts a SET "suspendedAt" = ${now}, "suspensionId" = ${sus.id}::uuid WHERE a."examId" = ${exam.id}::uuid AND a.status = 'IN_PROGRESS' AND a."suspendedAt" IS NULL ${this.scopeSql(d.scope, d.institutionId, d.studentIds)} RETURNING a.id, a."studentId"),
+             ev AS (INSERT INTO attempt_events ("attemptId", kind, "actorId", detail) SELECT id, 'SUSPENDED', ${u.id}::uuid, ${JSON.stringify({ suspensionId: sus.id, scope: d.scope, policy: exam.suspendTimePolicy })}::jsonb FROM upd RETURNING 1),
+             nt AS (${this.notifySql('Examination suspended', 'Your examination has been suspended by the examination office. Your saved answers are safe. Wait for instructions; do not close this window.')})
+        SELECT (SELECT count(*) FROM upd)::int AS n`)[0]!.n;
+      await tx.examSuspension.update({ where: { id: sus.id }, data: { affectedCount: affected } });
       if (d.scope === 'EXAM') await tx.$executeRaw`UPDATE exams SET status = 'SUSPENDED' WHERE id = ${exam.id}::uuid`;
       const ids = d.scope === 'CANDIDATES' && (d.studentIds?.length ?? 0) <= 500 ? { studentIds: d.studentIds } : {};
-      return { changed: true, result: { suspensionId: sus.id, affected: hit.length, timePolicy: exam.suspendTimePolicy },
-        finish: { action: 'exam.control.suspend', meta: { scope: d.scope, institutionId: d.institutionId, candidates: d.studentIds?.length, reason: d.reason, incidentId: d.incidentId, timePolicy: exam.suspendTimePolicy, affected: hit.length, suspensionId: sus.id }, events: [{ type: 'EXAM_SUSPENDED', institutionId: d.scope === 'CAMPUS' ? d.institutionId : null, payload: { suspensionId: sus.id, scope: d.scope, timePolicy: exam.suspendTimePolicy, ...ids } }] },
-        after: () => this.notifyAttempts(hit.map((h) => h.id), 'Examination suspended', 'Your examination has been suspended by the examination office. Your saved answers are safe. Wait for instructions; do not close this window.') };
+      return { changed: true, result: { suspensionId: sus.id, affected, timePolicy: exam.suspendTimePolicy },
+        finish: { action: 'exam.control.suspend', meta: { scope: d.scope, institutionId: d.institutionId, candidates: d.studentIds?.length, reason: d.reason, incidentId: d.incidentId, timePolicy: exam.suspendTimePolicy, affected, suspensionId: sus.id }, events: [{ type: 'EXAM_SUSPENDED', institutionId: d.scope === 'CAMPUS' ? d.institutionId : null, payload: { suspensionId: sus.id, scope: d.scope, timePolicy: exam.suspendTimePolicy, ...ids } }] } };
     });
   }
 
@@ -193,16 +199,16 @@ export class ExamControlService {
       const frozen = target.timePolicy === 'FREEZE_CLOCK';
       const paused = Math.max(0, Math.floor((now.getTime() - target.suspendedAt.getTime()) / 1000));
       // Each attempt gains ITS OWN paused duration; sealed attempts are untouched (status = 'IN_PROGRESS' predicate).
-      const hit = await tx.$queryRaw<{ id: string }[]>`
+      const resumed = (await tx.$queryRaw<{ n: number }[]>`
         WITH upd AS (UPDATE attempts SET "deadlineAt" = "deadlineAt" + (CASE WHEN ${frozen} THEN ${now}::timestamptz - "suspendedAt" ELSE interval '0' END), "suspendedAt" = NULL, "suspensionId" = NULL
-                     WHERE "suspensionId" = ${target.id}::uuid AND status = 'IN_PROGRESS' RETURNING id),
-             ev AS (INSERT INTO attempt_events ("attemptId", kind, "actorId", detail) SELECT id, 'RESUMED', ${u.id}::uuid, ${JSON.stringify({ suspensionId: target.id, pausedSeconds: frozen ? paused : 0, policy: target.timePolicy })}::jsonb FROM upd RETURNING 1)
-        SELECT id FROM upd`;
+                     WHERE "suspensionId" = ${target.id}::uuid AND status = 'IN_PROGRESS' RETURNING id, "studentId"),
+             ev AS (INSERT INTO attempt_events ("attemptId", kind, "actorId", detail) SELECT id, 'RESUMED', ${u.id}::uuid, ${JSON.stringify({ suspensionId: target.id, pausedSeconds: frozen ? paused : 0, policy: target.timePolicy })}::jsonb FROM upd RETURNING 1),
+             nt AS (${this.notifySql('Examination resumed', 'Your examination has resumed. Your saved answers are intact and your remaining time is shown on screen.')})
+        SELECT (SELECT count(*) FROM upd)::int AS n`)[0]!.n;
       await tx.examSuspension.update({ where: { id: target.id }, data: { resumedBy: u.id, resumedAt: now, resumeNote: d.note ?? null, pausedSeconds: frozen ? paused : 0 } });
       if (target.scope === 'EXAM') await tx.$executeRaw`UPDATE exams SET status = 'LIVE', "closesAt" = "closesAt" + make_interval(secs => ${frozen ? paused : 0}::int) WHERE id = ${exam.id}::uuid`;
-      return { changed: true, result: { suspensionId: target.id, resumed: hit.length, pausedSeconds: frozen ? paused : 0, timePolicy: target.timePolicy },
-        finish: { action: 'exam.control.resume', meta: { suspensionId: target.id, scope: target.scope, pausedSeconds: frozen ? paused : 0, timePolicy: target.timePolicy, resumed: hit.length, note: d.note }, events: [{ type: 'EXAM_RESUMED', institutionId: target.scope === 'CAMPUS' ? target.institutionId : null, payload: { suspensionId: target.id, scope: target.scope, pausedSeconds: frozen ? paused : 0, ...(target.scope === 'CANDIDATES' && target.studentIds.length <= 500 ? { studentIds: target.studentIds } : {}) } }] },
-        after: () => this.notifyAttempts(hit.map((h) => h.id), 'Examination resumed', 'Your examination has resumed. Your saved answers are intact and your remaining time is shown on screen.') };
+      return { changed: true, result: { suspensionId: target.id, resumed, pausedSeconds: frozen ? paused : 0, timePolicy: target.timePolicy },
+        finish: { action: 'exam.control.resume', meta: { suspensionId: target.id, scope: target.scope, pausedSeconds: frozen ? paused : 0, timePolicy: target.timePolicy, resumed, note: d.note }, events: [{ type: 'EXAM_RESUMED', institutionId: target.scope === 'CAMPUS' ? target.institutionId : null, payload: { suspensionId: target.id, scope: target.scope, pausedSeconds: frozen ? paused : 0, ...(target.scope === 'CANDIDATES' && target.studentIds.length <= 500 ? { studentIds: target.studentIds } : {}) } }] } };
     });
   }
 
@@ -227,19 +233,19 @@ export class ExamControlService {
       if (!['LIVE', 'SUSPENDED', 'CLOSING'].includes(exam.status)) throw this.badState('EXTEND', exam);
       await this.assertScope(tx, exam.id, d.scope, d.institutionId, d.studentIds);
       // One atomic UPDATE: row locks make this serialise with an auto-submit of the same attempt; a sealed attempt no longer matches status='IN_PROGRESS'.
-      const hit = await tx.$queryRaw<{ id: string }[]>`
+      const affected = (await tx.$queryRaw<{ n: number }[]>`
         WITH upd AS (UPDATE attempts a SET "deadlineAt" = a."deadlineAt" + make_interval(mins => ${d.minutes}::int), "extraTimeMin" = a."extraTimeMin" + ${d.minutes}::int
-                     WHERE a."examId" = ${exam.id}::uuid AND a.status = 'IN_PROGRESS' ${this.scopeSql(d.scope, d.institutionId, d.studentIds)} RETURNING a.id),
-             ev AS (INSERT INTO attempt_events ("attemptId", kind, "actorId", detail) SELECT id, 'TIME_EXTENDED', ${u.id}::uuid, ${JSON.stringify({ minutes: d.minutes, reason: d.reason, scope: d.scope, group: true })}::jsonb FROM upd RETURNING 1)
-        SELECT id FROM upd`;
-      if (!hit.length && d.scope !== 'EXAM') throw conflict('NO_ACTIVE_ATTEMPTS', 'None of the selected candidates has an attempt in progress, so there is nothing to extend');
+                     WHERE a."examId" = ${exam.id}::uuid AND a.status = 'IN_PROGRESS' ${this.scopeSql(d.scope, d.institutionId, d.studentIds)} RETURNING a.id, a."studentId"),
+             ev AS (INSERT INTO attempt_events ("attemptId", kind, "actorId", detail) SELECT id, 'TIME_EXTENDED', ${u.id}::uuid, ${JSON.stringify({ minutes: d.minutes, reason: d.reason, scope: d.scope, group: true })}::jsonb FROM upd RETURNING 1),
+             nt AS (${this.notifySql('Examination time extended', `You have been given ${d.minutes} additional minutes. Your remaining time is shown on screen.`)})
+        SELECT (SELECT count(*) FROM upd)::int AS n`)[0]!.n;
+      if (!affected && d.scope !== 'EXAM') throw conflict('NO_ACTIVE_ATTEMPTS', 'None of the selected candidates has an attempt in progress, so there is nothing to extend');
       let closesAfter: Date | null = null;
       if (d.scope === 'EXAM') closesAfter = (await tx.$queryRaw<{ c: Date }[]>`UPDATE exams SET "closesAt" = "closesAt" + make_interval(mins => ${d.minutes}::int) WHERE id = ${exam.id}::uuid RETURNING "closesAt" AS c`)[0]!.c;
-      await tx.examExtension.create({ data: { examId: exam.id, scope: d.scope, institutionId: d.institutionId ?? null, studentIds: d.studentIds ?? [], minutes: d.minutes, reason: d.reason, approvedBy: u.id, idempotencyKey: i.idempotencyKey!, affectedCount: hit.length, closesAtBefore: d.scope === 'EXAM' ? exam.closesAt : null, closesAtAfter: closesAfter } });
+      await tx.examExtension.create({ data: { examId: exam.id, scope: d.scope, institutionId: d.institutionId ?? null, studentIds: d.studentIds ?? [], minutes: d.minutes, reason: d.reason, approvedBy: u.id, idempotencyKey: i.idempotencyKey!, affectedCount: affected, closesAtBefore: d.scope === 'EXAM' ? exam.closesAt : null, closesAtAfter: closesAfter } });
       const ids = d.scope === 'CANDIDATES' && (d.studentIds?.length ?? 0) <= 500 ? { studentIds: d.studentIds } : {};
-      return { changed: true, result: { affected: hit.length, minutes: d.minutes, scope: d.scope, closesAt: closesAfter ?? exam.closesAt },
-        finish: { action: 'exam.control.extend', meta: { scope: d.scope, institutionId: d.institutionId, candidates: d.studentIds?.length, minutes: d.minutes, reason: d.reason, affected: hit.length, approvedBy: u.id, idempotencyKey: i.idempotencyKey }, events: [{ type: 'DEADLINE_EXTENDED', institutionId: d.scope === 'CAMPUS' ? d.institutionId : null, payload: { scope: d.scope, minutes: d.minutes, ...ids } }] },
-        after: () => this.notifyAttempts(hit.map((h) => h.id), 'Examination time extended', `You have been given ${d.minutes} additional minutes. Your remaining time is shown on screen.`) };
+      return { changed: true, result: { affected, minutes: d.minutes, scope: d.scope, closesAt: closesAfter ?? exam.closesAt },
+        finish: { action: 'exam.control.extend', meta: { scope: d.scope, institutionId: d.institutionId, candidates: d.studentIds?.length, minutes: d.minutes, reason: d.reason, affected, approvedBy: u.id, idempotencyKey: i.idempotencyKey }, events: [{ type: 'DEADLINE_EXTENDED', institutionId: d.scope === 'CAMPUS' ? d.institutionId : null, payload: { scope: d.scope, minutes: d.minutes, ...ids } }] } };
     });
   }
 
@@ -251,7 +257,7 @@ export class ExamControlService {
       if (s === 'CLOSING') {
         if (d.force && !exam.forceCloseAt) {
           await tx.$executeRaw`UPDATE exams SET "forceCloseAt" = ${now} WHERE id = ${exam.id}::uuid`;
-          return { changed: true, finish: { action: 'exam.control.close', meta: { escalatedToForce: true, reason: d.reason }, events: [{ type: 'EXAM_CLOSING', payload: { force: true } }] }, after: () => this.lifecycle.reconcileExam(exam.id) };
+          return { changed: true, finish: { action: 'exam.control.close', meta: { escalatedToForce: true, reason: d.reason }, events: [{ type: 'EXAM_CLOSING', payload: { force: true } }] }, background: () => this.lifecycle.reconcileExam(exam.id) };
         }
         return { changed: false, result: { note: 'The examination is already closing' } };
       }
@@ -265,7 +271,7 @@ export class ExamControlService {
       }
       await tx.$executeRaw`UPDATE exams SET status = 'CLOSING', "admissionClosedAt" = COALESCE("admissionClosedAt", ${now}), "forceCloseAt" = ${d.force ? now : null} WHERE id = ${exam.id}::uuid`;
       return { changed: true, result: { inProgress, force: !!d.force }, finish: { action: 'exam.control.close', meta: { from: s, to: 'CLOSING', inProgress, force: !!d.force, reason: d.reason }, events: [{ type: 'EXAM_CLOSING', payload: { inProgress, force: !!d.force } }] },
-        after: d.force ? () => this.lifecycle.reconcileExam(exam.id) : undefined };
+        background: d.force ? () => this.lifecycle.reconcileExam(exam.id) : undefined };
     });
   }
 
@@ -280,7 +286,7 @@ export class ExamControlService {
       if (live[0]!.n > 0) throw conflict('ATTEMPTS_IN_PROGRESS', `${live[0]!.n} attempt(s) are still in progress. Reconcile attempts first.`, { inProgress: live[0]!.n });
       if (!roster) throw conflict('PRECONDITION_FAILED', 'There is no roster to score');
       await tx.$executeRaw`UPDATE exams SET status = 'SCORING' WHERE id = ${exam.id}::uuid`;
-      return { changed: true, finish: { action: 'exam.control.initiate_scoring', meta: { from: 'CLOSED' }, events: [{ type: 'SCORING_STARTED', payload: {} }] }, after: () => this.lifecycle.reconcileExam(exam.id) };
+      return { changed: true, finish: { action: 'exam.control.initiate_scoring', meta: { from: 'CLOSED' }, events: [{ type: 'SCORING_STARTED', payload: {} }] }, background: () => this.lifecycle.reconcileExam(exam.id) };
     });
   }
 
@@ -352,11 +358,5 @@ export class ExamControlService {
         apiErrors: { scope: 'this API instance, since process start', http5xx: m.http.total((l) => /^5/.test(l.status ?? '')), unhandled: m.unhandled.value() },
       },
     };
-  }
-
-  private async notifyAttempts(attemptIds: string[], title: string, body: string) {
-    if (!attemptIds.length) return;
-    const users = await this.prisma.$queryRaw<{ userId: string }[]>`SELECT s."userId" FROM attempts a JOIN students s ON s.id = a."studentId" WHERE a.id = ANY(${attemptIds}::uuid[])`;
-    await this.notifications.notify(users.map((x) => x.userId), title, body, LINKS.schedule);
   }
 }

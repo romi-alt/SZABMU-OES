@@ -1,0 +1,130 @@
+{
+ "A1": {
+  "rows": [
+   "DNC-C Demo College of Nursing C (synthetic) nursing college affiliated Lahore 0 ",
+   "DMC-A Demo Medical College A (synthetic) medical college constituent Islamabad 4",
+   "DMC-B Demo Medical College B (synthetic) medical college affiliated Rawalpindi 4"
+  ],
+  "dialogOpened": false,
+  "dialogText": "",
+  "toasts": [
+   "Your role is not permitted to perform this action"
+  ],
+  "rowAfter": "DNC-C Demo College of Nursing C (synthetic) nursing college affiliated Lahore 0 Active Deactivate",
+  "net": [
+   "403 PATCH /api/institutions/<id>"
+  ]
+ },
+ "A2_register_valid": {
+  "toasts": [
+   "Your role is not permitted to perform this action"
+  ],
+  "stillOpen": 1,
+  "net": [
+   "403 PATCH /api/institutions/<id>",
+   "403 POST /api/institutions"
+  ]
+ },
+ "A2_empty_submit": {
+  "registerDisabledWhenEmpty": true,
+  "requiredAttrs": [
+   {
+    "n": "text",
+    "req": false
+   },
+   {
+    "n": "text",
+    "req": false
+   },
+   {
+    "n": "text",
+    "req": false
+   },
+   {
+    "n": "select-one",
+    "req": false
+   },
+   {
+    "n": "select-one",
+    "req": false
+   }
+  ],
+  "toasts": [],
+  "errs": []
+ },
+ "B2": {
+  "error": "locator.selectOption: Timeout 30000ms exceeded."
+ },
+ "C1": {
+  "error": "locator.click: Timeout 30000ms exceeded."
+ },
+ "C2": {
+  "error": "locator.click: Timeout 30000ms exceeded."
+ },
+ "C7": {
+  "error": "locator.click: Timeout 30000ms exceeded."
+ },
+ "C8": {
+  "labels": [
+   "Full name Managed by your institution",
+   "Email",
+   "Registration no.",
+   "Programme",
+   "Institution",
+   "Date of birth",
+   "Phone",
+   "Address",
+   "Emergency contact",
+   "Current password",
+   "New password At least 10 characters; thr",
+   "Confirm new password"
+  ],
+  "toastOnInvalidPhone": [
+   "Profile saved"
+  ],
+  "errors": [],
+  "signOutButtons": 2,
+  "passwordHint": "Managed by your institution | At least 10 characters; three of lower / upper / digit / symbol."
+ },
+ "B4_audit_layout": {
+  "tableW": 1134,
+  "wrapW": 1134,
+  "wrapScrollW": 1134,
+  "ths": [
+   {
+    "t": "#",
+    "w": 52
+   },
+   {
+    "t": "WHEN",
+    "w": 152
+   },
+   {
+    "t": "ACTION",
+    "w": 183
+   },
+   {
+    "t": "ROLE",
+    "w": 127
+   },
+   {
+    "t": "ENTITY",
+    "w": 129
+   },
+   {
+    "t": "DETAIL",
+    "w": 387
+   },
+   {
+    "t": "HASH",
+    "w": 105
+   }
+  ],
+  "firstRowH": 36,
+  "whenText": "01 Nov 2026 14:50"
+ },
+ "B1_pager": [
+  "80 records",
+  "Page 1 of 4"
+ ]
+}

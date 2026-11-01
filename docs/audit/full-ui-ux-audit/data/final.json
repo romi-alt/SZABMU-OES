@@ -1,0 +1,337 @@
+{
+ "public": [
+  {
+   "route": "/login",
+   "label": "login",
+   "http": 200,
+   "title": "SZABMU Online Examination System",
+   "h1": [
+    "Sign in"
+   ],
+   "h2": [
+    "Examination portal for the next generation of medical professionals."
+   ],
+   "main": 1,
+   "axe": [
+    {
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 2
+    },
+    {
+     "id": "region",
+     "impact": "moderate",
+     "nodes": 1
+    }
+   ],
+   "console": [
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+   ],
+   "failed": [
+    "401 /api/auth/me"
+   ],
+   "controls": [
+    "email",
+    "password",
+    "Forgot password?",
+    "Sign in →"
+   ],
+   "vp": {
+    "360": {
+     "sw": 392,
+     "iw": 360,
+     "overflow": true
+    },
+    "390": {
+     "sw": 392,
+     "iw": 390,
+     "overflow": true
+    },
+    "428": {
+     "sw": 428,
+     "iw": 428,
+     "overflow": false
+    },
+    "768": {
+     "sw": 768,
+     "iw": 768,
+     "overflow": false
+    },
+    "1024": {
+     "sw": 1024,
+     "iw": 1024,
+     "overflow": false
+    },
+    "1280": {
+     "sw": 1280,
+     "iw": 1280,
+     "overflow": false
+    },
+    "1440": {
+     "sw": 1440,
+     "iw": 1440,
+     "overflow": false
+    },
+    "1600": {
+     "sw": 1600,
+     "iw": 1600,
+     "overflow": false
+    }
+   }
+  },
+  {
+   "route": "/forgot",
+   "label": "forgot",
+   "http": 200,
+   "title": "SZABMU Online Examination System",
+   "h1": [
+    "Forgot password?"
+   ],
+   "h2": [
+    "A complete examination platform — from enrolment to certification."
+   ],
+   "main": 1,
+   "axe": [
+    {
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 1
+    },
+    {
+     "id": "region",
+     "impact": "moderate",
+     "nodes": 1
+    }
+   ],
+   "console": [
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+   ],
+   "failed": [
+    "401 /api/auth/me"
+   ],
+   "controls": [
+    "email",
+    "Send verification code →",
+    "Back to sign in"
+   ],
+   "vp": {
+    "360": {
+     "sw": 392,
+     "iw": 360,
+     "overflow": true
+    },
+    "390": {
+     "sw": 392,
+     "iw": 390,
+     "overflow": true
+    },
+    "428": {
+     "sw": 428,
+     "iw": 428,
+     "overflow": false
+    },
+    "768": {
+     "sw": 768,
+     "iw": 768,
+     "overflow": false
+    },
+    "1024": {
+     "sw": 1024,
+     "iw": 1024,
+     "overflow": false
+    },
+    "1280": {
+     "sw": 1280,
+     "iw": 1280,
+     "overflow": false
+    },
+    "1440": {
+     "sw": 1440,
+     "iw": 1440,
+     "overflow": false
+    },
+    "1600": {
+     "sw": 1600,
+     "iw": 1600,
+     "overflow": false
+    }
+   }
+  },
+  {
+   "route": "/verify",
+   "label": "verify",
+   "http": 200,
+   "title": "SZABMU Online Examination System",
+   "h1": [
+    "Certificate verification"
+   ],
+   "h2": [
+    "Verify a certificate."
+   ],
+   "main": 1,
+   "axe": [
+    {
+     "id": "region",
+     "impact": "moderate",
+     "nodes": 1
+    }
+   ],
+   "console": [
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+   ],
+   "failed": [
+    "401 /api/auth/me"
+   ],
+   "controls": [
+    "SZABMU/2026/1000",
+    "text",
+    "Verify",
+    "Back to sign in"
+   ],
+   "vp": {
+    "360": {
+     "sw": 392,
+     "iw": 360,
+     "overflow": true
+    },
+    "390": {
+     "sw": 392,
+     "iw": 390,
+     "overflow": true
+    },
+    "428": {
+     "sw": 428,
+     "iw": 428,
+     "overflow": false
+    },
+    "768": {
+     "sw": 768,
+     "iw": 768,
+     "overflow": false
+    },
+    "1024": {
+     "sw": 1024,
+     "iw": 1024,
+     "overflow": false
+    },
+    "1280": {
+     "sw": 1280,
+     "iw": 1280,
+     "overflow": false
+    },
+    "1440": {
+     "sw": 1440,
+     "iw": 1440,
+     "overflow": false
+    },
+    "1600": {
+     "sw": 1600,
+     "iw": 1600,
+     "overflow": false
+    }
+   }
+  },
+  {
+   "route": "/this-page-does-not-exist",
+   "label": "not-found",
+   "http": 404,
+   "title": "SZABMU Online Examination System",
+   "h1": [
+    "Page not found"
+   ],
+   "h2": [
+    "We could not find that page."
+   ],
+   "main": 1,
+   "axe": [
+    {
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 1
+    },
+    {
+     "id": "region",
+     "impact": "moderate",
+     "nodes": 1
+    }
+   ],
+   "console": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+   ],
+   "failed": [
+    "404 /this-page-does-not-exist",
+    "401 /api/auth/me"
+   ],
+   "controls": [
+    "Go to dashboard",
+    "Sign in"
+   ],
+   "vp": {
+    "360": {
+     "sw": 392,
+     "iw": 360,
+     "overflow": true
+    },
+    "390": {
+     "sw": 392,
+     "iw": 390,
+     "overflow": true
+    },
+    "428": {
+     "sw": 428,
+     "iw": 428,
+     "overflow": false
+    },
+    "768": {
+     "sw": 768,
+     "iw": 768,
+     "overflow": false
+    },
+    "1024": {
+     "sw": 1024,
+     "iw": 1024,
+     "overflow": false
+    },
+    "1280": {
+     "sw": 1280,
+     "iw": 1280,
+     "overflow": false
+    },
+    "1440": {
+     "sw": 1440,
+     "iw": 1440,
+     "overflow": false
+    },
+    "1600": {
+     "sw": 1600,
+     "iw": 1600,
+     "overflow": false
+    }
+   }
+  }
+ ],
+ "forgot": {
+  "step1": {
+   "labels": [
+    "University email"
+   ],
+   "buttons": [
+    "Send verification code →"
+   ]
+  },
+  "step2": {
+   "text": "Verify it's you If that address is registered, a 6-digit code has been sent to it. Verification code Development mode — code: 314825 Verify → Resend code Remembered it? Back to sign in",
+   "buttons": [
+    "Verify →",
+    "Resend code"
+   ]
+  }
+ },
+ "incident": {
+  "error": "page.waitForSelector: Timeout 15000ms exceeded."
+ },
+ "monitorRowEnd": {
+  "labels": []
+ }
+}
