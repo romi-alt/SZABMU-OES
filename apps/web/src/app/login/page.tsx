@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { post } from '@/api';
 import { useMe } from '@/session';
 import { errMsg } from '@/ui';
-import { AuthFrame } from '../AuthFrame';
+import { AuthButton, AuthField, AuthFrame, AuthHeading } from '../AuthFrame';
 
 export default function Login() {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
@@ -18,17 +18,18 @@ export default function Login() {
     catch (x) { setErr(errMsg(x)); } finally { setBusy(false); }
   }
   return (
-    <AuthFrame headline="Examination portal for the next generation of medical professionals." body="Schedule, conduct and approve examinations across the university's constituent and affiliated institutions — with role-based control and a full audit trail.">
-      <div><h1>Sign in</h1><p className="muted" style={{ margin: '4px 0 0' }}>Use your university account. Students, lecturers, examiners, invigilators and administrators sign in here.</p></div>
+    <AuthFrame>
+      <AuthHeading icon="user" title="Sign in" />
       {expired && <div className="notice warn" role="status" data-testid="session-expired">Your session has expired or was ended. Please sign in again — answers already saved are kept.</div>}
-      <form className="stack" onSubmit={submit} noValidate>
-        <label className="f">University email<input className="in" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus /></label>
-        <label className="f">Password<input className="in" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
+      <form onSubmit={submit} noValidate>
+        <AuthField label="University email" icon="mail" type="email" value={email} onChange={setEmail} autoFocus autoComplete="username" placeholder="Enter your university email" />
+        <AuthField label="Password" icon="lock" type="password" value={password} onChange={setPassword} autoComplete="current-password" placeholder="Enter your password" />
         {err && <div className="notice bad" role="alert">{err}</div>}
-        <div className="row between"><span className="small faint">Accounts lock for 15 minutes after 5 failed attempts.</span><Link href="/forgot" className="small" style={{ whiteSpace: "nowrap" }}>Forgot password?</Link></div>
-        <button className="btn btn-primary" disabled={busy || !email || !password} style={{ justifyContent: 'center', padding: '10px' }}>{busy ? 'Signing in…' : 'Sign in →'}</button>
+        <div className="auth-row"><Link href="/forgot" className="auth-link">Forgot password?</Link></div>
+        <AuthButton busy={busy} disabled={!email || !password}>{busy ? 'Signing in…' : 'Sign in'}</AuthButton>
       </form>
-      <div className="small faint">Trouble signing in? Contact your campus administrator or the university IT helpdesk.</div>
+      <p className="auth-alt">New student? <Link href="/register" className="auth-link">Create your account</Link></p>
+      <p className="small faint" style={{ margin: 0, textAlign: 'center' }}>Accounts lock for 15 minutes after 5 failed attempts. Trouble signing in? Contact your campus administrator or the IT helpdesk.</p>
     </AuthFrame>
   );
 }
