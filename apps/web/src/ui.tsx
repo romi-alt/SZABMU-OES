@@ -49,6 +49,11 @@ const STATUS_TONE: Record<string, string> = {
 };
 export const Status = ({ s }: { s: string }) => <Badge tone={STATUS_TONE[s] ?? 'grey'}>{s.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase())}</Badge>;
 export function Notice({ tone, children }: { tone?: 'warn' | 'bad' | 'ok'; children: ReactNode }) { return <div className={`notice ${tone ?? ''}`} role={tone === 'bad' ? 'alert' : undefined}>{children}</div>; }
+/** Empty list that says why: echoes the active filters and offers to clear them (UI-028). */
+export function ListEmpty({ noun, filters, onClear }: { noun: string; filters: string[]; onClear: () => void }) {
+  if (!filters.length) return <>No {noun} yet.</>;
+  return <span data-testid="list-empty">No {noun} match {filters.join(' · ')}. <button className="btn-link" onClick={onClear}>Clear filters</button></span>;
+}
 export const Empty = ({ children }: { children: ReactNode }) => <div className="empty">{children}</div>;
 export function Loading() { return <div className="stack" aria-busy="true" aria-label="Loading"><div className="skeleton" style={{ width: '40%' }} /><div className="skeleton" /><div className="skeleton" style={{ width: '80%' }} /></div>; }
 /** What kind of failure is this? Drives the title, the wording and the recovery action; never exposes stack traces or internals. */
@@ -89,7 +94,7 @@ export function Async({ state, children, idle }: { state: { data: any; error: an
 }
 
 export interface Col<T> { h: string; cell: (r: T) => ReactNode; num?: boolean; cls?: string }
-export function Table<T>({ cols, rows, empty = 'Nothing to show.', rowKey }: { cols: Col<T>[]; rows: T[]; empty?: string; rowKey: (r: T) => string }) {
+export function Table<T>({ cols, rows, empty = 'Nothing to show.', rowKey }: { cols: Col<T>[]; rows: T[]; empty?: ReactNode; rowKey: (r: T) => string }) {
   if (!Array.isArray(rows)) return <Notice tone="bad">The server returned this list in an unexpected format, so it cannot be shown. Try again; if it keeps happening, tell the examination office.</Notice>;
   if (!rows.length) return <Empty>{empty}</Empty>;
   return (

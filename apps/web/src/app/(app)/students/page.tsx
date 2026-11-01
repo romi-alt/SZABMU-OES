@@ -2,10 +2,11 @@
 import { useState } from 'react';
 import { post, useGet } from '@/api';
 import { useMe } from '@/session';
-import { Async, Card, Field, Modal, Notice, PageHead, Pager, Status, Table, useAction, CancelButton } from '@/ui';
+import { useUrlState } from '@/url-state';
+import { Async, Card, Field, Modal, Notice, PageHead, Pager, Status, Table, useAction, CancelButton, ListEmpty } from '@/ui';
 
 export default function Students() {
-  const { me, can } = useMe(); const { run, busy } = useAction(); const [page, setPage] = useState(1); const [search, setSearch] = useState(''); const [inst, setInst] = useState('');
+  const { me, can } = useMe(); const { run, busy } = useAction(); const url = useUrlState({ page: '1', search: '', inst: '' }); const page = Number(url.vals.page) || 1; const search = url.vals.search; const inst = url.vals.inst; const setPage = (n: number) => url.set('page', String(n)); const setSearch = (v: string) => url.set('search', v); const setInst = (v: string) => url.set('inst', v);
   const insts = useGet<any[]>('/institutions'); const programs = useGet<any[]>('/programs');
   const st = useGet<any>(`/students?page=${page}&pageSize=25${search ? `&search=${encodeURIComponent(search)}` : ''}${inst ? `&institutionId=${inst}` : ''}`);
   const [add, setAdd] = useState(false); const [imp, setImp] = useState(false); const [created, setCreated] = useState<string | null>(null);
@@ -22,7 +23,7 @@ export default function Students() {
       <Card flush>
         <div className="filters"><Field label="Search"><input className="in" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Name or registration number" /></Field>
           {(insts.data?.length ?? 0) > 1 && <Field label="Institution"><select className="in" value={inst} onChange={(e) => { setInst(e.target.value); setPage(1); }}><option value="">All</option>{insts.data!.map((i) => <option key={i.id} value={i.id}>{i.code}</option>)}</select></Field>}</div>
-        <Async state={st}>{(d) => <><Table rowKey={(r: any) => r.id} rows={d.items} empty="No students." cols={[
+        <Async state={st}>{(d) => <><Table rowKey={(r: any) => r.id} rows={d.items} empty={<ListEmpty noun="students" filters={[search && `“${search}”`, inst && 'this institution'].filter(Boolean) as string[]} onClear={url.reset} />} cols={[
           { h: 'Reg. no.', cell: (r: any) => <span className="code">{r.regNo}</span> }, { h: 'Name', cell: (r: any) => <b>{r.user.fullName}</b> }, { h: 'Email', cell: (r: any) => <span className="small">{r.user.email}</span> }, { h: 'Programme', cell: (r: any) => r.program.code }, { h: 'Sem', num: true, cell: (r: any) => r.semester }, { h: 'Campus', cell: (r: any) => r.institution.code }, { h: 'Status', cell: (r: any) => <Status s={r.status} /> },
         ]} /><Pager page={page} total={d.total} size={25} onPage={setPage} /></>}</Async>
       </Card>

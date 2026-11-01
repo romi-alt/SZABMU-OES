@@ -4,7 +4,8 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { post, fmtDT, toLocalInput, useGet } from '@/api';
 import { useMe } from '@/session';
-import { Async, Card, Field, Modal, PageHead, Pager, Status, Table, useAction, CancelButton } from '@/ui';
+import { useUrlState } from '@/url-state';
+import { Async, Card, Field, Modal, PageHead, Pager, Status, Table, useAction, CancelButton, ListEmpty } from '@/ui';
 
 function Create({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { run, busy } = useAction(); const programs = useGet<any[]>('/programs'); const insts = useGet<any[]>('/institutions');
@@ -29,14 +30,14 @@ function Create({ onClose, onDone }: { onClose: () => void; onDone: () => void }
 }
 
 function Inner() {
-  const { can } = useMe(); const sp = useSearchParams(); const [status, setStatus] = useState(sp.get('status') ?? ''); const [page, setPage] = useState(1); const [create, setCreate] = useState(false);
+  const { can } = useMe(); const sp = useSearchParams(); const url = useUrlState({ status: sp.get('status') ?? '', page: '1' }); const status = url.vals.status; const page = Number(url.vals.page) || 1; const setStatus = (v: string) => url.set('status', v); const setPage = (n: number) => url.set('page', String(n)); const [create, setCreate] = useState(false);
   const list = useGet<any>(`/exams?page=${page}&pageSize=25${status ? `&status=${status}` : ''}`);
   return (
     <>
       <PageHead title="Examinations" sub="Build papers, approve, schedule, monitor and publish.">{can('exam.schedule') && <button className="btn btn-green" onClick={() => setCreate(true)}>+ New examination</button>}</PageHead>
       <Card flush>
         <div className="filters"><Field label="Status"><select className="in" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}><option value="">All</option>{['DRAFT', 'PAPER_PENDING', 'APPROVED', 'SCHEDULED', 'LIVE', 'CLOSED', 'RESULT_PENDING', 'PUBLISHED', 'CANCELLED'].map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}</select></Field></div>
-        <Async state={list}>{(d) => <><Table rowKey={(r: any) => r.id} empty="No examinations." rows={d.items} cols={[
+        <Async state={list}>{(d) => <><Table rowKey={(r: any) => r.id} empty={<ListEmpty noun="examinations" filters={[status && status.toLowerCase().replace(/_/g, ' ')].filter(Boolean) as string[]} onClear={url.reset} />} rows={d.items} cols={[
           { h: 'Code', cell: (r: any) => <Link className="code" href={`/exams/${r.id}`}>{r.code}</Link> }, { h: 'Title', cell: (r: any) => <b>{r.title}</b> }, { h: 'Course', cell: (r: any) => r.course.code },
           { h: 'Opens', cell: (r: any) => fmtDT(r.opensAt) }, { h: 'Min', num: true, cell: (r: any) => r.durationMin }, { h: 'Qs', num: true, cell: (r: any) => r._count.questions }, { h: 'Candidates', num: true, cell: (r: any) => r._count.candidates },
           { h: 'Status', cell: (r: any) => <Status s={r.status} /> }, { h: '', cell: (r: any) => <Link href={`/exams/${r.id}`}>Open ›</Link> },
