@@ -71,6 +71,28 @@
    Poll `hosting_get-deployment` until the build is `completed` or `failed`.
 7. **Verify:** `curl https://<domain>/api/health` and sign in as `student.a002@demo.szabmu.invalid` / `cce@demo.szabmu.invalid`.
 
+## Two portals on one site (student / college dashboard)
+
+The platform has two faces: the **student portal** (candidates sit exams) and the **staff dashboard** (college/university roles).
+The production plan gives each its own Node.js site; this account has no free slot, so the single process serves both and decides
+per request from the `Host` header:
+
+```
+PORTAL_HOSTS="oes.szabmu.site=student,dashboard.szabmu.site=staff"
+PORTAL_ENFORCE=true
+WEB_ORIGIN="https://oes.szabmu.site,https://dashboard.szabmu.site"
+```
+
+- The launcher overwrites `X-OES-Portal` on every request from `Host` (client-sent values and `X-Forwarded-Host` are ignored).
+- The API refuses a role on the wrong portal (`PORTAL_ENFORCE`); the web proxy 404s pages of the other portal (`PORTAL_FROM_HEADER`, set by the launcher).
+- Cookies are host-only, so sessions never cross portals.
+- Verified locally: student↔student 200, staff↔staff 200, cross-portal sign-in 401, spoofed header 401, `/exams` only on staff, `/register` only on student.
+
+Hostname requirement: Hostinger's free `*.hostingersite.com` domains accept neither subdomains nor parked domains, so the two portals
+need a real domain. The account owns `szabmu.site`; attach `oes.szabmu.site` and `dashboard.szabmu.site` to this website (hPanel →
+Websites → the site → Domains → parked/alias), then set the three variables above and restart. Until then `PORTAL_HOSTS` is unset and the
+free domain serves every role.
+
 ## Operating it
 
 | Task | How |
