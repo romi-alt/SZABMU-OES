@@ -1,6 +1,6 @@
-# UI gallery — every role, menu page and key scenario
+# UI gallery — premium UI, every role, menu page and key scenario
 
-Captured from the real app (built web + real API, disposable seeded database) at 1280×800 desktop and 390×844 phone. Thumbnails: `sheets/sheet-01…10.jpg`; full-size images are the numbered `.jpg` files here.
+Captured from the real app (built web + real API, disposable seeded database) at 1280×800 and 390×844. Thumbnails: `sheets/`.
 
 | # | Screen |
 |---|---|
@@ -37,16 +37,16 @@ Captured from the real app (built web + real API, disposable seeded database) at
 | 031 | [examiner notifications panel](031-examiner-notifications-panel.jpg) |
 | 032 | [examiner dashboard on phone](032-examiner-dashboard-on-phone.jpg) |
 | 033 | [examiner menu drawer on phone](033-examiner-menu-drawer-on-phone.jpg) |
-| 034 | [controller cce dashboard](034-controller-cce-dashboard.jpg) |
-| 035 | [controller cce exams](035-controller-cce-exams.jpg) |
-| 036 | [controller cce monitor](036-controller-cce-monitor.jpg) |
-| 037 | [controller cce incidents](037-controller-cce-incidents.jpg) |
-| 038 | [controller cce enrolment](038-controller-cce-enrolment.jpg) |
-| 039 | [controller cce audit](039-controller-cce-audit.jpg) |
-| 040 | [controller cce profile](040-controller-cce-profile.jpg) |
-| 041 | [controller cce notifications panel](041-controller-cce-notifications-panel.jpg) |
-| 042 | [controller cce dashboard on phone](042-controller-cce-dashboard-on-phone.jpg) |
-| 043 | [controller cce menu drawer on phone](043-controller-cce-menu-drawer-on-phone.jpg) |
+| 034 | [controller dashboard](034-controller-dashboard.jpg) |
+| 035 | [controller exams](035-controller-exams.jpg) |
+| 036 | [controller monitor](036-controller-monitor.jpg) |
+| 037 | [controller incidents](037-controller-incidents.jpg) |
+| 038 | [controller enrolment](038-controller-enrolment.jpg) |
+| 039 | [controller audit](039-controller-audit.jpg) |
+| 040 | [controller profile](040-controller-profile.jpg) |
+| 041 | [controller notifications panel](041-controller-notifications-panel.jpg) |
+| 042 | [controller dashboard on phone](042-controller-dashboard-on-phone.jpg) |
+| 043 | [controller menu drawer on phone](043-controller-menu-drawer-on-phone.jpg) |
 | 044 | [campus admin dashboard](044-campus-admin-dashboard.jpg) |
 | 045 | [campus admin students](045-campus-admin-students.jpg) |
 | 046 | [campus admin roster](046-campus-admin-roster.jpg) |
@@ -83,41 +83,33 @@ Captured from the real app (built web + real API, disposable seeded database) at
 | 077 | [super admin notifications panel](077-super-admin-notifications-panel.jpg) |
 | 078 | [super admin dashboard on phone](078-super-admin-dashboard-on-phone.jpg) |
 | 079 | [super admin menu drawer on phone](079-super-admin-menu-drawer-on-phone.jpg) |
-| 080 | [register institution required markers still needed](080-register-institution-required-markers-still-needed.jpg) |
+| 080 | [register institution dialog](080-register-institution-dialog.jpg) |
 | 081 | [discard changes prompt](081-discard-changes-prompt.jpg) |
 | 082 | [deactivate institution confirmation](082-deactivate-institution-confirmation.jpg) |
-| 083 | [new staff account](083-new-staff-account.jpg) |
-| 084 | [new programme](084-new-programme.jpg) |
-| 085 | [assign lecturer to course](085-assign-lecturer-to-course.jpg) |
-| 086 | [profile phone validation](086-profile-phone-validation.jpg) |
-| 087 | [audit trail full](087-audit-trail-full.jpg) |
-| 088 | [add student](088-add-student.jpg) |
-| 089 | [import students csv](089-import-students-csv.jpg) |
-| 090 | [student register import with line errors](090-student-register-import-with-line-errors.jpg) |
-| 091 | [student register import ready](091-student-register-import-ready.jpg) |
-| 092 | [enrolment with cohort and eligibility](092-enrolment-with-cohort-and-eligibility.jpg) |
-| 093 | [live monitor campus admin scope text row actions](093-live-monitor-campus-admin-scope-text-row-actions.jpg) |
-| 094 | [staff accounts students hidden by default](094-staff-accounts-students-hidden-by-default.jpg) |
-| 095 | [schedule a new examination](095-schedule-a-new-examination.jpg) |
-| 096 | [new question missing list](096-new-question-missing-list.jpg) |
-| 097 | [exam detail examiner](097-exam-detail-examiner.jpg) |
-| 098 | [institutions read only for examiner](098-institutions-read-only-for-examiner.jpg) |
-| 099 | [no access page examiner opens users](099-no-access-page-examiner-opens-users.jpg) |
-| 100 | [control centre controller](100-control-centre-controller.jpg) |
-| 101 | [end examination dialog](101-end-examination-dialog.jpg) |
-| 102 | [monitor for an exam that does not exist](102-monitor-for-an-exam-that-does-not-exist.jpg) |
-| 103 | [no access page student opens question bank](103-no-access-page-student-opens-question-bank.jpg) |
-| 104 | [exam schedule with live exam](104-exam-schedule-with-live-exam.jpg) |
-| 105 | [exam entry instructions](105-exam-entry-instructions.jpg) |
-| 106 | [question 1 nothing answered](106-question-1-nothing-answered.jpg) |
-| 107 | [answer saved confirmation](107-answer-saved-confirmation.jpg) |
-| 108 | [answer cleared with undo](108-answer-cleared-with-undo.jpg) |
-| 109 | [marked for review](109-marked-for-review.jpg) |
-| 110 | [skipped a question palette states](110-skipped-a-question-palette-states.jpg) |
-| 111 | [offline answer kept on this device not confirmed](111-offline-answer-kept-on-this-device-not-confirmed.jpg) |
-| 112 | [review your answers](112-review-your-answers.jpg) |
-| 113 | [submit examination confirmation](113-submit-examination-confirmation.jpg) |
-| 114 | [student schedule on phone](114-student-schedule-on-phone.jpg) |
-| 115 | [exam entry on phone](115-exam-entry-on-phone.jpg) |
-| 116 | [exam player on phone](116-exam-player-on-phone.jpg) |
-| 117 | [question palette sheet on phone](117-question-palette-sheet-on-phone.jpg) |
+| 083 | [new staff account dialog](083-new-staff-account-dialog.jpg) |
+| 084 | [assign lecturer dialog](084-assign-lecturer-dialog.jpg) |
+| 085 | [profile phone validation](085-profile-phone-validation.jpg) |
+| 086 | [add student dialog](086-add-student-dialog.jpg) |
+| 087 | [student register import with line errors](087-student-register-import-with-line-errors.jpg) |
+| 088 | [enrolment with cohort and eligibility](088-enrolment-with-cohort-and-eligibility.jpg) |
+| 089 | [live monitor for campus admin](089-live-monitor-for-campus-admin.jpg) |
+| 090 | [schedule a new examination dialog](090-schedule-a-new-examination-dialog.jpg) |
+| 091 | [new question dialog](091-new-question-dialog.jpg) |
+| 092 | [exam detail](092-exam-detail.jpg) |
+| 093 | [no access page](093-no-access-page.jpg) |
+| 094 | [control centre](094-control-centre.jpg) |
+| 095 | [end examination dialog](095-end-examination-dialog.jpg) |
+| 096 | [student exam schedule with live exam](096-student-exam-schedule-with-live-exam.jpg) |
+| 097 | [exam entry instructions](097-exam-entry-instructions.jpg) |
+| 098 | [question 1](098-question-1.jpg) |
+| 099 | [answer saved](099-answer-saved.jpg) |
+| 100 | [answer cleared with undo](100-answer-cleared-with-undo.jpg) |
+| 101 | [marked for review](101-marked-for-review.jpg) |
+| 102 | [skipped a question palette states](102-skipped-a-question-palette-states.jpg) |
+| 103 | [offline answer kept on this device](103-offline-answer-kept-on-this-device.jpg) |
+| 104 | [review your answers](104-review-your-answers.jpg) |
+| 105 | [submit examination confirmation](105-submit-examination-confirmation.jpg) |
+| 106 | [student schedule on phone](106-student-schedule-on-phone.jpg) |
+| 107 | [exam entry on phone](107-exam-entry-on-phone.jpg) |
+| 108 | [exam player on phone](108-exam-player-on-phone.jpg) |
+| 109 | [question palette sheet on phone](109-question-palette-sheet-on-phone.jpg) |
