@@ -32,7 +32,14 @@ let restarts = 0;
 function startApi() {
   const env = { ...process.env, NODE_ENV: API_NODE_ENV, API_PORT: String(API_PORT), API_HOST: '127.0.0.1' };
   delete env.PORT; // the API prefers PORT over API_PORT; PORT belongs to the public Next server
-  api = spawn(process.execPath, [path.join(root, 'apps/api/dist/main.js')], { cwd: path.join(root, 'apps/api'), env, stdio: 'inherit' });
+  // The host's process manager may preload a hook (NODE_OPTIONS --require …) that redirects server.listen() to its own socket.
+  // That is right for the public Next server but would hide the API from 127.0.0.1:API_PORT, so the child must not inherit it.
+  delete env.NODE_OPTIONS;
+  for (const k of Object.keys(env)) if (/^(LSNODE|LSAPI|PASSENGER)_/.test(k)) delete env[k];
+  api = spawn(process.execPath, [path.join(root, 'apps/api/dist/main.js')], { cwd: path.join(root, 'apps/api'), env, stdio: ['ignore', 'pipe', 'pipe'] });
+  // Forward through console so the host's log collector (which records console output, not raw child stdio) captures it.
+  api.stdout.on('data', (d) => console.log(`[api] ${String(d).trimEnd()}`));
+  api.stderr.on('data', (d) => console.error(`[api] ${String(d).trimEnd()}`));
   const startedAt = Date.now();
   api.on('exit', (code, signal) => {
     if (stopping) return;
@@ -60,5 +67,6 @@ function shutdown() {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
+console.error(`[launcher] node ${process.version}; host hooks: NODE_OPTIONS=${process.env.NODE_OPTIONS ?? '(none)'}; env keys: ${Object.keys(process.env).filter((k) => /^(LS|PASSENGER|NODE_|PORT)/.test(k)).join(',')}`);
 startApi();
 startWeb().catch((e) => { console.error('[launcher] web failed to start', e); shutdown(); process.exitCode = 1; });
