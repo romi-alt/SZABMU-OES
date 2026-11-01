@@ -45,7 +45,8 @@
    export DATABASE_URL='postgresql://…neon.tech/neondb?sslmode=require' REDIS_URL='rediss://…upstash.io:6379'
    npm run build:api
    npm run db:migrate
-   NODE_ENV=development node apps/api/dist/seed/seed.js --reset   # SYNTHETIC data; slow over the internet (minutes)
+   NODE_ENV=development DB_TX_TIMEOUT_MS=600000 DB_TX_MAX_WAIT_MS=60000 node apps/api/dist/seed/seed.js --reset
+   # SYNTHETIC data. Over a slow/remote link the seed's big transactions exceed even 30 s (P2028), hence the long limits here.
    ```
 4. **Hostinger website:** generated a free subdomain (`hosting_domains_generate-free-subdomain`) and created the website on order `1009002313`.
 5. **Environment variables** (hPanel → Websites → the site → Node.js → Environment variables, or `hosting_nodejs_replace-environment-variables`;
@@ -96,20 +97,20 @@
 Free-tier limits to watch: Upstash 500k commands/month (BullMQ polling consumes some continuously); Neon free compute auto-suspends when idle,
 so the first request after a quiet period is slower.
 
-## Known issue: Redis unreachable from Hostinger (health = `degraded`)
+## Redis from Hostinger (intermittent)
 
-From the Hostinger server every Redis connection to Upstash (`rediss://…:6379`) ends in `ECONNRESET`, while the same URL works from a
-workstation and PostgreSQL (5432) works from Hostinger. Most likely Hostinger's shared web servers block outbound 6379 (Upstash offers no
-other TCP port; 443 is HTTP/REST only). Effect, because the API degrades gracefully:
+Right after the first deploys every Redis connection to Upstash ended in `ECONNRESET` and `/api/health` reported `degraded`; about
+20 minutes later it reported `{"status":"ok","db":true,"redis":true}` with no change on our side. So outbound 6379 is **not** blocked —
+the resets were transient (the Upstash database is in Singapore, the web server in Boston). If `redis:false` returns, the API degrades:
 
-| Works | Does not work |
+| Keeps working | Needs Redis |
 |---|---|
-| sign-in, dashboards, question bank, papers, scheduling, sitting an exam, answer saves, submit | password-reset codes (`rt:*` keys), student self-registration (`reg:*`) |
-| grading (database sweeper recovers when the queue is down) | login rate limiting is not enforced |
+| sign-in, dashboards, question bank, papers, scheduling, sitting an exam, answer saves, submit | password-reset codes (`rt:*`), student self-registration (`reg:*`) |
+| grading (database sweeper recovers when the queue is down) | login rate limiting |
 | live monitor (falls back to polling) | live push (SSE) via Redis pub/sub |
 
-Fix options: (1) finish the hosting track's Redis removal (PR #3, ported onto the exam-control backend) — the project's own plan;
-(2) ask Hostinger support to allow outbound TCP 6379 to `*.upstash.io`; (3) a Redis host reachable on an allowed port.
+Improve it by recreating the Upstash database in `us-east-1` (free tier allows one database: delete the Singapore one first), or remove
+the dependency (PR #3, after porting the exam-control services).
 
 ## Lessons (things that cost time)
 
