@@ -1,13 +1,11 @@
 # 09 — Remaining issues
 
-28 NOT_STARTED, 5 REQUIRES_POLICY_DECISION, 3 FIXED_NOT_FULLY_TESTED.
+23 NOT_STARTED, 5 REQUIRES_POLICY_DECISION, 5 FIXED_NOT_FULLY_TESTED.
 
 - **UI-011** (P2) Global — Muted text token (--ink-3 #8A7A77) — FIXED_NOT_FULLY_TESTED. Not re-measured on every tinted background; axe not re-run across all 197 loads
 - **UI-013** (P2) Dialogs — Modal component — FIXED_NOT_FULLY_TESTED. No dedicated Modal unit spec
 - **UI-015** (P2) Question actions — Clear response — NOT_STARTED. Open: see audit register UI-015
 - **UI-016** (P2) Question actions — Save & next / Skip / Next — NOT_STARTED. Open: see audit register UI-016
-- **UI-018** (P2) Permission handling — Page shell — NOT_STARTED. Open: see audit register UI-018
-- **UI-019** (P2) Action visibility — Buttons shown without permission — NOT_STARTED. Open: see audit register UI-019
 - **UI-020** (P2) Live monitor — Subtitle copy — NOT_STARTED. Open: see audit register UI-020
 - **UI-021** (P2) Primary navigation — Labels vs page titles — NOT_STARTED. Open: see audit register UI-021
 - **UI-022** (P2) Navigation — Routes reachable but not in the menu — REQUIRES_POLICY_DECISION. Whether hidden-but-reachable routes should be added to menus or blocked is a product/permissions decision (docs/route-permissions.md).
@@ -16,9 +14,8 @@
 - **UI-026** (P2) Forms — Create/Save buttons — NOT_STARTED. Open: see audit register UI-026
 - **UI-027** (P2) Paper builder — Question picker — NOT_STARTED. Open: see audit register UI-027
 - **UI-028** (P2) Search / filter / pagination — List state — NOT_STARTED. Open: see audit register UI-028
-- **UI-029** (P2) Row actions — "+ Time", "End", "Report" — NOT_STARTED. Open: see audit register UI-029
-- **UI-030** (P2) Control centre — Dialog confirm labels — NOT_STARTED. Open: see audit register UI-030
-- **UI-031** (P2) Notifications — Notification panel — NOT_STARTED. Panel density/grouping NOT done; routing part is verified
+- **UI-030** (P2) Control centre — Dialog confirm labels — FIXED_NOT_FULLY_TESTED. No spec asserts the new wording
+- **UI-031** (P2) Notifications — Notification panel — FIXED_NOT_FULLY_TESTED. No per-event grouping or pagination; API still returns the latest 100
 - **UI-033** (P2) Loading states — Async/Loading — NOT_STARTED. Open: see audit register UI-033
 - **UI-034** (P2) Student list — Row actions / detail — REQUIRES_POLICY_DECISION. Adds a new student detail screen — new feature, needs scope approval.
 - **UI-035** (P2) Lecturer portal — Menu/dashboard — REQUIRES_POLICY_DECISION. Lecturer portal content is a product decision.
@@ -39,4 +36,4 @@
 - **UI-051** (P2) Eligibility feedback — Empty state for an excluded candidate — NOT_STARTED. Open: see audit register UI-051
 - **UI-052** (P3) Long answer options — Option cards on phones — NOT_STARTED. Open: see audit register UI-052
 
-Suggested next batch: central route-permission guard + `can()`-gated buttons (UI-018/019), destructive-dialog labels (UI-029/030), notification panel density (UI-031), then the P3 mobile/tokens set.
+Suggested next batch: UI-015/016 (clear-response and question-action wording), UI-020/021 labels, UI-024/026/027/028 forms and list state, then the P3 mobile/tokens set.

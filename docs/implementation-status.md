@@ -217,6 +217,6 @@ No database change; the shared development database was not touched (12,023 user
 **Not done / not claimed:** no real-device testing (desktop Chromium with a phone viewport and touch emulation only); no accessibility audit (axe) of the new drawer and sheet beyond roles/ARIA attributes and keyboard Escape; the drawer does not trap focus; landscape phone not checked; tables on tablets still scroll horizontally when they are wider than the screen.
 
 ### Checkpoint — UI/UX remediation (local commits, not pushed)
-- Done: all 8 P1 audit issues FIXED_VERIFIED plus shared-cause P2 items (see `docs/ui-ux-remediation/11-issue-tracker.md`: 16 verified, 3 not fully tested, 28 not started, 5 need a policy decision).
+- Done: all 8 P1 audit issues FIXED_VERIFIED plus shared-cause P2 items (see `docs/ui-ux-remediation/11-issue-tracker.md`: 19 verified, 5 not fully tested, 23 not started, 5 need a policy decision).
 - Gates on HEAD: lint 0; typecheck clean; builds OK; shared 52/52; API 260/260; Playwright 70/70; fault 17 passed/1 skipped.
-- Next action: route-permission guard + permission-gated buttons (UI-018/019), destructive-dialog labels (UI-029/030), notification panel (UI-031); then P3. Pushing needs separate user authorisation.
+- Next action: UI-015/016, UI-020/021, UI-024/026/027/028, then P3. Pushing later batches needs authorisation.
