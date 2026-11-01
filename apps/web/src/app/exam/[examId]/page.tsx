@@ -1,5 +1,5 @@
 'use client';
-import Image from 'next/image';
+import { BrandLogo } from '@/brand';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -85,7 +85,7 @@ export default function ExamPage() {
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return <div style={{ maxWidth: 760, margin: '0 auto', padding: '32px 20px' }}><div style={{ background: '#fff', padding: 8, width: 260, borderRadius: 6, border: '1px solid var(--rose)', marginBottom: 24 }}><Image src="/logo.png" alt="SZABMU" width={398} height={100} /></div>{children}</div>;
+  return <div style={{ maxWidth: 760, margin: '0 auto', padding: '32px 20px' }}><BrandLogo plate className="shell-logo" />{children}</div>;
 }
 
 function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onTakeover }: { engine: ExamEngine; questions: Q[]; exam: any; attemptId: string; clientId: string; onSubmitted: (r: Receipt) => void; onTakeover: () => void }) {
@@ -163,7 +163,7 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
   return (
     <div className="exam">
       <header className="exam-bar">
-        <div className="exam-logo"><Image src="/logo.png" alt="SZABMU" width={398} height={100} style={{ width: '100%', height: 'auto' }} /></div>
+        <BrandLogo className="exam-logo" />
         <div className="grow exam-title"><div className="title">{exam.title}</div><div className="small muted">{questions.length} questions · {exam.totalMarks} marks</div></div>
         <div className="small muted exam-answered" aria-live="polite">Answered <b className="mono" style={{ color: 'var(--ink)' }}>{counts.answered}</b> / {questions.length}</div>
         <div className={`exam-clock ${low ? 'low' : ''}`} role="timer" aria-label="Time remaining"><div className="k">Remaining</div><div className="v" data-testid="remaining">{clock(remaining)}</div></div>

@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import Image from 'next/image';
+import { BrandLogo } from '@/brand';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMe } from '@/session';
@@ -46,7 +46,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     <div className="shell">
       <aside className={`sidebar ${navOpen ? 'open' : ''}`} id="primary-nav" aria-label="Site navigation">
         <button className="btn btn-sm nav-close" onClick={() => { setNavOpen(false); menuBtn.current?.focus(); }} aria-label="Close menu">Close ✕</button>
-        <div className="brand"><Image src="/logo.png" alt="Shaheed Zulfiqar Ali Bhutto Medical University, Islamabad" width={398} height={100} priority /></div>
+        <BrandLogo plate priority className="brand" />
         <div className="brand-sub">Examination Portal</div>
         <nav className="nav" aria-label="Primary"><div className="nav-label">{nav.label}</div>
           {nav.items.map((i) => <Link key={i.href} href={i.href} aria-current={path === i.href || (i.href !== '/dashboard' && path.startsWith(i.href)) ? 'page' : undefined}>{i.label}</Link>)}
