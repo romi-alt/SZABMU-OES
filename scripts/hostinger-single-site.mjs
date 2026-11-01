@@ -42,10 +42,28 @@ async function startWeb() {
 
 const isApi = (url = '') => url === '/api' || url.startsWith('/api/') || url.startsWith('/api?');
 
+/**
+ * Two portals on one process: PORTAL_HOSTS maps host names to portals, e.g.
+ *   PORTAL_HOSTS="oes.szabmu.site=student,dashboard.szabmu.site=staff"
+ * Every request's X-OES-Portal header is overwritten here (a client-sent value is always discarded), so the API's PORTAL_ENFORCE
+ * and the web proxy's page rules see the portal of the host name the browser actually used. Unknown hosts get no portal.
+ */
+const PORTAL_HOSTS = new Map(
+  (process.env.PORTAL_HOSTS ?? '').split(',').map((s) => s.trim().toLowerCase().split('=')).filter(([h, p]) => h && (p === 'student' || p === 'staff')),
+);
+function stampPortal(req) {
+  delete req.headers['x-oes-portal'];
+  // Host only — X-Forwarded-Host can be supplied by the client and would let it pick a portal.
+  const host = String(req.headers.host ?? '').trim().toLowerCase().replace(/:\d+$/, '');
+  const portal = PORTAL_HOSTS.get(host);
+  if (portal) req.headers['x-oes-portal'] = portal;
+}
+
 async function main() {
   const api = await startApi();
+  if (PORTAL_HOSTS.size) process.env.PORTAL_FROM_HEADER = 'true';
   const web = await startWeb();
-  const server = createServer((req, res) => (isApi(req.url) ? api.route(req, res) : web(req, res)));
+  const server = createServer((req, res) => { stampPortal(req); return isApi(req.url) ? api.route(req, res) : web(req, res); });
   server.listen(PORT, () => console.error(`[launcher] serving web + API on :${PORT} (node ${process.version})`));
   const shutdown = () => { server.close(); api.app.close().finally(() => process.exit(0)); setTimeout(() => process.exit(0), 8000).unref(); };
   process.on('SIGTERM', shutdown);
