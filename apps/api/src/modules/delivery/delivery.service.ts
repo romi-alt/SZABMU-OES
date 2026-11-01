@@ -75,7 +75,7 @@ export class DeliveryService {
         return {
           examId: c.examId, code: c.exam.code, title: c.exam.title, course: c.exam.course, status: c.exam.status, opensAt: c.exam.opensAt, closesAt: c.exam.closesAt,
           durationMin: c.exam.durationMin + c.extraTimeMin, totalMarks: c.exam.totalMarks, questionCount: c.exam._count.questions, instructions: c.exam.instructions, negativeMarking: c.exam.negativeMarking,
-          attempt: a && { id: a.id, status: a.status, receiptCode: a.receiptCode, submittedAt: a.submittedAt }, canStart, timingPolicy: c.exam.timingPolicy, suspended: !!a?.suspendedAt,
+          attempt: a && { id: a.id, status: a.status, receiptCode: a.receiptCode, submittedAt: a.submittedAt, deadlineAt: a.deadlineAt }, canStart, timingPolicy: c.exam.timingPolicy, controlMode: c.exam.controlMode, suspended: !!a?.suspendedAt,
           admission: c.exam.status === 'ADMISSION_OPEN' ? 'OPEN' : c.exam.admissionClosedAt ? 'CLOSED' : undefined,
         };
       }),

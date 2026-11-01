@@ -19,22 +19,5 @@ export interface ExamListItem {
   _count: { questions: number; candidates: number; attempts: number };
 }
 
-export interface MyExamAttempt { id: string; status: string; receiptCode: string | null; submittedAt: ISODate | null }
-/** One row of GET /me/exams */
-export interface MyExam {
-  examId: string; code: string; title: string; status: string; opensAt: ISODate; closesAt: ISODate; durationMin: number;
-  course: CourseRef & { semester: number };
-  totalMarks: number; questionCount: number; instructions: string | null; negativeMarking: number;
-  attempt: MyExamAttempt | null; canStart: boolean;
-}
-export interface MyExamsDto { serverNow: ISODate; items: MyExam[] }
-
-/** GET /dashboard: a flat bag of per-role counters plus a few role-specific extras. */
-export interface DashboardDto {
-  [counter: string]: number | null | undefined | Record<string, number> | { title: string; opensAt: ISODate } | null;
-  next?: { title: string; opensAt: ISODate } | null;
-  byStatus?: Record<string, number>;
-}
-
 export interface ProgramDto { id: string; code?: string; name?: string; courses: { id: string; code: string; title: string }[] }
 export interface InstitutionRef { id: string; code: string; name: string }

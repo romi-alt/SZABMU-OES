@@ -118,7 +118,7 @@ export class ResultsService {
     if (open) throw conflict('OPEN_INCIDENTS', `${open} incident(s) remain unresolved; resolve them before approval`, { open });
     await this.prisma.resultBatch.update({ where: { examId }, data: { status: 'EXAMINER_APPROVED', examinerApprovedBy: u.id, examinerApprovedAt: new Date() } });
     await this.audit.log({ actor: u, action: 'results.examiner_approve', entity: 'exam', entityId: examId, ip });
-    await this.notifications.notifyRole('CCE', 'Results awaiting publication', `${exam.code} — ${exam.title}`, LINKS.results);
+    await this.notifications.notifyRole('CCE', 'Results awaiting publication', `${exam.code} — ${exam.title}`, LINKS.exam(exam.id));
     return { status: 'EXAMINER_APPROVED' };
   }
 

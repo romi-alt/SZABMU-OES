@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ApiError } from './api';
 
@@ -23,7 +23,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 export const errMsg = (e: unknown) => (e instanceof ApiError ? (e.body?.issues?.length ? `${e.message}: ${e.body.issues.map((i: any) => `${i.path} ${i.message}`).join('; ')}` : e.message) : (e as Error)?.message ?? 'Something went wrong');
 
 /* ── primitives ── */
+/** Every page names itself in the browser tab/history and to screen readers (WCAG 2.4.2): "<page> · SZABMU OES". */
 export function PageHead({ title, sub, children }: { title: string; sub?: ReactNode; children?: ReactNode }) {
+  useEffect(() => { document.title = `${title} · SZABMU OES`; }, [title]);
   return <div className="page-head"><div><h1>{title}</h1>{sub && <p>{sub}</p>}</div><div className="row wrap">{children}</div></div>;
 }
 export function Card({ title, actions, children, flush }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; flush?: boolean }) {
@@ -72,51 +74,50 @@ export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => v
     </div></div>
   );
 }
-export function Async<T>({ state, children }: { state: { data: T | null; error: unknown; loading: boolean; reload?: () => void }; children: (d: NonNullable<T>) => ReactNode }) {
+/**
+ * Renders `children(data)` only when there is data. It never calls `children(null)`: while a request is pending it shows the skeleton,
+ * and when nothing has been requested (`idle`) or the response carried no payload it shows `idle` (default: a plain "Nothing to show yet").
+ * Generic in the payload type so callers that pass `useGet<T>()` get a typed `data` in `children`.
+ */
+export function Async<T = any>({ state, children, idle }: { state: { data: T | null; error: unknown; loading: boolean; idle?: boolean; reload?: () => void }; children: (d: NonNullable<T>) => ReactNode; idle?: ReactNode }) {
   if (state.error) return <ErrorBox error={state.error} onRetry={state.reload} />;
-  if (state.data === null || state.data === undefined) return state.loading ? <Loading /> : null;   // keep showing existing data while a reload is in flight
+  if (state.loading && state.data == null) return <Loading />;
+  if (state.data == null) return <>{idle ?? <Empty>Nothing to show yet.</Empty>}</>;
   return <>{children(state.data as NonNullable<T>)}</>;
 }
 
 export interface Col<T> { h: string; cell: (r: T) => ReactNode; num?: boolean; cls?: string }
 export function Table<T>({ cols, rows, empty = 'Nothing to show.', rowKey }: { cols: Col<T>[]; rows: T[]; empty?: string; rowKey: (r: T) => string }) {
+  if (!Array.isArray(rows)) return <Notice tone="bad">The server returned this list in an unexpected format, so it cannot be shown. Try again; if it keeps happening, tell the examination office.</Notice>;
   if (!rows.length) return <Empty>{empty}</Empty>;
   return (
-    <div className="tbl-wrap"><table className="tbl"><thead><tr>{cols.map((c) => <th key={c.h} className={c.num ? 'num' : ''}>{c.h}</th>)}</tr></thead>
+    <div className="tbl-wrap"><table className="tbl"><thead><tr>{cols.map((c) => <th key={c.h || 'actions'} scope="col" className={c.num ? 'num' : ''}>{c.h || <span className="sr-only">Actions</span>}</th>)}</tr></thead>
       <tbody>{rows.map((r) => <tr key={rowKey(r)}>{cols.map((c) => <td key={c.h} data-label={c.h} className={`${c.num ? 'num' : ''} ${c.cls ?? ''}`}>{c.cell(r)}</td>)}</tr>)}</tbody></table></div>
   );
 }
 export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: ReactNode }) {
-  return <label className="f">{label}{children}{hint && <span className="hint">{hint}</span>}{error && <span className="err-text">{error}</span>}</label>;
+  return <label className="f">{label}{children}{hint && <span className="hint">{hint}</span>}{error && <span className="err-text" role="alert">{error}</span>}</label>;
 }
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-const modalStack: symbol[] = [];   // only the topmost dialog reacts to Escape / Tab
+/**
+ * Shared dialog. Focus moves into the dialog when it opens, Tab/Shift+Tab stay inside it, Escape and the backdrop close it, and focus returns to
+ * the control that opened it (WCAG 2.4.3). The visible heading names the dialog for assistive technology.
+ */
 export function Modal({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
-  const box = useRef<HTMLDivElement>(null); const closeRef = useRef(onClose); closeRef.current = onClose;
-  const titleId = useId();
-  useEffect(() => {
-    const me = Symbol('modal'); modalStack.push(me);
-    const opener = document.activeElement as HTMLElement | null;
-    const el = box.current!;
-    // initial focus: first form control in the body, otherwise the first focusable element (the close button)
-    (el.querySelector<HTMLElement>('.modal-b input, .modal-b select, .modal-b textarea') ?? el.querySelector<HTMLElement>(FOCUSABLE) ?? el).focus();
-    const h = (e: KeyboardEvent) => {
-      if (modalStack[modalStack.length - 1] !== me) return;
-      if (e.key === 'Escape') { e.stopPropagation(); closeRef.current(); return; }
-      if (e.key !== 'Tab') return;
-      const f = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((n) => n.offsetParent !== null);
-      if (!f.length) { e.preventDefault(); el.focus(); return; }
-      const first = f[0]!, last = f[f.length - 1]!, a = document.activeElement;
-      if (e.shiftKey && (a === first || !el.contains(a))) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && (a === last || !el.contains(a))) { e.preventDefault(); first.focus(); }
-    };
-    document.addEventListener('keydown', h, true);
-    return () => { document.removeEventListener('keydown', h, true); modalStack.splice(modalStack.indexOf(me), 1); if (opener?.isConnected) opener.focus(); };   // restore focus to whatever opened the dialog
-  }, []);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { const opener = document.activeElement as HTMLElement | null; ref.current?.focus(); return () => { if (opener && document.contains(opener)) opener.focus(); }; }, []);
+  useEffect(() => { const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose(); window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [onClose]);
+  const trap = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Tab' || !ref.current) return;
+    const f = [...ref.current.querySelectorAll<HTMLElement>('button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter((x) => x.offsetParent !== null);
+    if (!f.length) { e.preventDefault(); return; }
+    const first = f[0]!, last = f[f.length - 1]!;
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === ref.current)) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" ref={box} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
-        <div className="modal-h"><h2 id={titleId}>{title}</h2><button className="btn btn-sm" onClick={onClose} aria-label="Close">✕</button></div>
+      <div className="modal" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref} onKeyDown={trap}>
+        <div className="modal-h"><h2>{title}</h2><button className="btn btn-sm" onClick={onClose} aria-label="Dismiss dialog">✕</button></div>
         <div className="modal-b">{children}</div>{footer && <div className="modal-f">{footer}</div>}
       </div>
     </div>

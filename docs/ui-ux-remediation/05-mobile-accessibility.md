@@ -1,0 +1,4 @@
+# 05 — Accessibility and responsive
+Done: skip link + focusable `main` (UI-009); per-page `<title>` (UI-010); `--ink-3` darkened to #665855 (UI-011); input border #857571 ≥ 3:1 (UI-047); modal focus trap/restore (UI-013); table `scope="col"` + named action column (UI-043); `Field` errors announced (`role=alert`); palette glyphs/labels (UI-012/014); phone palette sheet as dialog (UI-017). Responsive specs run at phone/tablet/desktop widths.
+
+**Not claimed:** WCAG conformance. axe-core was run in the audit, not re-run across all 197 page loads after the fixes; no screen-reader testing; contrast measured on white only. Remaining: UI-036 (sticky exam header on phones — not separately tested), UI-037 (aria-pressed on non-toggle chips), UI-044/045 (bell name, landmarks), UI-039/041/052 (mobile layout), UI-046 (tokens).
