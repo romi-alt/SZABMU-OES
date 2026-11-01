@@ -43,13 +43,14 @@ a { color: var(--maroon); } a:hover { color: var(--crimson); }
   /* off-canvas drawer: the nav is out of the document flow and out of the tab order until opened */
   .sidebar { position: fixed; z-index: 40; inset: 0 auto 0 0; width: min(300px, 86vw); height: 100dvh; transform: translateX(-100%); visibility: hidden; transition: transform .18s ease, visibility 0s .18s; }
   .nav-open .sidebar { transform: none; visibility: visible; transition: transform .18s ease; }
-  .nav-scrim { display: none; }
   .nav-open .nav-scrim { display: block; position: fixed; inset: 0; z-index: 30; background: rgba(36, 23, 22, 0.55); }
-  .menu-btn { display: inline-flex; } .user-name { display: none; } .topbar { gap: 8px; flex-wrap: wrap; }
+  .shell .menu-btn { display: inline-flex; } .user-name { display: none; } .topbar { gap: 8px; flex-wrap: wrap; }
   .content { padding: 16px; } .topbar { padding: 10px 16px; }
   .bell-panel { position: fixed !important; left: 8px; right: 8px; top: 56px !important; width: auto !important; }
 }
 .menu-btn { display: none; }
+/* The scrim is an element inside the .shell grid: it must be out of the layout everywhere except while the phone drawer is open. */
+.nav-scrim { display: none; }
 .skip-link { position: absolute; left: -9999px; top: 8px; z-index: 100; background: var(--white); padding: 8px 12px; border: 2px solid var(--crimson); border-radius: 6px; } .skip-link:focus { left: 8px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .bell { position: relative; } .bell-panel { position: absolute; right: 0; top: 36px; width: 360px; max-width: calc(100vw - 16px); max-height: 420px; overflow: auto; z-index: 20; box-shadow: 0 6px 20px rgba(69,22,25,0.15); }
