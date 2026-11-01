@@ -20,10 +20,10 @@ describe('portal binding', () => {
 
 describe('page routes per portal', () => {
   it('serves candidate pages only on the student portal and staff pages only on the staff portal', () => {
-    for (const p of ['/schedule', '/results', '/performance', '/exam/abc', '/certificate/1']) {
+    for (const p of ['/schedule', '/results', '/performance', '/exam/abc', '/certificate/1', '/register']) {
       expect(isPagePathAllowedOnPortal(p, 'student')).toBe(true); expect(isPagePathAllowedOnPortal(p, 'staff')).toBe(false);
     }
-    for (const p of ['/questions', '/exams', '/exams/abc/control', '/students', '/enrolment', '/assignments', '/users', '/institutions', '/programs', '/monitor/x', '/incidents', '/audit']) {
+    for (const p of ['/questions', '/exams', '/exams/abc/control', '/students', '/enrolment', '/roster', '/assignments', '/users', '/institutions', '/programs', '/monitor/x', '/incidents', '/audit']) {
       expect(isPagePathAllowedOnPortal(p, 'staff')).toBe(true); expect(isPagePathAllowedOnPortal(p, 'student')).toBe(false);
     }
   });
