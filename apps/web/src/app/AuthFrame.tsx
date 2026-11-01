@@ -2,11 +2,13 @@
 import { useId, useState, type ReactNode } from 'react';
 import { BrandLogo } from '@/brand';
 import { Icon, type IconName } from '@/icons';
+import { usePortal } from '@/portal-context';
 
 export { Icon };
 
 /** Split layout: burgundy brand panel with the campus photo in a curved window on the left, one calm card (and an optional note) on the right. Phones get a slim brand header. */
 export function AuthFrame({ children, note }: { children: ReactNode; note?: ReactNode }) {
+  const staff = usePortal() === 'staff'; // the staff dashboard never mentions candidate-only things such as the exam schedule
   return (
     <div className="auth">
       <section className="auth-art">
@@ -18,7 +20,7 @@ export function AuthFrame({ children, note }: { children: ReactNode; note?: Reac
           <p className="auth-desc">A secure and role-based platform for managing and taking online examinations at SZABMU.</p>
           <ul className="auth-feats">
             <li><Icon name="laptop" size={30} /><span>Take Exams<br />Online</span></li>
-            <li><Icon name="calendar" size={30} /><span>Exam<br />Schedule</span></li>
+            {!staff && <li><Icon name="calendar" size={30} /><span>Exam<br />Schedule</span></li>}
             <li><Icon name="shieldCheck" size={30} /><span>Secure &amp;<br />Monitored</span></li>
           </ul>
         </div>
