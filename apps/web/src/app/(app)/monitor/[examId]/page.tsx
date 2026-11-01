@@ -32,8 +32,8 @@ export default function MonitorExam() {
               { h: 'Status', cell: (r: any) => <Status s={r.suspended ? 'SUSPENDED' : r.status} /> }, { h: 'Connection', cell: (r: any) => <Status s={r.connection} /> },
               { h: 'Answered', num: true, cell: (r: any) => r.attemptId ? r.answered : '—' }, { h: 'Deadline', cell: (r: any) => fmtTime(r.deadlineAt) }, { h: 'Flags', num: true, cell: (r: any) => r.integrityFlags || '' },
               { h: '', cell: (r: any) => <div className="row">
-                {can('invigilation.intervene') && r.status === 'IN_PROGRESS' && <><button className="btn btn-sm" onClick={() => setAct({ kind: 'extend', row: r })}>+ Time</button><button className="btn btn-sm btn-danger" onClick={() => setAct({ kind: 'force', row: r })}>End</button></>}
-                {can('incident.report') && <button className="btn btn-sm" onClick={() => setAct({ kind: 'incident', row: r })}>Report</button>}</div> },
+                {can('invigilation.intervene') && r.status === 'IN_PROGRESS' && <><button className="btn btn-sm" aria-label={`Add time for ${r.regNo}`} onClick={() => setAct({ kind: 'extend', row: r })}>Add time</button><button className="btn btn-sm btn-danger" aria-label={`End attempt for ${r.regNo}`} onClick={() => setAct({ kind: 'force', row: r })}>End attempt…</button></>}
+                {can('incident.report') && <button className="btn btn-sm" aria-label={`Report incident for ${r.regNo}`} onClick={() => setAct({ kind: 'incident', row: r })}>Report incident</button>}</div> },
             ]} />
             <div className="row between" style={{ padding: '8px 16px' }}><span className="small muted">Page {d.page} of {Math.max(1, Math.ceil(d.total / d.pageSize))} · {d.total} candidates</span><span className="row"><button className="btn btn-sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button><button className="btn btn-sm" disabled={page * d.pageSize >= d.total} onClick={() => setPage(page + 1)}>Next</button></span></div>
           </Card>

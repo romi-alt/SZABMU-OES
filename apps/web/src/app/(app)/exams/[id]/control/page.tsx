@@ -7,7 +7,7 @@ import { useMe } from '@/session';
 import { Async, Badge, Card, Field, Modal, PageHead, Stat, Status, Table, errMsg, useAction, useToast } from '@/ui';
 
 type Cmd = 'OPEN_ADMISSION' | 'CLOSE_ADMISSION' | 'START' | 'SUSPEND' | 'RESUME' | 'EXTEND' | 'CLOSE' | 'RECONCILE' | 'INITIATE_SCORING';
-const LABEL: Record<Cmd, string> = { OPEN_ADMISSION: 'Open admission', CLOSE_ADMISSION: 'Close admission', START: 'Start examination', SUSPEND: 'Suspend…', RESUME: 'Resume…', EXTEND: 'Extend time…', CLOSE: 'Close examination…', RECONCILE: 'Reconcile attempts', INITIATE_SCORING: 'Initiate scoring' };
+const LABEL: Record<Cmd, string> = { OPEN_ADMISSION: 'Open admission', CLOSE_ADMISSION: 'Stop new entries', START: 'Start examination', SUSPEND: 'Suspend…', RESUME: 'Resume…', EXTEND: 'Extend time…', CLOSE: 'End examination…', RECONCILE: 'Seal expired attempts', INITIATE_SCORING: 'Start scoring' };
 const SLUG: Record<Cmd, string> = { OPEN_ADMISSION: 'open-admission', CLOSE_ADMISSION: 'close-admission', START: 'start', SUSPEND: 'suspend', RESUME: 'resume', EXTEND: 'extend', CLOSE: 'close', RECONCILE: 'reconcile', INITIATE_SCORING: 'initiate-scoring' };
 const EXPLAIN: Partial<Record<Cmd, string>> = {
   OPEN_ADMISSION: 'Eligible candidates will be able to enter. No attempt deadline is changed.',
@@ -225,9 +225,9 @@ function CommandDialog({ kind, presetScope, d, s, selected, busy, onClose, send,
     footer = <>{cancel}<button className="btn btn-green" disabled={busy || !confirm || !prev || reason.trim().length < 10} data-testid="dlg-go" onClick={() => go('EXTEND', { ...target, minutes, reason, confirm, idempotencyKey: key.current })}>Apply extension</button></>;
   } else if (kind === 'CLOSE') {
     body = <div className="stack"><p style={{ margin: 0 }}>Admission closes. Candidates still working finish at their own deadlines, then the examination becomes <b>Closed</b>.</p>
-      <label className="row"><input type="checkbox" checked={force} onChange={(x) => setForce(x.target.checked)} data-testid="force-box" /> Force-close: seal every remaining attempt now ({s.totals.inProgress + s.totals.suspended} in progress)</label>
+      <label className="row"><input type="checkbox" checked={force} onChange={(x) => setForce(x.target.checked)} data-testid="force-box" /> Seal all attempts now: end every remaining attempt immediately ({s.totals.inProgress + s.totals.suspended} in progress)</label>
       {force && reasonField}</div>;
-    footer = <>{cancel}<button className="btn btn-danger" disabled={busy || (force && reason.trim().length < 10)} data-testid="dlg-go" onClick={() => go('CLOSE', { force, reason: force ? reason : undefined })}>{force ? 'Force-close' : 'Close'}</button></>;
+    footer = <>{cancel}<button className="btn btn-danger" disabled={busy || (force && reason.trim().length < 10)} data-testid="dlg-go" onClick={() => go('CLOSE', { force, reason: force ? reason : undefined })}>{force ? 'Seal all attempts and end examination' : 'End examination'}</button></>;
   } else if (kind === 'START') {
     body = <div className="stack"><p style={{ margin: 0 }}>{simple}</p>{err && extendWindow && <label className="row"><input type="checkbox" checked={confirm} onChange={(x) => setConfirm(x.target.checked)} /> Extend the examination window to fit the full duration</label>}</div>;
     footer = <>{cancel}<button className="btn btn-green" disabled={busy || (extendWindow && !confirm)} data-testid="dlg-go" onClick={() => go('START', extendWindow ? { extendWindow: true } : {})}>Start examination</button></>;

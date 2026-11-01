@@ -67,7 +67,9 @@ test.describe('staff workflows', () => {
     expect(new Set(campus)).toEqual(new Set(['DMC-B']));
     const mine = page.locator('tbody tr', { hasText: 'DMC-B-2024-0003' });
     await expect(mine).toContainText('In progress');
-    await expect(mine.getByRole('button', { name: '+ Time' })).toBeVisible();
+    await expect(mine.getByRole('button', { name: 'Add time for DMC-B-2024-0003' })).toBeVisible();
+    await expect(mine.getByRole('button', { name: 'End attempt for DMC-B-2024-0003' })).toHaveText('End attempt…');
+    await expect(mine.getByRole('button', { name: 'Report incident for DMC-B-2024-0003' })).toBeVisible();
     await ctx.close();
   });
 
