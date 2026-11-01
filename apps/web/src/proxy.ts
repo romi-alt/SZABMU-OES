@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { isPagePathAllowedOnPortal, portalOf } from '@oes/shared';
 import { buildCsp } from './csp';
 
 /** Issues a fresh nonce per request and sets the Content-Security-Policy on the response (Next reads the nonce from the request header). */
@@ -8,6 +9,15 @@ export function proxy(request: NextRequest) {
   const headers = new Headers(request.headers);
   headers.set('x-nonce', nonce);
   headers.set('Content-Security-Policy', csp);
+  // Two-portal deployment: one build, two processes. With PORTAL=student|staff this process serves only that portal's pages; anything
+  // else is answered by the branded 404 (the API enforces the same boundary independently, so this is defence in depth and clearer UX).
+  const portal = portalOf(process.env.PORTAL);
+  if (portal && !isPagePathAllowedOnPortal(request.nextUrl.pathname, portal)) {
+    const url = request.nextUrl.clone(); url.pathname = '/__not-served-on-this-portal'; url.search = '';
+    const blocked = NextResponse.rewrite(url, { request: { headers } });
+    blocked.headers.set('Content-Security-Policy', csp);
+    return blocked;
+  }
   const res = NextResponse.next({ request: { headers } });
   res.headers.set('Content-Security-Policy', csp);
   return res;

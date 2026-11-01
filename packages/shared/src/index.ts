@@ -6,3 +6,4 @@ export * from './constants';
 export * from './links';
 export * from './exam-status';
 export * from './phone';
+export * from './portal';

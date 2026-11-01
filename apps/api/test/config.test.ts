@@ -4,7 +4,7 @@ import { loadConfig, productionProblems } from '../src/config';
 const GOOD: NodeJS.ProcessEnv = {
   NODE_ENV: 'production', DATABASE_URL: 'postgresql://oes:Xk9fQ2mV7pLr4TzWb8Nc@db.internal:5432/oes?sslmode=require', REDIS_URL: 'rediss://:h7Qm2Zp9Xv4Lk8Wt@cache.internal:6380',
   WEB_ORIGIN: 'https://exams.example-university.test', COOKIE_SECRET: 'q8R!vK2#mZp9$Lw4Xc7&Tb5Nj3^Hd6Fg', RECEIPT_SECRET: 'W3t@Yp8*Ke1%Ua6+Os9=Ij2~Gb5?Vn4Rz', TRUST_PROXY: 'true', DEV_EXPOSE_CODES: 'false',
-  MFA_ENFORCE: 'true', MFA_KEY: 'M7!kR2$vXq9&Lp4#Wz6^Tb8*Nc3@Hd5Y', METRICS_TOKEN: 'Zt4#nQ8@vLw2$Xb6&Hk9!Ps3^Rc7*Df5',
+  PORTAL_ENFORCE: 'true', MFA_ENFORCE: 'true', MFA_KEY: 'M7!kR2$vXq9&Lp4#Wz6^Tb8*Nc3@Hd5Y', METRICS_TOKEN: 'Zt4#nQ8@vLw2$Xb6&Hk9!Ps3^Rc7*Df5',
 };
 const with_ = (o: NodeJS.ProcessEnv) => ({ ...GOOD, ...o });
 
@@ -26,6 +26,7 @@ describe('production configuration validation', () => {
     ['dev MinIO credentials', { S3_ACCESS_KEY: 'oes_dev_minio', S3_SECRET_KEY: 'oes_dev_minio_secret' }, /development MinIO/],
     ['proxy trust missing', { TRUST_PROXY: 'false' }, /TRUST_PROXY=true is required/],
     ['MFA not enforced', { MFA_ENFORCE: 'false' }, /MFA_ENFORCE=true is required/],
+    ['portals not enforced', { PORTAL_ENFORCE: 'false' }, /PORTAL_ENFORCE=true is required/],
     ['raised sign-in rate limit (test-only knob)', { LOGIN_RATE_IP_MAX: '5000' }, /must be left at their defaults/],
     ['raised per-account sign-in limit (test-only knob)', { LOGIN_RATE_ID_MAX: '500' }, /must be left at their defaults/],
     ['MFA key missing', { MFA_KEY: undefined }, /MFA_KEY .* is required/],

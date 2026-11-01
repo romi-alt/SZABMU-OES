@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Req, Res } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { isValidPhone, PHONE_HINT } from '@oes/shared';
+import { isValidPhone, PHONE_HINT, PORTAL_HEADER, portalOf } from '@oes/shared';
 import { AllowMfaPending, AllowMustChange, CurrentUser, Perm, Public, SESSION_COOKIE, type AuthUser } from '../../common/auth';
 import { parse } from '../../common/validate';
 import { AuthService } from './auth.service';
@@ -22,7 +22,7 @@ export class AuthController {
   @Public() @Post('login') @HttpCode(200)
   async login(@Body() body: unknown, @Req() req: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
     const dto = parse(loginDto, body);
-    const r = await this.auth.login(dto.email, dto.password, req.ip, req.headers['user-agent']);
+    const r = await this.auth.login(dto.email, dto.password, req.ip, req.headers['user-agent'], portalOf(req.headers[PORTAL_HEADER]));
     reply.setCookie(SESSION_COOKIE, r.token, { httpOnly: true, sameSite: 'lax', secure: this.cfg.NODE_ENV === 'production', path: '/', expires: r.expiresAt });
     return { user: r.user };
   }
