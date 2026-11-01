@@ -99,6 +99,7 @@ const db = new pg.Client({ connectionString: DB }); await db.connect();
 console.log(`Provisioning ${N} synthetic candidates × ${M} questions…`);
 Object.assign(ctx, await provision(db));
 for (const c of ctx.cands) API_OF.set(c.token, APIS[c.i % APIS.length]);
+if (arg('exam-file')) (await import('node:fs')).writeFileSync(arg('exam-file'), JSON.stringify({ examId: ctx.exam, institutionId: ctx.inst, at: Date.now() }));   // lets tests/load/control-load.mjs attach to THIS exam
 console.log(`Running: ramp ${RAMP}s, think ≈${THINK}ms/question, max ${CONC} connections, ${APIS.length} API process(es)`);
 // host CPU sampler (whole machine, shared with PostgreSQL/Redis/APIs/this generator)
 import { readFileSync } from 'node:fs';

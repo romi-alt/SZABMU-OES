@@ -115,7 +115,8 @@ export default function ExamDetail() {
       <>
         <PageHead title={e.title} sub={<><span className="mono">{e.code}</span> · {e.course.code} {e.course.title} · {e.durationMin} min · {e.totalMarks} marks · pass {e.passPercent}%</>}>
           <Status s={e.status} />
-          {['LIVE', 'SCHEDULED'].includes(e.status) && can('invigilation.monitor') && <Link className="btn" href={`/monitor/${e.id}`}>Live monitor</Link>}
+          {['SCHEDULED', 'ADMISSION_OPEN', 'LIVE', 'SUSPENDED', 'CLOSING', 'CLOSED', 'SCORING'].includes(e.status) && can('invigilation.monitor') && <Link className="btn" href={`/monitor/${e.id}`}>Live monitor</Link>}
+          {!['DRAFT', 'PAPER_PENDING', 'CANCELLED'].includes(e.status) && can('exam.control.view') && <Link className="btn btn-primary" href={`/exams/${e.id}/control`} data-testid="open-control">Control centre</Link>}
           {can('exam.schedule') && e.status === 'APPROVED' && <button className="btn btn-green" disabled={busy} onClick={() => run(async () => { const r = await post(`/exams/${e.id}/schedule`); st.reload(); return r; }, 'Scheduled; roster built from eligible enrolments')}>Schedule &amp; build roster</button>}
           {can('exam.schedule') && ['DRAFT', 'PAPER_PENDING', 'APPROVED', 'SCHEDULED'].includes(e.status) && <button className="btn btn-danger" onClick={() => setCancel(true)}>Cancel exam</button>}
         </PageHead>

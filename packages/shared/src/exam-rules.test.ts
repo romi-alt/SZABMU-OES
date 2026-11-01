@@ -93,3 +93,16 @@ describe('password policy', () => {
     expect(checkPassword('Anila-Qureshi-2024!', ['anila']).ok).toBe(false);
   });
 });
+
+import { computeSyncDeadline } from './exam-rules';
+describe('computeSyncDeadline', () => {
+  const start = new Date('2026-05-01T09:00:00Z'); const end = new Date('2026-05-01T12:00:00Z');
+  it('is the official start plus duration, accommodation, extension and paused time', () => {
+    expect(computeSyncDeadline({ officialStartAt: start, durationMin: 60, extraTimeMin: 10, examExtensionMin: 5, pausedSeconds: 120, windowEndsAt: end }).toISOString()).toBe('2026-05-01T10:17:00.000Z');
+  });
+  it('is identical for every candidate regardless of when they joined, and capped by the window end', () => {
+    const a = computeSyncDeadline({ officialStartAt: start, durationMin: 60, extraTimeMin: 0, examExtensionMin: 0, pausedSeconds: 0, windowEndsAt: end });
+    expect(a.toISOString()).toBe('2026-05-01T10:00:00.000Z');
+    expect(computeSyncDeadline({ officialStartAt: start, durationMin: 600, extraTimeMin: 0, examExtensionMin: 0, pausedSeconds: 0, windowEndsAt: end })).toEqual(end);
+  });
+});

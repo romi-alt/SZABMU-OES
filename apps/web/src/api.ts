@@ -54,3 +54,18 @@ export const fmtDate = (d?: string | Date | null) => d ? new Intl.DateTimeFormat
 export const fmtTime = (d?: string | Date | null) => d ? new Intl.DateTimeFormat('en-GB', { timeZone: fmtTz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(d)) : '—';
 export const fmtDT = (d?: string | Date | null) => d ? `${fmtDate(d)} ${fmtTime(d)}` : '—';
 export const toLocalInput = (d: Date) => { const p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+
+/** Live event names the server pushes (outbox type names plus the stream's own `stats`, `state`, `resync`). */
+export const STREAM_EVENTS = ['stats', 'state', 'resync', 'ADMISSION_OPENED', 'ADMISSION_CLOSED', 'EXAM_STARTED', 'EXAM_SUSPENDED', 'EXAM_RESUMED', 'DEADLINE_EXTENDED', 'EXAM_CLOSING', 'EXAM_CLOSED', 'SCORING_STARTED', 'RESULTS_PENDING', 'POLICY_CHANGED'] as const;
+
+/**
+ * Server-Sent Events with the browser's built-in reconnect (it resends Last-Event-ID, so the server replays what was missed).
+ * Events are hints: callers must re-read authoritative state from the API rather than trust a payload. Returns a closer.
+ */
+export function openStream(path: string, on: { event: (name: string, data: any, id?: string) => void; status?: (connected: boolean) => void }): () => void {
+  if (typeof window === 'undefined' || typeof EventSource === 'undefined') return () => undefined;
+  const es = new EventSource(`/api${path}`, { withCredentials: true });
+  es.onopen = () => on.status?.(true); es.onerror = () => on.status?.(false);
+  for (const name of STREAM_EVENTS) es.addEventListener(name, (e) => { const m = e as MessageEvent; let d: any = null; try { d = JSON.parse(m.data); } catch { /* ignore */ } on.event(name, d, m.lastEventId || undefined); });
+  return () => es.close();
+}

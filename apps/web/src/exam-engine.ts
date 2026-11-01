@@ -26,6 +26,8 @@ export function paletteKind(q: QState): PaletteKind {
 export class ExamEngine {
   qs = new Map<string, QState>();
   online = true; phase: Phase = 'running';
+  /** Backend-declared state (from heartbeat): the server decides; the UI only reflects it. */
+  suspended = false; examStatus = ''; frozenRemainingMs: number | null = null; controlNote = '';
   deadlineMs: number; offsetMs = 0; lastSavedAt: number | null = null;
   private listeners = new Set<() => void>(); private inflight = new Set<string>(); private failures = 0; private timer: ReturnType<typeof setTimeout> | null = null;
   private hb: ReturnType<typeof setInterval>; private version = 0; private disposed = false;
@@ -49,7 +51,7 @@ export class ExamEngine {
   dispose() { this.disposed = true; clearInterval(this.hb); if (this.timer) clearTimeout(this.timer); window.removeEventListener('online', this.onWin); window.removeEventListener('offline', this.offWin); document.removeEventListener('visibilitychange', this.onVis); this.listeners.clear(); }
 
   nowServer() { return Date.now() + this.offsetMs; }
-  remainingMs() { return Math.max(0, this.deadlineMs - this.nowServer()); }
+  remainingMs() { return this.frozenRemainingMs !== null ? this.frozenRemainingMs : Math.max(0, this.deadlineMs - this.nowServer()); }
   private syncClock(serverNowIso?: string, deadlineIso?: string) {
     if (serverNowIso) this.offsetMs = new Date(serverNowIso).getTime() - Date.now();
     if (deadlineIso) this.deadlineMs = new Date(deadlineIso).getTime();
@@ -66,7 +68,7 @@ export class ExamEngine {
 
   // ── user intents ──
   private mutate(qid: string, patch: Partial<QState>) {
-    if (this.phase !== 'running') return;
+    if (this.phase !== 'running' || this.suspended) return;           // a suspended examination accepts no changes; confirmed answers stay as they are
     const q = this.get(qid);
     const next: QState = { ...q, ...patch, visited: true, rev: q.rev + 1, sync: 'pending' };
     this.qs.set(qid, next); this.persistBuffer(); this.emit(); this.pump();
@@ -80,7 +82,7 @@ export class ExamEngine {
 
   // ── sender ──
   private pump(immediate = false) {
-    if (this.disposed || this.phase !== 'running') return;
+    if (this.disposed || this.phase !== 'running' || this.suspended) return;       // nothing is sent while suspended; unconfirmed edits wait and flush after resume
     if (this.timer && !immediate) return;
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
     let sent = 0;
@@ -107,6 +109,7 @@ export class ExamEngine {
       const cur = this.get(qid);
       if (e instanceof ApiError) {
         if (e.code === 'STALE_REVISION' && e.body?.server) { const s = e.body.server as ServerAnswer; this.qs.set(qid, { selectedLabel: s.selectedLabel, state: s.state, marked: s.markedForReview, visited: s.visited, rev: s.revision, savedRev: s.revision, sync: 'saved' }); }
+        else if (e.code === 'EXAM_SUSPENDED') { this.applyControl({ suspended: true }); this.qs.set(qid, { ...cur, sync: 'pending' }); void this.heartbeat(); }
         else if (e.code === 'SESSION_SUPERSEDED') { this.phase = 'superseded'; this.qs.set(qid, { ...cur, sync: 'pending' }); }
         else if (e.code === 'TIME_EXPIRED' || e.code === 'ATTEMPT_CLOSED') { this.phase = 'closed'; this.qs.set(qid, { ...cur, sync: 'error' }); }
         else if (e.status === 400) { this.qs.set(qid, { ...cur, sync: 'error', savedRev: cur.rev }); }
@@ -131,13 +134,25 @@ export class ExamEngine {
   }
 
   // ── server coordination ──
-  async heartbeat(): Promise<{ status: string } | null> {
+  /** Applies the server's declared control state: suspension (with the clock policy), exam status; resumes sending when it clears. */
+  applyControl(r: { suspended?: boolean; suspensionPolicy?: string | null; examStatus?: string }) {
+    const was = this.suspended;
+    if (r.examStatus !== undefined) this.examStatus = r.examStatus;
+    this.suspended = !!r.suspended;
+    if (this.suspended && !was) this.frozenRemainingMs = r.suspensionPolicy === 'CLOCK_CONTINUES' ? null : Math.max(0, this.deadlineMs - this.nowServer());     // FREEZE_CLOCK: show the time standing still
+    if (!this.suspended) { this.frozenRemainingMs = null; if (was) this.pump(true); }
+    if (this.suspended && r.suspensionPolicy === 'CLOCK_CONTINUES') this.frozenRemainingMs = null;
+  }
+
+  async heartbeat(): Promise<{ status: string; deadlineAt?: string; extendedMs?: number } | null> {
     if (this.disposed) return null;
     try {
+      const before = this.deadlineMs;
       const r = await post(`/attempts/${this.attemptId}/heartbeat`, { clientId: this.clientId, online: this.online });
       this.syncClock(r.serverNow, r.deadlineAt); this.setOnline(true);
+      this.applyControl({ suspended: r.suspended, suspensionPolicy: r.suspensionPolicy, examStatus: r.examStatus });
       if (r.superseded) this.phase = 'superseded'; else if (r.status !== 'IN_PROGRESS') this.phase = 'closed';
-      this.emit(); return r;
+      this.emit(); return { ...r, extendedMs: this.deadlineMs - before };
     } catch (e) { if (!(e instanceof ApiError)) this.setOnline(false); return null; }
   }
   private lastEvent = new Map<string, number>();

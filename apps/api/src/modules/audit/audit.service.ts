@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { Role } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
 import type { AuthUser } from '../../common/auth';
+import type { Prisma } from '../../generated/prisma/client';
 
 export interface AuditEntry {
   actor?: Pick<AuthUser, 'id' | 'role'> | null;
@@ -34,19 +35,25 @@ export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
   async log(e: AuditEntry): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(7001)`;
-      const last = await tx.auditLog.findFirst({ orderBy: { seq: 'desc' }, select: { hash: true } });
-      const prevHash = last?.hash ?? GENESIS;
-      const at = new Date();
-      const payload = canonical([prevHash, at.toISOString(), e.actor?.id ?? null, e.action, e.entity, e.entityId ?? null, e.institutionId ?? null, e.meta ?? null]);
-      const hash = createHash('sha256').update(payload).digest('hex');
-      await tx.auditLog.create({
-        data: {
-          at, actorId: e.actor?.id ?? null, actorRole: (e.actor?.role as Role | undefined) ?? null, action: e.action, entity: e.entity,
-          entityId: e.entityId ?? null, institutionId: e.institutionId ?? null, meta: (e.meta ?? undefined) as never, ip: e.ip ?? null, prevHash, hash,
-        },
-      });
+    await this.prisma.$transaction((tx) => this.append(tx, e));
+  }
+
+  /**
+   * Appends inside the CALLER's transaction, so an audit record and the state change it describes commit or roll back together
+   * (used by exam control commands). Takes the global chain lock last-ish: call it at the end of the caller's transaction.
+   */
+  async append(tx: Prisma.TransactionClient, e: AuditEntry): Promise<void> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(7001)`;
+    const last = await tx.auditLog.findFirst({ orderBy: { seq: 'desc' }, select: { hash: true } });
+    const prevHash = last?.hash ?? GENESIS;
+    const at = new Date();
+    const payload = canonical([prevHash, at.toISOString(), e.actor?.id ?? null, e.action, e.entity, e.entityId ?? null, e.institutionId ?? null, e.meta ?? null]);
+    const hash = createHash('sha256').update(payload).digest('hex');
+    await tx.auditLog.create({
+      data: {
+        at, actorId: e.actor?.id ?? null, actorRole: (e.actor?.role as Role | undefined) ?? null, action: e.action, entity: e.entity,
+        entityId: e.entityId ?? null, institutionId: e.institutionId ?? null, meta: (e.meta ?? undefined) as never, ip: e.ip ?? null, prevHash, hash,
+      },
     });
   }
 
