@@ -7,6 +7,7 @@ import { ApiError, fmtDT, get, post } from '@/api';
 import { ExamEngine, paletteKind, type PaletteKind } from '@/exam-engine';
 import { useMe } from '@/session';
 import { Loading, Modal, Notice, errMsg } from '@/ui';
+import type { MyExam, MyExamsDto } from '@oes/shared';
 
 interface Q { id: string; number: number; position: number; marks: number; type: string; vignette: string | null; stem: string; options: { label: string; text: string }[] }
 interface Receipt { receiptCode: string; submittedAt: string; answered: number; total: number; status: string; replayed?: boolean; late?: boolean }
@@ -18,7 +19,7 @@ const uid = () => (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2) 
 
 export default function ExamPage() {
   const { examId } = useParams<{ examId: string }>(); const router = useRouter(); const { me, loading } = useMe();
-  const [info, setInfo] = useState<any>(null); const [error, setError] = useState(''); const [starting, setStarting] = useState(false);
+  const [info, setInfo] = useState<MyExam | false | null>(null); const [error, setError] = useState(''); const [starting, setStarting] = useState(false);
   const [session, setSession] = useState<{ engine: ExamEngine; questions: Q[]; exam: any; attemptId: string } | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const clientId = useRef('');
@@ -27,7 +28,7 @@ export default function ExamPage() {
     clientId.current = sessionStorage.getItem('oes:client') ?? `c${uid()}`; sessionStorage.setItem('oes:client', clientId.current);
   }
 
-  useEffect(() => { if (loading || !me) return; get('/me/exams').then((d) => setInfo(d.items.find((x: any) => x.examId === examId) ?? false)).catch((e) => setError(errMsg(e))); }, [examId, me, loading]);
+  useEffect(() => { if (loading || !me) return; get<MyExamsDto>('/me/exams').then((d) => setInfo(d.items.find((x) => x.examId === examId) ?? false)).catch((e) => setError(errMsg(e))); }, [examId, me, loading]);
 
   const begin = useCallback(async () => {
     setStarting(true); setError('');
@@ -44,7 +45,7 @@ export default function ExamPage() {
   useEffect(() => () => session?.engine.dispose(), [session]);
 
   if (loading || !me) return <div style={{ padding: 40 }}><Loading /></div>;
-  if (receipt) return <ReceiptView receipt={receipt} attemptId={session?.attemptId} examTitle={session?.exam?.title ?? info?.title} onDone={() => router.push('/dashboard')} />;
+  if (receipt) return <ReceiptView receipt={receipt} attemptId={session?.attemptId} examTitle={session?.exam?.title ?? (info || undefined)?.title} onDone={() => router.push('/dashboard')} />;
   if (session) return <Player key={session.attemptId} {...session} clientId={clientId.current} onSubmitted={(r) => { session.engine.clearBuffer(); session.engine.dispose(); setReceipt(r); }} onTakeover={() => { session.engine.dispose(); setSession(null); void begin(); }} />;
   if (info === false) return <Shell><Notice tone="bad">You are not registered for this examination.</Notice><Link href="/schedule">Back to schedule</Link></Shell>;
   if (!info) return <Shell>{error ? <Notice tone="bad">{error}</Notice> : <Loading />}</Shell>;
@@ -190,7 +191,27 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
           <div className="notice small">Press <b className="mono">A–E</b> to choose an option and <b className="mono">←</b> <b className="mono">→</b> to move. Answers save automatically.</div>
         </aside>
       </div>
+      {view === 'q' && <MiniPalette engine={engine} questions={questions} idx={idx} answered={counts.answered} onGo={go} />}
     </div>
+  );
+}
+
+/** Phone/tablet only (CSS hides it above 960 px, where the full palette is beside the question): progress and jump-to-question stay on screen. */
+function MiniPalette({ engine, questions, idx, answered, onGo }: { engine: ExamEngine; questions: Q[]; idx: number; answered: number; onGo: (i: number) => void }) {
+  const strip = useRef<HTMLDivElement>(null);
+  useEffect(() => { // keep the current question visible inside the strip without scrolling the page itself
+    const el = strip.current?.querySelector<HTMLElement>('[aria-current="true"]'); const box = strip.current;
+    if (el && box) box.scrollTo({ left: el.offsetLeft - box.clientWidth / 2 + el.clientWidth / 2, behavior: 'smooth' });
+  }, [idx]);
+  return (
+    <nav className="mini-pal no-print" aria-label="Question progress">
+      <div className="mini-pal-head"><span className="small mono" aria-live="polite">Q{pad(questions[idx]!.number)} / {questions.length}</span><span className="small muted mono">{answered} answered</span></div>
+      <div className="mini-pal-strip" ref={strip}>
+        {questions.map((x, i) => { const s = engine.get(x.id); const k = paletteKind(s); return (
+          <button key={x.id} className={`${k} ${i === idx ? 'current' : ''} ${s.marked ? 'marked' : ''}`} onClick={() => onGo(i)} aria-current={i === idx ? 'true' : undefined}
+            aria-label={`Question ${x.number}, ${k === 'notvisited' ? 'not visited' : k}${s.marked ? ', marked for review' : ''}`}>{pad(x.number)}</button>); })}
+      </div>
+    </nav>
   );
 }
 

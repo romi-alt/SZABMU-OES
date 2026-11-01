@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useGet, fmtDT } from '@/api';
 import { useMe } from '@/session';
 import { Async, Card, PageHead, Stat } from '@/ui';
+import type { DashboardDto } from '@oes/shared';
 
 const TILES: Record<string, { k: string; key: string; s?: string; href?: string }[]> = {
   STUDENT: [{ k: 'Upcoming exams', key: 'upcoming', href: '/schedule' }, { k: 'Completed', key: 'completed', s: 'Published results', href: '/results' }, { k: 'Average score', key: 'avgPercent', s: 'Across published results' }, { k: 'Passed', key: 'passed' }],
@@ -15,7 +16,7 @@ const TILES: Record<string, { k: string; key: string; s?: string; href?: string 
 };
 
 export default function Dashboard() {
-  const { me } = useMe(); const st = useGet<any>('/dashboard');
+  const { me } = useMe(); const st = useGet<DashboardDto>('/dashboard');
   if (!me) return null;
   const first = me.fullName.replace(/^(Dr\.|Prof\.)\s*/, '').split(' ')[0];
   return (
@@ -26,7 +27,7 @@ export default function Dashboard() {
       <Async state={st}>{(d) => (
         <div className="stack-lg">
           <div className={`grid g${Math.min(4, TILES[me.role]!.length)}`}>{TILES[me.role]!.map((t) => {
-            const v = d[t.key]; const tile = <Stat key={t.k} k={t.k} v={v === null || v === undefined ? '—' : t.key === 'avgPercent' ? `${v}%` : v} s={t.s} />;
+            const v = d[t.key] as number | null | undefined; const tile = <Stat key={t.k} k={t.k} v={v === null || v === undefined ? '—' : t.key === 'avgPercent' ? `${v}%` : v} s={t.s} />;
             return t.href ? <Link key={t.k} href={t.href} style={{ textDecoration: 'none', color: 'inherit' }}>{tile}</Link> : tile;
           })}</div>
           {me.role === 'STUDENT' && d.next && <Card title="Next examination"><div className="row between"><div><b>{d.next.title}</b><div className="muted small">Opens {fmtDT(d.next.opensAt)}</div></div><Link className="btn btn-primary" href="/schedule">Go to schedule</Link></div></Card>}
