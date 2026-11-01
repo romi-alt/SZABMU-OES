@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { ApiError } from './api';
 
@@ -72,10 +72,10 @@ export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => v
     </div></div>
   );
 }
-export function Async({ state, children }: { state: { data: any; error: any; loading: boolean; reload?: () => void }; children: (d: any) => ReactNode }) {
+export function Async<T>({ state, children }: { state: { data: T | null; error: unknown; loading: boolean; reload?: () => void }; children: (d: NonNullable<T>) => ReactNode }) {
   if (state.error) return <ErrorBox error={state.error} onRetry={state.reload} />;
-  if (state.loading && !state.data) return <Loading />;
-  return <>{children(state.data)}</>;
+  if (state.data === null || state.data === undefined) return state.loading ? <Loading /> : null;   // keep showing existing data while a reload is in flight
+  return <>{children(state.data as NonNullable<T>)}</>;
 }
 
 export interface Col<T> { h: string; cell: (r: T) => ReactNode; num?: boolean; cls?: string }
@@ -89,12 +89,34 @@ export function Table<T>({ cols, rows, empty = 'Nothing to show.', rowKey }: { c
 export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: ReactNode }) {
   return <label className="f">{label}{children}{hint && <span className="hint">{hint}</span>}{error && <span className="err-text">{error}</span>}</label>;
 }
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const modalStack: symbol[] = [];   // only the topmost dialog reacts to Escape / Tab
 export function Modal({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
-  useEffect(() => { const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose(); window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [onClose]);
+  const box = useRef<HTMLDivElement>(null); const closeRef = useRef(onClose); closeRef.current = onClose;
+  const titleId = useId();
+  useEffect(() => {
+    const me = Symbol('modal'); modalStack.push(me);
+    const opener = document.activeElement as HTMLElement | null;
+    const el = box.current!;
+    // initial focus: first form control in the body, otherwise the first focusable element (the close button)
+    (el.querySelector<HTMLElement>('.modal-b input, .modal-b select, .modal-b textarea') ?? el.querySelector<HTMLElement>(FOCUSABLE) ?? el).focus();
+    const h = (e: KeyboardEvent) => {
+      if (modalStack[modalStack.length - 1] !== me) return;
+      if (e.key === 'Escape') { e.stopPropagation(); closeRef.current(); return; }
+      if (e.key !== 'Tab') return;
+      const f = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((n) => n.offsetParent !== null);
+      if (!f.length) { e.preventDefault(); el.focus(); return; }
+      const first = f[0]!, last = f[f.length - 1]!, a = document.activeElement;
+      if (e.shiftKey && (a === first || !el.contains(a))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (a === last || !el.contains(a))) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', h, true);
+    return () => { document.removeEventListener('keydown', h, true); modalStack.splice(modalStack.indexOf(me), 1); if (opener?.isConnected) opener.focus(); };   // restore focus to whatever opened the dialog
+  }, []);
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="modal-h"><h2>{title}</h2><button className="btn btn-sm" onClick={onClose} aria-label="Close">✕</button></div>
+      <div className="modal" ref={box} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+        <div className="modal-h"><h2 id={titleId}>{title}</h2><button className="btn btn-sm" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="modal-b">{children}</div>{footer && <div className="modal-f">{footer}</div>}
       </div>
     </div>

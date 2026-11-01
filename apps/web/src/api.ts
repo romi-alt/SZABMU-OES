@@ -31,20 +31,21 @@ export const put = <T = any>(p: string, b: unknown = {}) => api<T>('PUT', p, b);
 export const patch = <T = any>(p: string, b: unknown = {}) => api<T>('PATCH', p, b);
 export const del = <T = any>(p: string) => api<T>('DELETE', p);
 
-/** Minimal data hook: fetches on mount / key change, exposes reload(). */
-export function useGet<T = any>(path: string | null) {
+/** Minimal data hook: fetches on mount / key change, exposes reload(). In-flight requests are aborted when the path changes or the page unmounts. */
+export function useGet<T = unknown>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(!!path);
-  const seq = useRef(0);
+  const seq = useRef(0); const ctl = useRef<AbortController | null>(null);
   const load = useCallback(async () => {
     if (!path) return;
+    ctl.current?.abort(); const c = new AbortController(); ctl.current = c;
     const n = ++seq.current; setLoading(true);
-    try { const d = await get<T>(path); if (n === seq.current) { setData(d); setError(null); } }
-    catch (e) { if (n === seq.current) setError(e as ApiError); }
+    try { const d = await api<T>('GET', path, undefined, c.signal); if (n === seq.current) { setData(d); setError(null); } }
+    catch (e) { if (n === seq.current && (e as Error)?.name !== 'AbortError') setError(e as ApiError); }
     finally { if (n === seq.current) setLoading(false); }
   }, [path]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); return () => { seq.current++; ctl.current?.abort(); }; }, [load]);
   return { data, error, loading, reload: load, setData };
 }
 
