@@ -20,6 +20,8 @@ export function proxy(request: NextRequest) {
     blocked.headers.set('Content-Security-Policy', csp);
     return blocked;
   }
+  // Hand the RESOLVED portal (never the raw client header) to server components, e.g. so the staff sign-in page omits candidate-only wording.
+  if (portal) headers.set(PORTAL_HEADER, portal); else headers.delete(PORTAL_HEADER);
   const res = NextResponse.next({ request: { headers } });
   res.headers.set('Content-Security-Policy', csp);
   return res;
