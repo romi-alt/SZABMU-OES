@@ -216,36 +216,6 @@ describe('D. PostgreSQL crash (disposable cluster, immediate stop + WAL recovery
   });
 });
 
-describe('E. Redis loss during an examination', () => {
-  it('FLUSHALL, then a hard Redis outage: login, saves, heartbeat and final submission all keep working quickly; nothing is lost on recovery', async () => {
-    const cs = await fleet(locals('b', 2, 4), 5);
-    const runners = Promise.all(cs.map((c) => c.run(() => false)));
-    await until('30 acks', async () => total(cs) >= 30, 60_000, 50);
-    await redis.flushAll();                                               // session cache, paper cache, heartbeats, counters gone
-    await until('60 acks', async () => total(cs) >= 60, 60_000, 50);
-    await redis.kill();                                                   // full outage
-    const outageStart = Date.now();
-    // a brand-new candidate does everything while Redis is DOWN
-    const t1 = Date.now(); const late = await Candidate.begin('student.b011', 1); const startMs = Date.now() - t1;
-    expect(await late.run(() => false)).toBe(true);
-    const hb = await late.s.call('POST', `/attempts/${late.attemptId}/heartbeat`, { clientId: late.clientId, online: true });
-    expect(hb.status).toBe(200);
-    const t2 = Date.now();
-    const sub = await late.s.call('POST', `/attempts/${late.attemptId}/submit`, { clientId: late.clientId, submitKey: 'outage-submit-1', expected: [...late.acked].map(([q, a]) => ({ examQuestionId: q, revision: a.rev, selectedLabel: a.label })) });
-    const submitMs = Date.now() - t2;
-    expect(sub.status).toBe(200); expect(sub.body.receiptCode).toMatch(/^RC-/);
-    await until('90 acks', async () => total(cs) >= 90, 40_000, 50);      // the running fleet kept being acknowledged
-    const hOut = await api.health();
-    await redis.start();                                                  // back, empty
-    await runners;
-    console.log(`[FT-E] during outage: login+start ${startMs} ms · submit ${submitMs} ms · fleet failures ${cs.map((c) => c.failures.join(',') || '-').join('|')} · health ${JSON.stringify(hOut)} · outage window ≥ ${Date.now() - outageStart} ms`);
-    expect(startMs).toBeLessThan(4000); expect(submitMs).toBeLessThan(4000);
-    expect(hOut?.redis).toBe(false);                                      // health reports it honestly
-    for (const c of cs) expect(c.failures, `${c.local} saw failures while Redis was unavailable`).toEqual([]);
-    await Promise.all(cs.map(finalState));
-    expect((await pool.query(`SELECT status FROM attempts WHERE id = $1`, [late.attemptId])).rows[0].status).toBe('SUBMITTED');
-  });
-});
 
 describe('F. client clock manipulation', () => {
   it('forged client time (headers and body fields) neither extends nor shortens the server-held deadline', async () => {

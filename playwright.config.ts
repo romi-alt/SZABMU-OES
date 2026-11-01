@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 import fs from 'node:fs';
 
-// Browser tests run against the real stack: Next.js (production build) → NestJS API → PostgreSQL + Redis,
+// Browser tests run against the real stack: Next.js (production build) → NestJS API → PostgreSQL,
 // seeded with synthetic data by tests/e2e/global-setup.ts.
 const chromiumPath = process.env.CHROMIUM_PATH ?? ['/opt/pw-browsers/chromium/chrome', '/opt/pw-browsers/chromium'].find((p) => fs.existsSync(p) && fs.statSync(p).isFile());
 export default defineConfig({

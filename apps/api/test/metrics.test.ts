@@ -103,7 +103,7 @@ describe('security and availability signals', () => {
     let text = await m.render({ forceCampus: true });
     expect(series(text, 'oes_campus_candidates', { institution: 'DMC-B', state: 'disconnected' })).toBe(0);
     // campus A's candidate stops heart-beating (network outage): backdate heartbeat and start time
-    await ctx.redis.client.hset(`hb:${examId}`, ta.id, JSON.stringify({ t: Date.now() - 120_000, online: true }));
+    await ctx.prisma.attemptHeartbeat.upsert({ where: { attemptId: ta.id }, create: { attemptId: ta.id, examId, seenAt: new Date(Date.now() - 120_000), online: true }, update: { seenAt: new Date(Date.now() - 120_000), online: true } });
     await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = clock_timestamp() - interval '5 minutes' WHERE id = ${ta.id}::uuid`;
     text = await m.render({ forceCampus: true });
     expect(series(text, 'oes_campus_candidates', { institution: 'DMC-A', state: 'disconnected' })).toBeGreaterThanOrEqual(1);
@@ -111,18 +111,18 @@ describe('security and availability signals', () => {
     expect(series(text, 'oes_campus_candidates', { institution: 'DMC-B', state: 'connected' })).toBeGreaterThanOrEqual(1);
     expect(series(text, 'oes_active_attempts')).toBeGreaterThanOrEqual(2);
     // client reports itself offline ⇒ disconnected even with a fresh heartbeat
-    await ctx.redis.client.hset(`hb:${examId}`, tb.attemptId, JSON.stringify({ t: Date.now(), online: false }));
+    await ctx.prisma.attemptHeartbeat.upsert({ where: { attemptId: tb.attemptId }, create: { attemptId: tb.attemptId, examId, seenAt: new Date(), online: false }, update: { seenAt: new Date(), online: false } });
     await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = clock_timestamp() - interval '5 minutes' WHERE id = ${tb.attemptId}::uuid`;
     text = await m.render({ forceCampus: true });
     expect(series(text, 'oes_campus_candidates', { institution: 'DMC-B', state: 'disconnected' })).toBeGreaterThanOrEqual(1);
   });
 
-  it('reports database/Redis health honestly on each scrape', async () => {
+  it('reports database health honestly on each scrape', async () => {
     const spy = vi.spyOn(ctx.prisma, '$queryRaw').mockRejectedValueOnce(new Error('db down'));
     const down = await m.render({}); spy.mockRestore();
     expect(down).toMatch(/^oes_db_up 0$/m);
     expect(await m.render({})).toMatch(/^oes_db_up 1$/m);
-    expect(await m.render({})).toMatch(/^oes_redis_up 1$/m); expect(await m.render({})).toMatch(/^oes_event_loop_lag_seconds /m);
+    expect(await m.render({})).toMatch(/^oes_event_loop_lag_seconds /m);
   });
 });
 

@@ -3,7 +3,7 @@ import argon2 from 'argon2';
 import { randomBytes, randomInt } from 'node:crypto';
 import { checkPassword, permissionsFor } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
-import { RedisService } from '../../infra/redis.service';
+import { CacheService } from '../../infra/cache.service';
 import { MailService } from '../../infra/mail.service';
 import { AppError, badRequest } from '../../common/errors';
 import { AuditService } from '../audit/audit.service';
@@ -22,7 +22,7 @@ let DUMMY: string | undefined;
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly redis: RedisService,
+    private readonly cache: CacheService,
     private readonly mail: MailService,
     private readonly audit: AuditService,
     @Inject(CONFIG) private readonly cfg: Config,
@@ -35,8 +35,8 @@ export class AuthService {
 
   async login(emailRaw: string, password: string, ip: string, ua?: string) {
     const email = emailRaw.trim().toLowerCase();
-    const ipHits = await this.redis.hit(`rl:login:ip:${ip}`, 900);
-    const idHits = await this.redis.hit(`rl:login:id:${email}`, 900);
+    const ipHits = await this.cache.hit(`rl:login:ip:${ip}`, 900);
+    const idHits = await this.cache.hit(`rl:login:id:${email}`, 900);
     if (ipHits > 60 || idHits > 20) { this.metrics.authFailures.inc({ kind: 'login_rate_limited' }); throw new AppError(429, 'RATE_LIMITED', 'Too many sign-in attempts. Try again later.'); }
 
     const user = await this.prisma.user.findUnique({ where: { email }, include: { institutions: true, student: { select: { id: true } } } });
@@ -92,14 +92,14 @@ export class AuthService {
 
   async logout(user: AuthUser) {
     await this.prisma.session.updateMany({ where: { tokenHash: user.sessionHash, revokedAt: null }, data: { revokedAt: new Date() } });
-    await this.redis.del(`sess:${user.sessionHash}`);
+    await this.cache.del(`sess:${user.sessionHash}`);
     await this.audit.log({ actor: user, action: 'auth.logout', entity: 'user', entityId: user.id });
   }
 
   /** Step 1 of recovery. Always responds identically so account existence is not disclosed. */
   async forgot(emailRaw: string, ip: string) {
     const email = emailRaw.trim().toLowerCase();
-    const hits = await this.redis.hit(`rl:forgot:${email}:${ip}`, 3600);
+    const hits = await this.cache.hit(`rl:forgot:${email}:${ip}`, 3600);
     if (hits > 5) throw new AppError(429, 'RATE_LIMITED', 'Too many requests. Try again later.');
     const user = await this.prisma.user.findUnique({ where: { email } });
     let devCode: string | undefined;
@@ -126,17 +126,22 @@ export class AuthService {
       await this.prisma.passwordReset.update({ where: { id: reset.id }, data: { attempts: { increment: 1 } } });
       throw bad;
     }
-    await this.prisma.passwordReset.update({ where: { id: reset.id }, data: { usedAt: new Date() } });
+    // The code is single-use; in the same write it is exchanged for a single-use reset token, stored hashed with its own expiry.
     const token = randomBytes(24).toString('base64url');
-    await this.redis.client.set(`rt:${sha256(token)}`, user.id, 'EX', RESET_TTL_MIN * 60);
+    await this.prisma.passwordReset.update({ where: { id: reset.id }, data: { usedAt: new Date(), tokenHash: sha256(token), tokenExpiresAt: new Date(Date.now() + RESET_TTL_MIN * 60_000) } });
     await this.audit.log({ actor: user, action: 'auth.reset_code_verified', entity: 'user', entityId: user.id, ip });
     return { resetToken: token };
   }
 
   async reset(resetToken: string, newPassword: string, ip: string) {
-    const key = `rt:${sha256(resetToken)}`;
-    const userId = await this.redis.client.getdel(key);
-    if (!userId) throw new AppError(400, 'INVALID_TOKEN', 'This reset link has expired. Request a new code.');
+    const h = sha256(resetToken);
+    const expired = () => new AppError(400, 'INVALID_TOKEN', 'This reset link has expired. Request a new code.');
+    const row = await this.prisma.passwordReset.findUnique({ where: { tokenHash: h } });
+    if (!row || !row.tokenExpiresAt || row.tokenExpiresAt < new Date()) throw expired();
+    // Atomic claim: only one concurrent request can clear the token, so it is single-use.
+    const claim = await this.prisma.passwordReset.updateMany({ where: { id: row.id, tokenHash: h }, data: { tokenHash: null } });
+    if (claim.count !== 1) throw expired();
+    const userId = row.userId;
     await this.setPassword(userId, newPassword);
     await this.audit.log({ actor: { id: userId, role: 'STUDENT' }, action: 'auth.password_reset', entity: 'user', entityId: userId, ip });
     return { ok: true };
@@ -165,7 +170,7 @@ export class AuthService {
       this.prisma.user.update({ where: { id: userId }, data: { passwordHash: hash, mustChangePw: false, failedLogins: 0, lockedUntil: null, passwordChangedAt: new Date() } }),
       this.prisma.session.updateMany({ where: { userId, revokedAt: null, ...(keepSessionHash ? { tokenHash: { not: keepSessionHash } } : {}) }, data: { revokedAt: new Date() } }),
     ]);
-    await dropUserSessions(this.redis, userId);
-    if (keepSessionHash) await this.redis.del(`sess:${keepSessionHash}`);
+    await dropUserSessions(this.cache, userId);
+    if (keepSessionHash) await this.cache.del(`sess:${keepSessionHash}`);
   }
 }

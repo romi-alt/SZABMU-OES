@@ -2,8 +2,8 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { CONFIG, loadConfig } from './config';
 import { PrismaService } from './infra/prisma.service';
-import { RedisService } from './infra/redis.service';
-import { QueuesService } from './infra/queues.service';
+import { CacheService } from './infra/cache.service';
+import { WorkSignal } from './infra/work-signal.service';
 import { MailService } from './infra/mail.service';
 import { MetricsService } from './infra/metrics.service';
 import { MetricsController } from './modules/metrics.controller';
@@ -36,7 +36,7 @@ import { JobsService } from './modules/jobs.service';
   controllers: [AuthController, OrgController, CourseAssignmentsController, ExamsController, DeliveryController, ResultsController, InvigilationController, ReportsController, HealthController, MetricsController],
   providers: [
     { provide: CONFIG, useFactory: () => loadConfig() },
-    PrismaService, RedisService, QueuesService, MailService, MetricsService, AuditService, NotificationsService,
+    PrismaService, CacheService, WorkSignal, MailService, MetricsService, AuditService, NotificationsService,
     AuthService, MfaService, OrgService, CourseAccessService, QuestionsService, ExamsService, DeliveryService, ResultsService, InvigilationService, ReportsService, JobsService,
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

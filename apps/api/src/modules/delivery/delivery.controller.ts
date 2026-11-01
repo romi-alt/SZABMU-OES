@@ -3,7 +3,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { CurrentUser, Perm, type AuthUser } from '../../common/auth';
 import { parse } from '../../common/validate';
-import { RedisService } from '../../infra/redis.service';
+import { CacheService } from '../../infra/cache.service';
 import { MetricsService } from '../../infra/metrics.service';
 import { AppError } from '../../common/errors';
 import { DeliveryService } from './delivery.service';
@@ -23,7 +23,7 @@ const eventDto = z.object({ clientId, kind: z.enum(['TAB_HIDDEN', 'TAB_VISIBLE',
 
 @Controller()
 export class DeliveryController {
-  constructor(private readonly svc: DeliveryService, private readonly redis: RedisService, private readonly metrics: MetricsService) {}
+  constructor(private readonly svc: DeliveryService, private readonly cache: CacheService, private readonly metrics: MetricsService) {}
 
   @Perm('exam.sit') @Get('me/exams') myExams(@CurrentUser() u: AuthUser) { return this.svc.myExams(u); }
 
@@ -36,7 +36,7 @@ export class DeliveryController {
     try {
       const d = parse(saveDto, b);
       // Abuse guard only: a human cannot legitimately exceed this; a bug-loop client is throttled instead of hammering the DB.
-      if ((await this.redis.hit(`rl:save:${id}`, 10)) > 100) throw new AppError(429, 'RATE_LIMITED', 'Saving too quickly; retry shortly');
+      if ((await this.cache.hit(`rl:save:${id}`, 10)) > 100) throw new AppError(429, 'RATE_LIMITED', 'Saving too quickly; retry shortly');
       const r = await this.svc.saveAnswer(u, id, qid, d);
       this.metrics.saves.inc({ result: (r as { duplicate?: boolean }).duplicate ? 'duplicate' : 'ok' });
       return r;

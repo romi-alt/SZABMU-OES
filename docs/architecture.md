@@ -25,7 +25,7 @@ answer, deadline and result.** Redis and the browser are accelerators and buffer
 
 ## Request pipeline (API)
 1. Fastify `onRequest` hook — rejects state-changing requests whose `Origin` is not the web origin (CSRF defence for cookie auth).
-2. `AuthGuard` (global) — resolves the opaque session cookie → user (Redis cache, 120 s, explicitly invalidated on logout / deactivation / password change / scope change; falls back to PostgreSQL).
+2. `AuthGuard` (global) — resolves the opaque session cookie → user (in-process cache, 30 s, explicitly invalidated on logout / deactivation / password change / scope change; falls back to PostgreSQL).
    **Deny by default:** a route with neither `@Public()` nor `@Perm()` is rejected at runtime *and* fails a unit test.
 3. Permission check against the shared matrix.
 4. Zod validation of every body/query (`parse()`), UUID pipes on path ids.
@@ -41,11 +41,10 @@ countdown follows the server's deadline, including time extensions granted by in
 | Queue | Job | Idempotency |
 | --- | --- | --- |
 | `grade-attempt` | Score one sealed attempt, upsert `results` | `jobId = grade-<attemptId>`; upsert; sweeper recovers any missed job |
-| `attempt-sweeper` | Every 10 s: auto-submit expired attempts, grade ungraded, open/close exams, mark absentees, move to `RESULT_PENDING` | Set-based SQL; safe on multiple instances |
-| `mail` | Deliver outbox messages (SMTP/Mailpit) | Outbox row persisted first |
+| lifecycle tick (in-process, `JobsService`) | Every 10 s: auto-submit expired attempts, grade ungraded, open/close exams, mark absentees, move to `RESULT_PENDING`, retry undelivered mail | Idempotent set-based SQL; assumes one API process (see `jobs.service.ts`) |
+| mail | Deliver outbox messages (SMTP/Mailpit) in the background | Outbox row persisted first |
 
-Losing Redis stops queue consumption and caches only; the sweeper and `finalize()` are DB-driven, so correctness is preserved
-(heartbeat-based "connected" indicators degrade gracefully).
+There is no Redis or queue server (web-hosting profile, stage 1): caches and rate-limit counters are in-process (`infra/cache.service.ts`), password-reset tokens and heartbeats are PostgreSQL rows, and the tick plus `finalize()` are DB-driven, so correctness never depended on them.
 
 ## Exam lifecycle
 `DRAFT → PAPER_PENDING → APPROVED → SCHEDULED → LIVE → CLOSED → RESULT_PENDING → PUBLISHED` (or `CANCELLED` before start).

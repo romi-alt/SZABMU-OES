@@ -4,12 +4,12 @@ import { z } from 'zod';
 import { CurrentUser, Ip, Perm, Public, type AuthUser } from '../../common/auth';
 import { parse, uuid } from '../../common/validate';
 import { AppError } from '../../common/errors';
-import { RedisService } from '../../infra/redis.service';
+import { CacheService } from '../../infra/cache.service';
 import { ResultsService } from './results.service';
 
 @Controller()
 export class ResultsController {
-  constructor(private readonly svc: ResultsService, private readonly redis: RedisService) {}
+  constructor(private readonly svc: ResultsService, private readonly cache: CacheService) {}
 
   @Perm('grading.review') @Get('grading/exams') queue(@CurrentUser() u: AuthUser) { return this.svc.gradingQueue(u); }
   @Perm('grading.review') @Get('grading/exams/:id/analysis') analysis(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.svc.itemAnalysis(u, id); }
@@ -27,7 +27,7 @@ export class ResultsController {
 
   @Public() @Get('public/verify')
   async verify(@Query() q: Record<string, string>, @Req() req: FastifyRequest) {
-    if ((await this.redis.hit(`rl:verify:${req.ip}`, 60)) > 20) throw new AppError(429, 'RATE_LIMITED', 'Too many verification attempts');
+    if ((await this.cache.hit(`rl:verify:${req.ip}`, 60)) > 20) throw new AppError(429, 'RATE_LIMITED', 'Too many verification attempts');
     const d = parse(z.object({ serial: z.string().min(5).max(40), code: z.string().min(4).max(20) }), q);
     return this.svc.verify(d.serial, d.code);
   }

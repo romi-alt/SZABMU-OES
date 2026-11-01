@@ -34,7 +34,7 @@ describe('sign-in', () => {
     const locked = await c.login(DEMO_PASSWORD);
     expect(locked.status).toBe(423);
     await ctx.prisma.user.update({ where: { email: `student.a003@${DOMAIN}` }, data: { lockedUntil: null, failedLogins: 0 } });
-    await ctx.redis.client.flushdb();
+    ctx.cache.clear();
     expect((await c.login()).status).toBe(200);
   });
 
@@ -43,7 +43,7 @@ describe('sign-in', () => {
     let last = 0;
     for (let i = 0; i < 25; i++) last = (await c.login('x-wrong-pass-' + i)).status;
     expect(last).toBe(429);
-    await ctx.redis.client.flushdb();
+    ctx.cache.clear();
   });
 
   it('logout revokes the session server-side, even if the cookie is replayed', async () => {
@@ -60,7 +60,7 @@ describe('sign-in', () => {
     expect((await bad.get('/auth/me')).status).toBe(401);
     expect((await new Client(ctx.app).get('/auth/me')).status).toBe(401);
     await ctx.prisma.session.updateMany({ data: { expiresAt: new Date(Date.now() - 1000) } });
-    await ctx.redis.client.flushdb();
+    ctx.cache.clear();
     expect((await c.get('/auth/me')).status).toBe(401);
   });
 });

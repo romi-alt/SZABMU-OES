@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 import { can, isCampusScoped, type Permission, type Role } from '@oes/shared';
 import { PrismaService } from '../infra/prisma.service';
-import { RedisService } from '../infra/redis.service';
+import { CacheService } from '../infra/cache.service';
 import { AppError, forbidden } from './errors';
 import { CONFIG, type Config } from '../config';
 
@@ -43,9 +43,9 @@ declare module 'fastify' {
   }
 }
 
-export async function loadSession(prisma: PrismaService, redis: RedisService, token: string, mfaEnforce = false): Promise<AuthUser | null> {
+export async function loadSession(prisma: PrismaService, cache: CacheService, token: string, mfaEnforce = false): Promise<AuthUser | null> {
   const hash = sha256(token);
-  const cached = await redis.getJson<AuthUser>(`sess:${hash}`);
+  const cached = await cache.getJson<AuthUser>(`sess:${hash}`);
   if (cached) return cached;
   const s = await prisma.session.findUnique({
     where: { tokenHash: hash },
@@ -64,23 +64,21 @@ export async function loadSession(prisma: PrismaService, redis: RedisService, to
     mustChangePw: u.mustChangePw,
     mfa: u.totpEnabledAt ? (s.mfaVerifiedAt ? 'ok' : 'pending') : mfaEnforce && MFA_ROLES.includes(u.role) ? 'enroll' : 'ok',
   };
-  await redis.setJson(`sess:${hash}`, user, 120); // invalidated explicitly on logout, deactivation, password reset and scope changes
-  await redis.client.sadd(`usess:${u.id}`, hash).catch(() => undefined);
+  await cache.setJson(`sess:${hash}`, user, SESSION_CACHE_TTL_SEC); // invalidated explicitly on logout, deactivation, password reset and scope changes
+  cache.trackSession(u.id, hash);
   return user;
 }
 
-export async function dropUserSessions(redis: RedisService, userId: string) {
-  try {
-    const hashes = await redis.client.smembers(`usess:${userId}`);
-    await redis.del(...hashes.map((h) => `sess:${h}`), `usess:${userId}`);
-  } catch {
-    /* cache only */
-  }
+/** Short on purpose: a second process (if any) only learns of a revocation when its own copy expires. */
+const SESSION_CACHE_TTL_SEC = 30;
+
+export async function dropUserSessions(cache: CacheService, userId: string) {
+  await cache.dropUserSessions(userId);
 }
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector, private readonly prisma: PrismaService, private readonly redis: RedisService, @Inject(CONFIG) private readonly cfg: Config) {}
+  constructor(private readonly reflector: Reflector, private readonly prisma: PrismaService, private readonly cache: CacheService, @Inject(CONFIG) private readonly cfg: Config) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const handler = ctx.getHandler();
@@ -92,7 +90,7 @@ export class AuthGuard implements CanActivate {
 
     const token = (req.cookies as Record<string, string | undefined> | undefined)?.[SESSION_COOKIE];
     if (!token) throw new AppError(401, 'UNAUTHENTICATED', 'Sign in required');
-    const user = await loadSession(this.prisma, this.redis, token, this.cfg.MFA_ENFORCE === 'true');
+    const user = await loadSession(this.prisma, this.cache, token, this.cfg.MFA_ENFORCE === 'true');
     if (!user) throw new AppError(401, 'UNAUTHENTICATED', 'Session expired or invalid');
     req.user = user;
     if (user.mfa !== 'ok' && !this.reflector.getAllAndOverride<boolean>('allowMfaPending', [handler, cls])) {

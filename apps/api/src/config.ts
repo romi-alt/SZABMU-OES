@@ -3,7 +3,6 @@ import { z } from 'zod';
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().min(1),
-  REDIS_URL: z.string().min(1),
   API_PORT: z.coerce.number().default(4000),
   API_HOST: z.string().default('0.0.0.0'),
   WEB_ORIGIN: z.string().default('http://localhost:3000'),
@@ -53,7 +52,6 @@ export function productionProblems(cfg: Config, env: NodeJS.ProcessEnv = process
     if (/oes_dev_password/.test(cfg.DATABASE_URL)) p.push('DATABASE_URL uses the development password');
     if (!/sslmode=(require|verify-ca|verify-full)/.test(cfg.DATABASE_URL) && env.DB_ALLOW_PLAINTEXT !== 'true') p.push('DATABASE_URL must set sslmode=require (or verify-full); set DB_ALLOW_PLAINTEXT=true only for a private network you have accepted in writing');
   }
-  try { const r = new URL(cfg.REDIS_URL); if (!r.password && r.protocol !== 'rediss:' && env.REDIS_ALLOW_NOAUTH !== 'true') p.push('REDIS_URL must carry a password (or use rediss://); set REDIS_ALLOW_NOAUTH=true only for an isolated network'); } catch { p.push('REDIS_URL is not a valid URL'); }
   if (cfg.S3_SECRET_KEY && /oes_dev_minio/.test(cfg.S3_SECRET_KEY + (cfg.S3_ACCESS_KEY ?? ''))) p.push('S3 credentials are the development MinIO defaults');
   if (cfg.TRUST_PROXY !== 'true' && env.ALLOW_NO_PROXY !== 'true') p.push('TRUST_PROXY=true is required behind a load balancer (otherwise every client shares the proxy IP for rate limiting and audit); set ALLOW_NO_PROXY=true if the API is directly exposed');
   if (cfg.MFA_ENFORCE !== 'true') p.push('MFA_ENFORCE=true is required in production (TOTP for CCE, Super Admin, Examiner and Campus Admin)');

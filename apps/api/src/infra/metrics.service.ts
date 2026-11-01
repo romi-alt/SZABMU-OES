@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { HEARTBEAT_STALE_SECONDS } from '@oes/shared';
 import { PrismaService } from './prisma.service';
-import { RedisService } from './redis.service';
 
 /**
  * Minimal Prometheus registry (text exposition format 0.0.4) — no third-party dependency.
@@ -59,17 +58,16 @@ export class MetricsService {
   readonly unauthorized = new Counter('oes_unauthorized_requests_total', 'Requests rejected as unauthenticated (401) or forbidden (403)', ['status', 'code']);
   readonly unhandled = new Counter('oes_unhandled_errors_total', 'Unexpected server errors (HTTP 500)');
   private readonly dbUp = new Gauge('oes_db_up', '1 if PostgreSQL answered a probe on this scrape');
-  private readonly redisUp = new Gauge('oes_redis_up', '1 if Redis answered a probe on this scrape');
   private readonly active = new Gauge('oes_active_attempts', 'Attempts currently IN_PROGRESS');
   private readonly campus = new Gauge('oes_campus_candidates', 'In-progress candidates per campus by connectivity (heartbeat within the stale window)', ['institution', 'state']);
   private readonly loopLag = new Gauge('oes_event_loop_lag_seconds', 'p99 event-loop delay since last scrape');
   private readonly rss = new Gauge('oes_process_resident_memory_bytes', 'Resident set size');
   private readonly started = new Gauge('oes_process_start_time_seconds', 'Process start time (unix)');
-  private readonly all = [this.http, this.httpDuration, this.saves, this.saveDuration, this.submits, this.submitDuration, this.dbErrors, this.authFailures, this.authSuccess, this.unauthorized, this.unhandled, this.dbUp, this.redisUp, this.active, this.campus, this.loopLag, this.rss, this.started];
+  private readonly all = [this.http, this.httpDuration, this.saves, this.saveDuration, this.submits, this.submitDuration, this.dbErrors, this.authFailures, this.authSuccess, this.unauthorized, this.unhandled, this.dbUp, this.active, this.campus, this.loopLag, this.rss, this.started];
   private readonly lag: ReturnType<typeof monitorEventLoopDelay> = monitorEventLoopDelay({ resolution: 20 });
   private campusAt = 0;
 
-  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService) { this.lag.enable(); this.started.set({}, Math.floor(Date.now() / 1000 - process.uptime())); }
+  constructor(private readonly prisma: PrismaService) { this.lag.enable(); this.started.set({}, Math.floor(Date.now() / 1000 - process.uptime())); }
 
   // ── recording helpers ──
   /** Maps a save/submit exception to a bounded outcome label. */
@@ -87,25 +85,22 @@ export class MetricsService {
 
   // ── scrape-time gauges ──
   private async probeAndCollect(force = false) {
-    this.dbUp.reset(); this.redisUp.reset(); this.active.reset(); this.loopLag.reset(); this.rss.reset();
+    this.dbUp.reset(); this.active.reset(); this.loopLag.reset(); this.rss.reset();
     this.loopLag.set({}, this.lag.percentile(99) / 1e9); this.lag.reset(); this.rss.set({}, process.memoryUsage().rss);
     let db = true; try { await this.prisma.$queryRaw`SELECT 1`; } catch { db = false; }
     this.dbUp.set({}, db ? 1 : 0);
-    let rd = true; try { await this.redis.client.ping(); } catch { rd = false; }
-    this.redisUp.set({}, rd ? 1 : 0);
     if (!db || (!force && Date.now() - this.campusAt < 15_000)) return; // campus view is cached 15 s (it reads every in-progress attempt)
     this.campusAt = Date.now();
     const rows = await this.prisma.$queryRaw<{ id: string; examId: string; inst: string; startedAt: Date }[]>`
       SELECT a.id, a."examId", i.code AS inst, a."startedAt" FROM attempts a JOIN students s ON s.id = a."studentId" JOIN institutions i ON i.id = s."institutionId" WHERE a.status = 'IN_PROGRESS'`.catch(() => null);
     if (!rows) return;
     this.active.set({}, rows.length); this.campus.reset();
-    if (!rd) return; // without Redis heartbeats connectivity is unknown — emit nothing rather than a false alarm
-    const now = Date.now(); const hb = new Map<string, Record<string, string>>();
-    for (const examId of new Set(rows.map((r) => r.examId))) { try { hb.set(examId, await this.redis.client.hgetall(`hb:${examId}`)); } catch { return; } }
+    const now = Date.now(); const beats = new Map<string, { t: number; online: boolean }>();
+    try { for (const h of await this.prisma.attemptHeartbeat.findMany({ where: { attemptId: { in: rows.map((r) => r.id) } }, select: { attemptId: true, seenAt: true, online: true } })) beats.set(h.attemptId, { t: h.seenAt.getTime(), online: h.online }); } catch { return; } // heartbeats unreadable ⇒ connectivity unknown: emit nothing rather than a false alarm
     const tally = new Map<string, { c: number; d: number }>();
     for (const r of rows) {
-      const raw = hb.get(r.examId)?.[r.id]; let connected = false;
-      if (raw) { try { const j = JSON.parse(raw) as { t: number; online?: boolean }; connected = now - j.t <= HEARTBEAT_STALE_SECONDS * 1000 && j.online !== false; } catch { /* corrupt entry ⇒ disconnected */ } }
+      const j = beats.get(r.id); let connected = false;
+      if (j) connected = now - j.t <= HEARTBEAT_STALE_SECONDS * 1000 && j.online;
       else if (now - r.startedAt.getTime() < 60_000) connected = true; // just started: first heartbeat not due yet
       const t = tally.get(r.inst) ?? { c: 0, d: 0 }; if (connected) t.c++; else t.d++; tally.set(r.inst, t);
     }

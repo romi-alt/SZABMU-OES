@@ -56,11 +56,6 @@ groups:
         for: 0m
         labels: { severity: warning }
         annotations: { summary: "Database errors surfaced as HTTP 5xx", runbook: "docs/operations/observability.md#database-down" }
-      - alert: OESRedisDown
-        expr: oes_redis_up == 0
-        for: 1m
-        labels: { severity: warning }
-        annotations: { summary: "Redis unreachable: exams continue (PostgreSQL is authoritative) but live monitoring, rate limits and password reset are degraded", runbook: "docs/operations/observability.md#redis-down" }
       - alert: OESServerErrorRatio
         expr: sum(rate(oes_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(oes_http_requests_total[5m])), 1) > 0.02
         for: 5m

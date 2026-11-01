@@ -292,11 +292,25 @@ model PasswordReset {
   expiresAt DateTime  @db.Timestamptz
   attempts  Int       @default(0)
   usedAt    DateTime? @db.Timestamptz
+  /// Single-use reset token issued when the code is verified (hash only); cleared when claimed.
+  tokenHash      String?   @unique
+  tokenExpiresAt DateTime? @db.Timestamptz
   createdAt DateTime  @default(now()) @db.Timestamptz
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@map("password_resets")
+}
+
+/// Last heartbeat per attempt (invigilator monitor, connectivity metrics). Its own table so heartbeats never contend with the attempt row lock.
+model AttemptHeartbeat {
+  attemptId String   @id @db.Uuid
+  examId    String   @db.Uuid
+  seenAt    DateTime @db.Timestamptz
+  online    Boolean  @default(true)
+
+  @@index([examId])
+  @@map("attempt_heartbeats")
 }
 
 model PasswordHistory {

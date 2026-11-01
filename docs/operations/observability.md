@@ -12,7 +12,7 @@ scrape_configs:
     scrape_interval: 15s
     static_configs: [{ targets: ['api-1:4000', 'api-2:4000'] }]
 ```
-With several API processes, counters are per process; always `sum()` across instances (the shipped rules do). Campus connectivity gauges are computed from shared Redis/PostgreSQL state, so every instance reports the same value — use `max by (institution)` when graphing.
+With several API processes, counters are per process; always `sum()` across instances (the shipped rules do). Campus connectivity gauges are computed from shared PostgreSQL state, so every instance reports the same value — use `max by (institution)` when graphing.
 
 ## What is measured
 | Signal requested | Metric(s) | Notes |
@@ -22,15 +22,15 @@ With several API processes, counters are per process; always `sum()` across inst
 | Answer-save latency | `oes_answer_save_duration_seconds` (histogram) | includes rejected saves; use `histogram_quantile` |
 | Submission errors | `oes_submit_total{result=ok\|replayed\|error\|…}`, `oes_submit_duration_seconds` | |
 | Database failures | `oes_db_up` (probe on every scrape), `oes_db_errors_total{kind=connection\|query}` | errors that surfaced as HTTP 500 |
-| Campus disconnections | `oes_campus_candidates{institution,state=connected\|disconnected}`, `oes_active_attempts` | from client heartbeats (15 s; stale after 45 s or client-reported offline); cached 15 s; candidates started < 60 s ago count as connected; **no series are emitted while Redis is down** (unknown ≠ disconnected) |
+| Campus disconnections | `oes_campus_candidates{institution,state=connected\|disconnected}`, `oes_active_attempts` | from client heartbeats (15 s; stale after 45 s or client-reported offline); cached 15 s; candidates started < 60 s ago count as connected; **no series are emitted if heartbeats cannot be read** (unknown ≠ disconnected); heartbeats are stored in `attempt_heartbeats` |
 | Authentication failures | `oes_auth_failures_total{kind=login_invalid\|login_locked\|login_rate_limited\|mfa_invalid\|mfa_locked}`, `oes_auth_success_total` | |
 | Unauthorized API requests | `oes_unauthorized_requests_total{status=401\|403,code}` | counted for every guard/service rejection |
-| General | `oes_http_requests_total{method,route,status}`, `oes_http_request_duration_seconds`, `oes_unhandled_errors_total`, `oes_redis_up`, `oes_event_loop_lag_seconds`, `oes_process_*` | `route` is the route pattern, never the raw URL or an id |
+| General | `oes_http_requests_total{method,route,status}`, `oes_http_request_duration_seconds`, `oes_unhandled_errors_total`, `oes_event_loop_lag_seconds`, `oes_process_*` | `route` is the route pattern, never the raw URL or an id |
 
 **Privacy:** no user identifiers, emails, IPs, tokens or answers appear in any label (verified by test: no ids in labels).
 
 ## Alerts (`infra/observability/alerts.yml`)
-14 rules in three groups: exam integrity (save failures ratio/any, slow p99 >1 s / >3 s, submission errors), platform (API down, DB down, DB errors, Redis down, 5xx ratio, event-loop lag) and campus/security (campus >20% disconnected with ≥10 candidates, failed-auth rate, lockouts, 403 and 401 spikes). **Thresholds are starting points** derived from the 2,000-candidate run (save p99 ≈ 250 ms) — re-tune after the first rehearsal. `apps/api/test/metrics.test.ts` fails if a rule references a metric the API does not expose or lacks a runbook anchor here.
+14 rules in three groups: exam integrity (save failures ratio/any, slow p99 >1 s / >3 s, submission errors), platform (API down, DB down, DB errors, 5xx ratio, event-loop lag) and campus/security (campus >20% disconnected with ≥10 candidates, failed-auth rate, lockouts, 403 and 401 spikes). **Thresholds are starting points** derived from the 2,000-candidate run (save p99 ≈ 250 ms) — re-tune after the first rehearsal. `apps/api/test/metrics.test.ts` fails if a rule references a metric the API does not expose or lacks a runbook anchor here.
 
 **Not provided:** the Alertmanager routing (who is paged, escalation, quiet hours), dashboards, log aggregation, distributed tracing, uptime probes from outside, SLO definitions. Alerts have been *validated structurally*, not fired against a live Prometheus (no Prometheus/`promtool` in the build environment).
 

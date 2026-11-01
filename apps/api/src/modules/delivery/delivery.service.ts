@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { SAVE_GRACE_SECONDS, computeDeadline, seededOrder } from '@oes/shared';
 import { answerDigest, receiptCode } from '@oes/shared/server';
 import { PrismaService } from '../../infra/prisma.service';
-import { RedisService } from '../../infra/redis.service';
-import { QUEUES, QueuesService } from '../../infra/queues.service';
+import { CacheService } from '../../infra/cache.service';
+import { WorkSignal } from '../../infra/work-signal.service';
 import { AuditService } from '../audit/audit.service';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import type { AuthUser } from '../../common/auth';
@@ -25,8 +25,8 @@ export class DeliveryService {
   private readonly log = new Logger('Delivery');
   constructor(
     private readonly prisma: PrismaService,
-    private readonly redis: RedisService,
-    private readonly queues: QueuesService,
+    private readonly cache: CacheService,
+    private readonly signal: WorkSignal,
     private readonly audit: AuditService,
     @Inject(CONFIG) private readonly cfg: Config,
   ) {}
@@ -39,14 +39,14 @@ export class DeliveryService {
   /** The approved paper is immutable, so the candidate-facing view is safe to cache. Never contains the key. */
   async paperFor(examId: string): Promise<PaperQuestion[]> {
     const key = `paper:${examId}`;
-    const hit = await this.redis.getJson<PaperQuestion[]>(key);
+    const hit = await this.cache.getJson<PaperQuestion[]>(key);
     if (hit) return hit;
     const rows = await this.prisma.examQuestion.findMany({ where: { examId }, orderBy: { position: 'asc' } });
     const paper = rows.map((r) => {
       const s = r.snapshot as { type: string; vignette: string | null; stem: string; options: { label: string; text: string }[] };
       return { id: r.id, position: r.position, marks: r.marks, type: s.type, vignette: s.vignette, stem: s.stem, options: s.options };
     });
-    await this.redis.setJson(key, paper, 3600);
+    await this.cache.setJson(key, paper, 3600);
     return paper;
   }
 
@@ -225,7 +225,8 @@ export class DeliveryService {
       return { status: 'AUTO_SUBMITTED', serverNow: now, deadlineAt: a.deadlineAt, superseded: false };
     }
     if (a.activeClientId === clientId && a.status === 'IN_PROGRESS') {
-      try { await this.redis.client.pipeline().hset(`hb:${a.examId}`, a.id, JSON.stringify({ t: now.getTime(), online })).expire(`hb:${a.examId}`, 86400).exec(); } catch { /* coordination only */ }
+      // Own table (not the attempt row) so heartbeats never contend with the row lock that saves and submit take.
+      try { await this.prisma.attemptHeartbeat.upsert({ where: { attemptId: a.id }, create: { attemptId: a.id, examId: a.examId, seenAt: now, online }, update: { seenAt: now, online } }); } catch { /* monitoring only */ }
     }
     return { status: a.status, serverNow: now, deadlineAt: a.deadlineAt, superseded: a.activeClientId !== clientId };
   }
@@ -321,12 +322,8 @@ export class DeliveryService {
       // Candidate submits / deadline auto-submits are recorded on the attempt itself (status, receipt, digest, attempt_events).
       // Only staff-initiated seals go to the (globally serialised) audit chain.
       if (o.mode === 'FORCED') await this.audit.log({ actor: o.actor ?? null, action: 'attempt.force_submit', entity: 'attempt', entityId: attemptId, meta: { examId: out.examId, receipt: out.receiptCode, answered: out.answered, total: out.total, reason: o.reason }, ip: o.ip });
-      // Best effort and time-boxed: BullMQ waits indefinitely while Redis is down, which must never delay the receipt.
-      // The lifecycle sweeper grades any sealed attempt that was not enqueued.
-      if (this.redis.available) await Promise.race([
-        this.queues.add(QUEUES.grade, 'grade', { attemptId }, { jobId: `grade-${attemptId}` }).catch((e) => this.log.warn(`grade enqueue failed (sweeper will recover): ${e.message}`)),
-        new Promise<void>((resolve) => setTimeout(() => { this.log.warn('grade enqueue timed out (sweeper will recover)'); resolve(); }, 1500).unref()),
-      ]);
+      // Grade right away (best effort, in-process); the lifecycle tick grades any sealed attempt this misses.
+      this.signal.requestGrade(attemptId);
     }
     const { fresh: _f, examId: _e, studentId: _s, ...pub } = out;
     return pub;

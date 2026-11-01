@@ -2,7 +2,6 @@ import { CourseAccessService } from '../org/course-access.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { LINKS, percent, scoreQuestion, sumScores } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
-import { QueuesService } from '../../infra/queues.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { scope, type AuthUser } from '../../common/auth';
@@ -12,7 +11,7 @@ import { randomBytes } from 'node:crypto';
 @Injectable()
 export class ResultsService {
   private readonly log = new Logger('Results');
-  constructor(private readonly prisma: PrismaService, private readonly queues: QueuesService, private readonly audit: AuditService, private readonly notifications: NotificationsService, private readonly access: CourseAccessService) {}
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly notifications: NotificationsService, private readonly access: CourseAccessService) {}
 
   // ───────────── automatic MCQ grading (idempotent) ─────────────
   async gradeAttempt(attemptId: string) {
@@ -50,7 +49,7 @@ export class ResultsService {
     return attempts.length;
   }
 
-  // ───────────── lifecycle tick (called by the BullMQ sweeper) ─────────────
+  // ───────────── lifecycle tick (run by JobsService every 10 s) ─────────────
   async tick(finalizeFn: (attemptId: string) => Promise<unknown>) {
     const stats = { autoSubmitted: 0, graded: 0, opened: 0, closed: 0, pending: 0 };
     const expired = await this.prisma.$queryRaw<{ id: string }[]>`SELECT id FROM attempts WHERE status = 'IN_PROGRESS' AND "deadlineAt" + interval '5 seconds' < clock_timestamp() LIMIT 500`;

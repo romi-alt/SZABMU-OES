@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { HEARTBEAT_STALE_SECONDS, LINKS } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
-import { RedisService } from '../../infra/redis.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DeliveryService } from '../delivery/delivery.service';
@@ -12,7 +11,7 @@ import type { Prisma } from '../../generated/prisma/client';
 @Injectable()
 export class InvigilationService {
   constructor(
-    private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly audit: AuditService,
+    private readonly prisma: PrismaService, private readonly audit: AuditService,
     private readonly notifications: NotificationsService, private readonly delivery: DeliveryService,
   ) {}
 
@@ -45,7 +44,7 @@ export class InvigilationService {
       SELECT aa."attemptId", count(*) FILTER (WHERE aa.state = 'ANSWERED')::int AS n FROM attempt_answers aa JOIN attempts a ON a.id = aa."attemptId" WHERE a."examId" = ${examId}::uuid GROUP BY 1`;
     const cm = new Map(counts.map((c) => [c.attemptId, c.n]));
     let hb: Record<string, string> = {};
-    try { hb = await this.redis.client.hgetall(`hb:${examId}`); } catch { /* optional */ }
+    try { for (const h of await this.prisma.attemptHeartbeat.findMany({ where: { examId }, select: { attemptId: true, seenAt: true, online: true } })) hb[h.attemptId] = JSON.stringify({ t: h.seenAt.getTime(), online: h.online }); } catch { /* optional */ }
     const am = new Map(attempts.map((a) => [a.studentId, a]));
     const total = await this.prisma.examQuestion.count({ where: { examId } });
     const rows = cands.map((c) => {

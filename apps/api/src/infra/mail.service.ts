@@ -2,21 +2,19 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import nodemailer from 'nodemailer';
 import { CONFIG, type Config } from '../config';
 import { PrismaService } from './prisma.service';
-import { QUEUES, QueuesService } from './queues.service';
 
-/** Outbox pattern: every message is persisted first, then delivered by a BullMQ worker. */
+/** Outbox pattern: every message is persisted first, then delivered in the background; the lifecycle tick retries failures. */
 @Injectable()
 export class MailService {
   private readonly log = new Logger('Mail');
   constructor(
     private readonly prisma: PrismaService,
-    private readonly queues: QueuesService,
     @Inject(CONFIG) private readonly cfg: Config,
   ) {}
 
   async enqueue(toEmail: string, subject: string, body: string, kind: string) {
     const m = await this.prisma.outboundMessage.create({ data: { toEmail, subject, body, kind } });
-    await this.queues.add(QUEUES.mail, 'send', { id: m.id }, { jobId: `mail-${m.id}` }).catch((e) => this.log.warn(`enqueue failed: ${e.message}`));
+    setImmediate(() => { void this.deliver(m.id).catch((e: Error) => this.log.warn(`delivery of ${m.id} failed (will retry): ${e.message}`)); });
     return m;
   }
 
@@ -36,5 +34,12 @@ export class MailService {
       await this.prisma.outboundMessage.update({ where: { id }, data: { status: 'FAILED', lastError: String(e.message).slice(0, 500), attempts: { increment: 1 } } });
       throw e;
     }
+  }
+
+  /** Called by the lifecycle tick: re-send messages that failed or were never attempted. No-op without an SMTP host (outbox-only mode). */
+  async retryUndelivered(limit = 25) {
+    if (!this.cfg.SMTP_HOST) return;
+    const due = await this.prisma.outboundMessage.findMany({ where: { status: { in: ['PENDING', 'FAILED'] }, attempts: { lt: 5 }, createdAt: { gt: new Date(Date.now() - 24 * 3600_000) } }, orderBy: { createdAt: 'asc' }, take: limit, select: { id: true } });
+    for (const m of due) await this.deliver(m.id).catch(() => undefined);
   }
 }
