@@ -12,6 +12,12 @@
   ],
   "scripts": {
     "build:shared": "npm run build -w @oes/shared",
+    "build:web": "npm run build:shared && npm run build -w @oes/web",
+    "build:api": "npm run build:shared && npm run build -w @oes/api",
+    "start:web": "npm run start -w @oes/web",
+    "start:api": "node apps/api/dist/main.js",
+    "start:worker": "node apps/api/dist/worker.js",
+    "reconcile": "npm run reconcile -w @oes/api",
     "build": "npm run build:shared && npm run build -w @oes/api && npm run build -w @oes/web",
     "typecheck": "npm run build:shared && npm run typecheck -w @oes/api && npm run typecheck -w @oes/web",
     "lint": "eslint .",
