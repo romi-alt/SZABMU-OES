@@ -9,6 +9,12 @@ interface Ctx { me: Me | null; loading: boolean; refresh: () => Promise<void>; l
 const C = createContext<Ctx>({ me: null, loading: true, refresh: async () => undefined, logout: async () => undefined, can: () => false });
 export const useMe = () => useContext(C);
 
+/** Rendered by pages that must stay visible to signed-out visitors (e.g. the 404 page); the provider will not redirect from them. */
+export function PublicPage() {
+  useEffect(() => { document.documentElement.dataset.publicPage = '1'; return () => { delete document.documentElement.dataset.publicPage; }; }, []);
+  return null;
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null); const [loading, setLoading] = useState(true);
   const router = useRouter(); const path = usePathname();
@@ -20,7 +26,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     window.addEventListener(SESSION_EXPIRED_EVENT, onExpired); return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);
   const publicPath = path === '/login' || path === '/forgot' || path === '/verify';
-  useEffect(() => { if (!loading && !me && !publicPath) router.replace('/login'); }, [loading, me, publicPath, router]);
+  useEffect(() => { if (!loading && !me && !publicPath && !document.documentElement.dataset.publicPage) router.replace('/login'); }, [loading, me, publicPath, router]);
   // A signed-in user whose second factor is outstanding can only be on /mfa (the API enforces this regardless).
   useEffect(() => { if (me && me.mfa && me.mfa.state !== 'ok' && path !== '/mfa') router.replace('/mfa'); }, [me, path, router]);
   const logout = useCallback(async () => { try { await post('/auth/logout'); } finally { setMe(null); router.replace('/login'); } }, [router]);
