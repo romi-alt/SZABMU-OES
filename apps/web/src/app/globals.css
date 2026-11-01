@@ -394,3 +394,5 @@ a:has(> .stat) { display: block; border-radius: 16px; transition: transform .12s
   .auth-logo { width: 210px; } .auth-brand { font-size: 24px; }
   .auth-form { gap: 14px; } .auth-card { padding: 22px 18px; } .auth-note { padding: 12px 14px; }
 }
+
+.auth-note small.plain { margin: 0; color: var(--ink); font-size: 13px; }

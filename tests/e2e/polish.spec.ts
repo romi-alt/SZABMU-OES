@@ -59,3 +59,11 @@ test('public artwork (white logo, campus photo) is served as images, never rewri
     const res = await request.get(path); expect(res.status(), path).toBe(200); expect(res.headers()['content-type'], path).toContain(type);
   }
 });
+
+test('the staff portal sign-in page never mentions the exam schedule; the student portal still does', async ({ page, browser }) => {
+  await page.goto('/login'); await expect(page.getByText('Check your exam schedule and guidelines')).toBeVisible(); await expect(page.getByText('Take Exams')).toBeVisible();
+  const staff = await browser.newPage(); await staff.goto('http://localhost:3002/login');
+  await expect(staff.getByRole('heading', { name: 'Sign in' })).toBeVisible(); await expect(staff.getByText('Accounts lock for 15 minutes')).toBeVisible();
+  await expect(staff.getByText('New student?')).toHaveCount(0); await expect(staff.getByText(/exam schedule/i)).toHaveCount(0); await expect(staff.getByText('Schedule', { exact: false })).toHaveCount(0);
+  await staff.close();
+});
