@@ -5,6 +5,7 @@ import { RedisService } from '../../infra/redis.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DeliveryService } from '../delivery/delivery.service';
+import { MonitorService } from '../control/monitor.service';
 import { scope, type AuthUser } from '../../common/auth';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import type { Prisma } from '../../generated/prisma/client';
@@ -13,7 +14,7 @@ import type { Prisma } from '../../generated/prisma/client';
 export class InvigilationService {
   constructor(
     private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly audit: AuditService,
-    private readonly notifications: NotificationsService, private readonly delivery: DeliveryService,
+    private readonly notifications: NotificationsService, private readonly delivery: DeliveryService, private readonly monitorView: MonitorService,
   ) {}
 
   /** Institutions this user may monitor for a given exam. Invigilators: only where assigned (∩ their scope). */
@@ -36,27 +37,23 @@ export class InvigilationService {
     return this.prisma.exam.findMany({ where: { ...where, status: { in: ['SCHEDULED', 'LIVE', 'CLOSED'] } }, orderBy: { opensAt: 'asc' }, take: 50, include: { course: { select: { code: true, title: true } }, _count: { select: { candidates: true } } } });
   }
 
-  async monitor(u: AuthUser, examId: string) {
-    const inst = await this.monitorScope(u, examId);
-    const now = await this.prisma.dbNow();
-    const cands = await this.prisma.examCandidate.findMany({ where: { examId, ...(inst ? { institutionId: { in: inst } } : {}) }, include: { student: { select: { regNo: true, user: { select: { fullName: true } } } }, institution: { select: { code: true } } }, orderBy: { student: { regNo: 'asc' } } });
-    const attempts = await this.prisma.attempt.findMany({ where: { examId, studentId: { in: cands.map((c) => c.studentId) } } });
-    const counts = await this.prisma.$queryRaw<{ attemptId: string; n: number }[]>`
-      SELECT aa."attemptId", count(*) FILTER (WHERE aa.state = 'ANSWERED')::int AS n FROM attempt_answers aa JOIN attempts a ON a.id = aa."attemptId" WHERE a."examId" = ${examId}::uuid GROUP BY 1`;
-    const cm = new Map(counts.map((c) => [c.attemptId, c.n]));
-    let hb: Record<string, string> = {};
-    try { hb = await this.redis.client.hgetall(`hb:${examId}`); } catch { /* optional */ }
-    const am = new Map(attempts.map((a) => [a.studentId, a]));
-    const total = await this.prisma.examQuestion.count({ where: { examId } });
-    const rows = cands.map((c) => {
-      const a = am.get(c.studentId);
-      const beat = a && hb[a.id] ? (JSON.parse(hb[a.id]!) as { t: number; online: boolean }) : null;
-      const secs = beat ? Math.round((now.getTime() - beat.t) / 1000) : null;
-      const connection = !a ? 'NOT_STARTED' : a.status !== 'IN_PROGRESS' ? 'FINISHED' : secs !== null && secs <= HEARTBEAT_STALE_SECONDS && beat!.online ? 'ONLINE' : 'DISCONNECTED';
-      return { studentId: c.studentId, attemptId: a?.id ?? null, regNo: c.student.regNo, fullName: c.student.user.fullName, institution: c.institution.code, status: a?.status ?? 'NOT_STARTED', connection, answered: a ? cm.get(a.id) ?? 0 : 0, total, startedAt: a?.startedAt ?? null, deadlineAt: a?.deadlineAt ?? null, secondsSinceHeartbeat: secs, integrityFlags: a?.integrityFlags ?? 0, extraTimeMin: c.extraTimeMin };
-    });
-    const sum = (f: (r: (typeof rows)[number]) => boolean) => rows.filter(f).length;
-    return { serverNow: now, summary: { candidates: rows.length, notStarted: sum((r) => r.status === 'NOT_STARTED'), inProgress: sum((r) => r.status === 'IN_PROGRESS'), disconnected: sum((r) => r.connection === 'DISCONNECTED'), submitted: sum((r) => ['SUBMITTED', 'AUTO_SUBMITTED'].includes(r.status)), flagged: sum((r) => r.integrityFlags > 0) }, rows };
+  /**
+   * Backwards-compatible monitor response, now BOUNDED: aggregates come from the shared per-exam snapshot and candidates are one page
+   * (≤ 100). The control centre uses /snapshot, /candidates and /stream directly.
+   */
+  async monitor(u: AuthUser, examId: string, q: { page?: number; pageSize?: number } = {}) {
+    const viewer = await this.monitorView.staffViewer(u, examId);
+    const [snap, page, total] = await Promise.all([
+      this.monitorView.snapshot(viewer, examId),
+      this.monitorView.candidates(viewer, examId, { page: q.page ?? 1, pageSize: q.pageSize ?? 100 }),
+      this.prisma.examQuestion.count({ where: { examId } }),
+    ]);
+    const t = snap.totals;
+    return {
+      serverNow: snap.serverNow, status: snap.status, stateVersion: snap.stateVersion, freshness: snap.freshness, page: page.page, pageSize: page.pageSize, totalRows: page.total,
+      summary: { candidates: t.allocated, notStarted: t.allocated - t.admitted, inProgress: t.inProgress + t.suspended, disconnected: t.disconnected ?? 0, submitted: t.submitted + t.autoSubmitted, flagged: page.rows.filter((r) => r.integrityFlags > 0).length },
+      rows: page.rows.map((r) => ({ ...r, total, secondsSinceHeartbeat: r.lastSeenAt ? Math.round((Date.now() - new Date(r.lastSeenAt).getTime()) / 1000) : null })),
+    };
   }
 
   private async loadAttempt(u: AuthUser, attemptId: string) {

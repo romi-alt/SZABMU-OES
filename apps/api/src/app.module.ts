@@ -31,13 +31,18 @@ import { ReportsService } from './modules/reports/reports.service';
 import { ReportsController } from './modules/reports/reports.controller';
 import { HealthController } from './modules/health.controller';
 import { JobsService } from './modules/jobs.service';
+import { ExamEventsService } from './modules/control/events.service';
+import { MonitorService } from './modules/control/monitor.service';
+import { LifecycleService } from './modules/control/lifecycle.service';
+import { ExamControlService } from './modules/control/control.service';
+import { ExamControlController } from './modules/control/control.controller';
 
 @Module({
-  controllers: [AuthController, OrgController, CourseAssignmentsController, ExamsController, DeliveryController, ResultsController, InvigilationController, ReportsController, HealthController, MetricsController],
+  controllers: [AuthController, OrgController, CourseAssignmentsController, ExamsController, DeliveryController, ResultsController, InvigilationController, ReportsController, ExamControlController, HealthController, MetricsController],
   providers: [
     { provide: CONFIG, useFactory: () => loadConfig() },
     PrismaService, RedisService, QueuesService, MailService, MetricsService, AuditService, NotificationsService,
-    AuthService, MfaService, OrgService, CourseAccessService, QuestionsService, ExamsService, DeliveryService, ResultsService, InvigilationService, ReportsService, JobsService,
+    AuthService, MfaService, OrgService, CourseAccessService, QuestionsService, ExamsService, DeliveryService, ResultsService, InvigilationService, ReportsService, ExamEventsService, MonitorService, LifecycleService, ExamControlService, JobsService,
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],
