@@ -23,7 +23,7 @@ test.describe('staff workflows', () => {
 
   test('lecturer authors a clinical MCQ → submits → examiner approves', async ({ page, browser }) => {
     await login(page, 'lecturer.a');
-    await page.getByRole('link', { name: 'Question bank' }).click();
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Question bank' }).click();
     await page.getByRole('button', { name: '+ New question' }).click();
     const dlg = page.getByRole('dialog', { name: 'New question' });
     await dlg.getByLabel('Type').selectOption('CLINICAL_MCQ');
@@ -40,7 +40,7 @@ test.describe('staff workflows', () => {
 
     const ctx = await browser.newContext(); const ex = await ctx.newPage();
     await login(ex, 'examiner');
-    await ex.getByRole('link', { name: 'Question review' }).click();
+    await ex.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Question bank' }).click();
     const r2 = ex.locator('tbody tr', { hasText: 'underlying cause of this anaemia' });
     await expect(r2).toContainText('Submitted');
     await r2.getByRole('button', { name: 'Approve' }).click();
@@ -58,7 +58,7 @@ test.describe('staff workflows', () => {
     await expect(s.getByTestId('save-state')).toHaveText('✓ Saved');
 
     await login(page, 'invigilator.b');
-    await page.getByRole('link', { name: 'Live monitor' }).click();
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Live monitor' }).click();
     await page.getByRole('link', { name: /Monitor/ }).first().click();
     await expect(page.getByRole('heading', { name: 'Live monitor' })).toBeVisible();
     const rows = page.locator('tbody tr');
@@ -67,14 +67,16 @@ test.describe('staff workflows', () => {
     expect(new Set(campus)).toEqual(new Set(['DMC-B']));
     const mine = page.locator('tbody tr', { hasText: 'DMC-B-2024-0003' });
     await expect(mine).toContainText('In progress');
-    await expect(mine.getByRole('button', { name: '+ Time' })).toBeVisible();
+    await expect(mine.getByRole('button', { name: 'Add time for DMC-B-2024-0003' })).toBeVisible();
+    await expect(mine.getByRole('button', { name: 'End attempt for DMC-B-2024-0003' })).toHaveText('End attempt…');
+    await expect(mine.getByRole('button', { name: 'Report incident for DMC-B-2024-0003' })).toBeVisible();
     await ctx.close();
   });
 
   test('CCE dashboard and audit chain verification', async ({ page }) => {
     await login(page, 'cce');
     await expect(page.getByText('Papers to approve')).toBeVisible();
-    await page.getByRole('link', { name: 'Audit trail' }).click();
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Audit trail' }).click();
     await page.getByRole('button', { name: 'Verify chain integrity' }).click();
     await expect(page.getByText(/Chain intact/)).toBeVisible();
   });
@@ -114,7 +116,7 @@ test.describe('staff workflows', () => {
 
     const ctx2 = await browser.newContext(); const p2 = await ctx2.newPage();
     await login(p2, 'lecturer.a2');
-    await p2.getByRole('link', { name: 'Question bank' }).click();
+    await p2.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Question bank' }).click();
     await expect(p2.getByRole('heading', { name: /Question bank/ })).toBeVisible();
     await expect(p2.getByLabel('Course').first().locator('option')).toHaveCount(2); // "All courses" + the single assigned course
     await ctx2.close();

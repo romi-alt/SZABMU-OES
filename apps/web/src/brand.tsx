@@ -6,10 +6,10 @@ import Image from 'next/image';
  * sits on whatever surface it is placed on. It is served as-is (`unoptimized`): the optimizer's lossy resize made the small lettering soft. `plate` puts it on a white plate with equal padding on all sides (for dark surfaces).
  */
 export const LOGO_ALT = 'Shaheed Zulfiqar Ali Bhutto Medical University, Islamabad';
-export function BrandLogo({ plate = false, priority = false, className = '' }: { plate?: boolean; priority?: boolean; className?: string }) {
+export function BrandLogo({ plate = false, white = false, priority = false, className = '' }: { plate?: boolean; white?: boolean; priority?: boolean; className?: string }) {
   return (
     <div className={`logo ${plate ? 'logo-plate' : ''} ${className}`}>
-      <Image src="/logo.png" alt={LOGO_ALT} width={1200} height={284} priority={priority} unoptimized />
+      <Image src={white ? '/logo-white.png' : '/logo.png'} alt={LOGO_ALT} width={1200} height={284} priority={priority} unoptimized />
     </div>
   );
 }

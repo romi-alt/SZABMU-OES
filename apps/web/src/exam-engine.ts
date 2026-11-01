@@ -31,8 +31,7 @@ const blank = (): QState => ({ selectedLabel: null, state: null, marked: false, 
 
 export function paletteKind(q: QState): PaletteKind {
   if (q.state === 'ANSWERED' && q.selectedLabel) return 'answered';
-  if (q.state === 'SKIPPED') return 'skipped';
-  if (!q.visited) return 'notvisited';
+  if (!q.visited) return 'notvisited';        // a skipped question (state SKIPPED, from earlier sittings) is simply "not answered" (UI-016)
   return 'unanswered';
 }
 

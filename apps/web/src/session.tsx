@@ -25,7 +25,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const onExpired = () => { try { sessionStorage.setItem('oes:expired', '1'); } catch { /* storage unavailable */ } setMe(null); };
     window.addEventListener(SESSION_EXPIRED_EVENT, onExpired); return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);
-  const publicPath = path === '/login' || path === '/forgot' || path === '/verify';
+  const publicPath = path === '/login' || path === '/forgot' || path === '/register' || path === '/verify';
   useEffect(() => { if (!loading && !me && !publicPath && !document.documentElement.dataset.publicPage) router.replace('/login'); }, [loading, me, publicPath, router]);
   // A signed-in user whose second factor is outstanding can only be on /mfa (the API enforces this regardless).
   useEffect(() => { if (me && me.mfa && me.mfa.state !== 'ok' && path !== '/mfa') router.replace('/mfa'); }, [me, path, router]);

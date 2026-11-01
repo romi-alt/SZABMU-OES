@@ -1,9 +1,10 @@
 'use client';
 import Link from 'next/link';
-import { useGet } from '@/api';
+import { fmtDT, useGet } from '@/api';
+import { Icon, iconForRoute } from '@/icons';
 import { useMe } from '@/session';
 import { Async, Card, PageHead, Stat } from '@/ui';
-import { examPriority } from '@oes/shared';
+import { examPriority, isSafeAppLink } from '@oes/shared';
 import { ExamActionLink, ExamStatusCell, presentExam, type MyExam } from '@/exam-status-ui';
 
 const TILES: Record<string, { k: string; key: string; s?: string; href?: string }[]> = {
@@ -15,6 +16,39 @@ const TILES: Record<string, { k: string; key: string; s?: string; href?: string 
   CCE: [{ k: 'Papers to approve', key: 'papersToApprove', href: '/exams?status=PAPER_PENDING' }, { k: 'Results to publish', key: 'resultsToPublish', href: '/exams?status=RESULT_PENDING' }, { k: 'Open incidents', key: 'openIncidents', href: '/incidents' }, { k: 'Live exams', key: 'liveExams', href: '/monitor' }],
   SUPER_ADMIN: [{ k: 'Institutions', key: 'institutions', href: '/institutions' }, { k: 'Users', key: 'users', href: '/users' }, { k: 'Students', key: 'students', href: '/students' }, { k: 'Exams', key: 'exams', href: '/exams' }, { k: 'Audit entries', key: 'auditEntries', href: '/audit' }],
 };
+
+const SHORTCUTS: Record<string, { label: string; desc: string; href: string }[]> = {
+  STUDENT: [{ label: 'Exam schedule', desc: 'See what is open and start or resume', href: '/schedule' }, { label: 'Results', desc: 'Your published results', href: '/results' }, { label: 'Performance', desc: 'How you are doing over time', href: '/performance' }, { label: 'My profile', desc: 'Contact details and password', href: '/profile' }],
+  LECTURER: [{ label: 'Question bank', desc: 'Write and track your questions', href: '/questions' }, { label: 'Examinations', desc: 'Papers and results for your courses', href: '/exams' }, { label: 'Students', desc: 'Students at your campus', href: '/students' }],
+  EXAMINER: [{ label: 'Review questions', desc: 'Approve or return submitted questions', href: '/questions' }, { label: 'Approve papers', desc: 'Papers waiting for your decision', href: '/exams' }, { label: 'Live monitor', desc: 'Watch examinations in progress', href: '/monitor' }, { label: 'Incidents', desc: 'Reports raised during examinations', href: '/incidents' }],
+  CAMPUS_ADMIN: [{ label: 'Add or import students', desc: 'Create accounts for your campus', href: '/students' }, { label: 'Student register', desc: 'Let students register themselves', href: '/roster' }, { label: 'Enrolment & eligibility', desc: 'Attendance and condonation', href: '/enrolment' }, { label: 'Live monitor', desc: 'Your campus during an examination', href: '/monitor' }],
+  INVIGILATOR: [{ label: 'Live monitor', desc: 'Candidates at your campus', href: '/monitor' }, { label: 'Incidents', desc: 'Report and follow up', href: '/incidents' }],
+  CCE: [{ label: 'Papers & results', desc: 'Approve papers and publish results', href: '/exams' }, { label: 'Live monitor', desc: 'Across all campuses', href: '/monitor' }, { label: 'Enrolment & eligibility', desc: 'Overrides and condonation', href: '/enrolment' }, { label: 'Audit trail', desc: 'Who did what, and when', href: '/audit' }],
+  SUPER_ADMIN: [{ label: 'Institutions', desc: 'Colleges and affiliations', href: '/institutions' }, { label: 'Users', desc: 'Staff accounts and roles', href: '/users' }, { label: 'Programs & courses', desc: 'Academic structure', href: '/programs' }, { label: 'Audit trail', desc: 'Security-relevant history', href: '/audit' }],
+};
+
+function QuickActions({ role }: { role: string }) {
+  return (
+    <Card title="Quick actions"><ul className="shortcuts" data-testid="quick-actions">{(SHORTCUTS[role] ?? []).map((s) => (
+      <li key={s.href + s.label}><Link href={s.href} className="shortcut"><span className="shortcut-ico"><Icon name={iconForRoute(s.href)} size={18} /></span><span className="shortcut-t"><b>{s.label}</b><small>{s.desc}</small></span><Icon name="arrow" size={16} /></Link></li>))}</ul></Card>
+  );
+}
+
+/** The latest notifications, so "what happened" is visible without opening the bell. */
+interface Note { id: string; title: string; body: string; link?: string | null; readAt?: string | null; createdAt: string }
+function RecentActivity() {
+  const st = useGet<{ unread: number; items: Note[] }>('/notifications');
+  return (
+    <Card title="Recent activity">
+      <Async state={st}>{(d: { items: Note[] }) => d.items.length === 0 ? <div className="card-b muted" data-testid="recent-empty">Nothing new yet. Updates about your examinations will appear here.</div> :
+        <ul className="activity" data-testid="recent-activity">{d.items.slice(0, 5).map((n: Note) => (
+          <li key={n.id} className={n.readAt ? '' : 'unread'}><span className="act-dot" aria-hidden /><div className="act-b">
+            <b>{isSafeAppLink(n.link) ? <Link href={n.link!}>{n.title}</Link> : n.title}</b>
+            <div className="small muted">{n.body}</div><div className="small faint">{fmtDT(n.createdAt)}{n.readAt ? '' : ' · new'}</div></div></li>))}</ul>}
+      </Async>
+    </Card>
+  );
+}
 
 /** What needs the candidate's attention, in order, using the same status model as the schedule (UI-007). */
 function MyExams() {
@@ -43,11 +77,17 @@ export default function Dashboard() {
       <Async state={st}>{(d) => (
         <div className="stack-lg">
           <div className={`grid g${Math.min(5, TILES[me.role]!.length)}`}>{TILES[me.role]!.map((t) => {
-            const v = d[t.key]; const tile = <Stat key={t.k} k={t.k} v={v === null || v === undefined ? '—' : t.key === 'avgPercent' ? `${v}%` : v} s={t.s} />;
+            const v = d[t.key]; const tile = <Stat key={t.k} icon={t.href ? iconForRoute(t.href) : 'performance'} k={t.k} v={v === null || v === undefined ? '—' : t.key === 'avgPercent' ? `${v}%` : v} s={t.s} />;
             return t.href ? <Link key={t.k} href={t.href} style={{ textDecoration: 'none', color: 'inherit' }}>{tile}</Link> : tile;
           })}</div>
-          {me.role === 'STUDENT' && <MyExams />}
-          {me.role === 'LECTURER' && d.byStatus && <Card title="My question pipeline"><div className="row wrap">{Object.entries(d.byStatus).map(([k, v]) => <span key={k} className="chip" aria-pressed="false">{k.toLowerCase()}: <b className="mono">{v as number}</b></span>)}</div></Card>}
+          <div className="dash-grid">
+            <div className="stack-lg">
+              {me.role === 'STUDENT' && <MyExams />}
+              {me.role === 'LECTURER' && d.byStatus && <Card title="My question pipeline"><div className="row wrap">{Object.entries(d.byStatus).map(([k, v]) => <span key={k} className="chip">{k.toLowerCase()}: <b className="mono">{v as number}</b></span>)}</div></Card>}
+              <RecentActivity />
+            </div>
+            <QuickActions role={me.role} />
+          </div>
         </div>)}
       </Async>
     </>

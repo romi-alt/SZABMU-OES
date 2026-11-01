@@ -50,7 +50,7 @@ test.describe('authentication', () => {
   test('a student who types an admin URL gets a permission error, not data', async ({ page }) => {
     await login(page, 'student.a003');
     await page.goto('/users');
-    await expect(page.getByText(/not permitted/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /do not have access to Staff & accounts/ })).toBeVisible();
   });
 
   test('password recovery: code → new password → sign in with it', async ({ page }) => {
