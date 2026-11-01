@@ -8,7 +8,7 @@
 
 | Item | Value |
 |---|---|
-| Student portal | https://oes.szabmu.site (candidates sit exams) |
+| Student portal | **https://szabmu.site** (also `www.` and `oes.szabmu.site`) — candidates sit exams |
 | Staff dashboard | https://dashboard.szabmu.site (college / university roles) |
 | Original free URL | https://yellowgreen-grasshopper-337716.hostingersite.com (mapped to the student portal) |
 | Health check | `GET /api/health` → `{"status":"ok","db":true,"redis":true}` |
@@ -62,12 +62,12 @@
    | `API_INTERNAL_URL` | `http://127.0.0.1:47321` (**build-time**) |
    | `API_PORT` | `47321` |
    | `API_NODE_ENV` | `development` (demo; see deviations) |
-   | `WEB_ORIGIN` | `https://oes.szabmu.site,https://dashboard.szabmu.site,https://yellowgreen-grasshopper-337716.hostingersite.com` |
+   | `WEB_ORIGIN` | every host above with `https://` |
    | `TRUST_PROXY` | `true` (behind Hostinger's edge) |
    | `DEV_EXPOSE_CODES` | `false` |
    | `RUN_WORKERS` | `true` (BullMQ consumers + lifecycle reconciler run inside the API child) |
    | `PORTAL_ENFORCE` | `true` |
-| `PORTAL_HOSTS` | `oes.szabmu.site=student,dashboard.szabmu.site=staff,yellowgreen-grasshopper-337716.hostingersite.com=student` |
+| `PORTAL_HOSTS` | `szabmu.site=student,www.szabmu.site=student,oes.szabmu.site=student,dashboard.szabmu.site=staff,yellowgreen-grasshopper-337716.hostingersite.com=student` |
 | `MFA_ENFORCE` | `false` (demo) |
 
 6. **Deploy:** `hosting_deploy` with `git: { repository: "romi-alt/SZABMU-OES", branch: "main" }`, `type: nodejs`, Node 24,
@@ -93,7 +93,7 @@ WEB_ORIGIN="https://oes.szabmu.site,https://dashboard.szabmu.site"
 - Verified locally: student↔student 200, staff↔staff 200, cross-portal sign-in 401, spoofed header 401, `/exams` only on staff, `/register` only on student.
 
 Hostname requirement: Hostinger's free `*.hostingersite.com` domains accept neither subdomains nor parked domains, so the two portals
-use the account's real domain `szabmu.site`. **Live since 2026-11-01:** `oes.szabmu.site` and `dashboard.szabmu.site` are parked on this
+use the account's real domain `szabmu.site`. Per the owner: the student exam side is the main address `szabmu.site`, the college dashboard is the subdomain `dashboard.szabmu.site`. **Live since 2026-11-01:** `oes.szabmu.site` and `dashboard.szabmu.site` are parked on this
 website (DNS: Hostinger `ALIAS` → `*.cdn.hstgr.net`, TLS issued automatically); `PORTAL_HOSTS` also maps the free URL to `student`.
 Live check: student on oes 200, CCE on dashboard 200, cross-portal 401 both ways, `/exams` 404 on oes and 200 on dashboard.
 
