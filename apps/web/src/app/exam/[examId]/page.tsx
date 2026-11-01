@@ -3,7 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ApiError, fmtDT, get, post } from '@/api';
+import { ApiError, fmtDT, get, openStream, post } from '@/api';
 import { ExamEngine, paletteKind, type PaletteKind } from '@/exam-engine';
 import { useMe } from '@/session';
 import { Loading, Modal, Notice, errMsg } from '@/ui';
@@ -21,6 +21,7 @@ export default function ExamPage() {
   const [info, setInfo] = useState<any>(null); const [error, setError] = useState(''); const [starting, setStarting] = useState(false);
   const [session, setSession] = useState<{ engine: ExamEngine; questions: Q[]; exam: any; attemptId: string } | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [lobby, setLobby] = useState<{ status: string } | null>(null);
   const clientId = useRef('');
   if (!clientId.current && typeof window !== 'undefined') {
     // one id per browser tab: a second tab/device gets a different id and takes over the attempt
@@ -34,18 +35,30 @@ export default function ExamPage() {
     try {
       const r = await post('/attempts/start', { examId, clientId: clientId.current });
       const engine = new ExamEngine(r.attempt.id, clientId.current, r.questions.map((q: Q) => q.id), r.answers, r.attempt.deadlineAt, r.serverNow);
-      setSession({ engine, questions: r.questions, exam: r.exam, attemptId: r.attempt.id });
+      engine.suspended = !!r.control?.suspended; engine.examStatus = r.control?.examStatus ?? '';
+      setLobby(null); setSession({ engine, questions: r.questions, exam: r.exam, attemptId: r.attempt.id });
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'ALREADY_SUBMITTED') { setReceipt({ receiptCode: e.body.receiptCode, submittedAt: e.body.submittedAt, answered: 0, total: 0, status: 'SUBMITTED' }); }
+      if (e instanceof ApiError && e.code === 'WAITING_FOR_START') { setLobby({ status: e.body?.status ?? 'ADMISSION_OPEN' }); }
+      else if (e instanceof ApiError && e.code === 'ALREADY_SUBMITTED') { setReceipt({ receiptCode: e.body.receiptCode, submittedAt: e.body.submittedAt, answered: 0, total: 0, status: 'SUBMITTED' }); }
       else setError(errMsg(e));
     } finally { setStarting(false); }
   }, [examId]);
 
   useEffect(() => () => session?.engine.dispose(), [session]);
 
+  // Synchronized exam: the candidate waits in the lobby; the server pushes EXAM_STARTED (events are hints — we re-ask the server, which decides).
+  useEffect(() => {
+    if (!lobby) return;
+    const go = () => { void begin(); };
+    const close = openStream(`/me/exams/${examId}/stream`, { event: (name) => { if (name === 'EXAM_STARTED' || name === 'resync') go(); } });
+    const poll = setInterval(async () => { try { const st = await get(`/me/exams/${examId}/state`); if (st.status === 'LIVE') go(); } catch { /* keep waiting */ } }, 10_000);
+    return () => { close(); clearInterval(poll); };
+  }, [lobby, examId, begin]);
+
   if (loading || !me) return <div style={{ padding: 40 }}><Loading /></div>;
   if (receipt) return <ReceiptView receipt={receipt} attemptId={session?.attemptId} examTitle={session?.exam?.title ?? info?.title} onDone={() => router.push('/dashboard')} />;
   if (session) return <Player key={session.attemptId} {...session} clientId={clientId.current} onSubmitted={(r) => { session.engine.clearBuffer(); session.engine.dispose(); setReceipt(r); }} onTakeover={() => { session.engine.dispose(); setSession(null); void begin(); }} />;
+  if (lobby) return <Shell><h1>{info?.title ?? 'Examination'}</h1><div className="card" role="status" data-testid="lobby"><div className="card-b stack"><h2>You are admitted — waiting for the examination to start</h2><p className="muted" style={{ margin: 0 }}>The examination office starts this paper for every candidate at the same time. Stay on this page: it will open automatically. Your clock begins when the examination starts, not before.</p></div></div></Shell>;
   if (info === false) return <Shell><Notice tone="bad">You are not registered for this examination.</Notice><Link href="/schedule">Back to schedule</Link></Shell>;
   if (!info) return <Shell>{error ? <Notice tone="bad">{error}</Notice> : <Loading />}</Shell>;
 
@@ -84,6 +97,21 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
   const submitKey = useRef(''); if (!submitKey.current) { submitKey.current = sessionStorage.getItem(`oes:sk:${attemptId}`) ?? `sk${uid()}`; sessionStorage.setItem(`oes:sk:${attemptId}`, submitKey.current); }
   const q = questions[idx]!; const st = engine.get(q.id); const counts = engine.counts();
   const timeUp = useRef(false);
+  const [ctlMsg, setCtlMsg] = useState('');
+
+  // Live control: authoritative state arrives with every heartbeat; an SSE event just makes us ask NOW instead of in ≤15 s.
+  useEffect(() => { void engine.heartbeat(); }, [engine]);
+  useEffect(() => {
+    const note = (name: string, extendedMs?: number) => {
+      if (name === 'EXAM_SUSPENDED') setCtlMsg('The examination has been suspended by the examination office. Your saved answers are safe.');
+      else if (name === 'EXAM_RESUMED') setCtlMsg('The examination has resumed. Your remaining time is shown above.');
+      else if (name === 'DEADLINE_EXTENDED') setCtlMsg(extendedMs && extendedMs > 0 ? `Your time has been extended by ${Math.round(extendedMs / 60000)} minute(s).` : 'The examination time was extended.');
+      else if (name === 'EXAM_CLOSING') setCtlMsg('The examination is closing. Finish and submit your answers.');
+      else if (name === 'ADMISSION_CLOSED') setCtlMsg('Admission has closed for late arrivals. Your own attempt is not affected.');
+      else if (name === 'EXAM_CLOSED') setCtlMsg('The examination has been closed.');
+    };
+    return openStream(`/me/exams/${exam.id}/stream`, { event: (name) => { if (name === 'state') return; void engine.heartbeat().then((r) => note(name, r?.extendedMs)); } });
+  }, [engine, exam.id]);
 
   useEffect(() => { if (layout === 'single') engine.visit(q.id); }, [engine, q.id, layout]);
   useEffect(() => { const t = setInterval(() => setRemaining(engine.remainingMs()), 250); return () => clearInterval(t); }, [engine]);
@@ -139,11 +167,13 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
         <div className="grow"><div className="title">{exam.title}</div><div className="small muted">{questions.length} questions · {exam.totalMarks} marks</div></div>
         <div className="small muted" aria-live="polite">Answered <b className="mono" style={{ color: 'var(--ink)' }}>{counts.answered}</b> / {questions.length}</div>
         <div className={`exam-clock ${low ? 'low' : ''}`} role="timer" aria-label="Time remaining"><div className="k">Remaining</div><div className="v" data-testid="remaining">{clock(remaining)}</div></div>
-        <button className="btn btn-primary" onClick={openReview} disabled={busy}>Review &amp; submit</button>
+        <button className="btn btn-primary" onClick={openReview} disabled={busy || engine.suspended}>Review &amp; submit</button>
       </header>
       {!engine.online && <div className="conn off" role="alert">Connection lost. Keep working — your answers are held on this device and are saved automatically once the connection returns. {engine.pendingCount()} not yet saved.</div>}
       {msg && <div className="conn" style={{ background: '#FFFBEF', borderBottom: '1px solid #EBD9A8' }} role="status">{msg}</div>}
-      <div className="exam-body">
+      {ctlMsg && <div className="conn" style={{ background: '#EEF6F1', borderBottom: '1px solid #BBD9C8' }} role="status" data-testid="control-message">{ctlMsg} <button className="btn-link small" onClick={() => setCtlMsg('')}>Dismiss</button></div>}
+      {engine.suspended && <div className="conn off" role="alert" data-testid="suspended-banner"><b>Examination suspended.</b> You cannot answer or submit until it resumes. Do not close this window — your saved answers are safe and it resumes automatically.</div>}
+      <div className="exam-body" style={engine.suspended ? { opacity: 0.5, pointerEvents: 'none' } : undefined} aria-disabled={engine.suspended}>
         <div className="stack" style={{ minWidth: 0 }}>
         <div className="row layout-toggle no-print" role="group" aria-label="Question layout">
           <span className="small muted">View</span>

@@ -250,8 +250,8 @@ export class DeliveryService {
    */
   async heartbeat(u: AuthUser, attemptId: string, clientId: string, online = true) {
     const studentId = this.studentIdOf(u);
-    const rows = await this.prisma.$queryRaw<{ id: string; examId: string; studentId: string; status: string; deadlineAt: Date; activeClientId: string | null; suspendedAt: Date | null; examStatus: string; stateVersion: number; inst: string; expired: boolean; now: Date }[]>`
-      SELECT a.id, a."examId", a."studentId", a.status, a."deadlineAt", a."activeClientId", a."suspendedAt", e.status::text AS "examStatus", e."stateVersion", s."institutionId" AS inst,
+    const rows = await this.prisma.$queryRaw<{ id: string; examId: string; studentId: string; status: string; deadlineAt: Date; activeClientId: string | null; suspendedAt: Date | null; suspensionPolicy: string | null; examStatus: string; stateVersion: number; inst: string; expired: boolean; now: Date }[]>`
+      SELECT a.id, a."examId", a."studentId", a.status, a."deadlineAt", a."activeClientId", a."suspendedAt", sp."timePolicy"::text AS "suspensionPolicy", e.status::text AS "examStatus", e."stateVersion", s."institutionId" AS inst,
              (a."deadlineAt" + make_interval(secs => ${SAVE_GRACE_SECONDS}::int)
                + CASE WHEN a."suspendedAt" IS NOT NULL AND sp."timePolicy" = 'FREEZE_CLOCK' THEN clock_timestamp() - a."suspendedAt" ELSE interval '0' END < clock_timestamp()) AS expired,
              clock_timestamp() AS now
@@ -268,7 +268,7 @@ export class DeliveryService {
       try { await this.redis.client.pipeline().hset(`hb:${a.examId}`, a.id, JSON.stringify({ t, online })).expire(`hb:${a.examId}`, 86400)
         .zadd(`hbz:${a.examId}`, t, a.id).expire(`hbz:${a.examId}`, 86400).zadd(`hbz:${a.examId}:${a.inst}`, t, a.id).expire(`hbz:${a.examId}:${a.inst}`, 86400).exec(); } catch { /* coordination only */ }
     }
-    return { status: a.status, serverNow: now, deadlineAt: a.deadlineAt, superseded: a.activeClientId !== clientId, suspended: !!a.suspendedAt, examStatus: a.examStatus, stateVersion: a.stateVersion };
+    return { status: a.status, serverNow: now, deadlineAt: a.deadlineAt, superseded: a.activeClientId !== clientId, suspended: !!a.suspendedAt, suspensionPolicy: a.suspensionPolicy, examStatus: a.examStatus, stateVersion: a.stateVersion };
   }
 
   async recordEvent(u: AuthUser, attemptId: string, clientId: string, kind: string, detail?: Record<string, unknown>) {
