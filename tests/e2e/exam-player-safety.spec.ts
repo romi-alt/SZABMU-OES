@@ -93,7 +93,7 @@ test.describe.serial('examination player safety (100-question paper)', () => {
   test('UI-003: refresh with a pending answer — the buffered change survives and is re-sent idempotently', async ({ page }) => {
     const id = await enter(page, 'student.b008'); await page.route(SAVE, () => { /* hang */ });
     await page.getByTestId('opt-E').click(); await expect(page.getByTestId('save-state')).toHaveText('Saving…');
-    await page.unroute(SAVE); await page.reload(); await page.getByRole('button', { name: /begin|resume/i }).click(); await expect(page.getByRole('timer')).toBeVisible();
+    await page.unroute(SAVE); await page.reload(); await expect(page.getByRole('timer')).toBeVisible();
     await expect(page.getByTestId('opt-E')).toHaveAttribute('aria-checked', 'true'); await expect(page.getByTestId('save-state')).toHaveText('✓ Saved', { timeout: 20_000 });
     expect((await sheet(page, id)).filter((a) => a.selectedLabel === 'E').length).toBe(1);
   });

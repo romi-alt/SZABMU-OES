@@ -5,7 +5,7 @@ import { Icon, iconForRoute } from '@/icons';
 import { useMe } from '@/session';
 import { Async, Card, PageHead, Stat } from '@/ui';
 import { examPriority, isSafeAppLink } from '@oes/shared';
-import { ExamActionLink, ExamStatusCell, presentExam, type MyExam } from '@/exam-status-ui';
+import { ExamActionLink, ExamStatusCell, presentExam, type MyExam, NotEligibleNotice, type NotEligible } from '@/exam-status-ui';
 
 const TILES: Record<string, { k: string; key: string; s?: string; href?: string }[]> = {
   STUDENT: [{ k: 'Open now', key: 'openNow', s: 'You can start or resume', href: '/schedule' }, { k: 'Scheduled', key: 'scheduled', s: 'Not open yet', href: '/schedule' }, { k: 'Results published', key: 'completed', href: '/results' }, { k: 'Average score', key: 'avgPercent', s: 'Across published results' }],
@@ -52,9 +52,10 @@ function RecentActivity() {
 
 /** What needs the candidate's attention, in order, using the same status model as the schedule (UI-007). */
 function MyExams() {
-  const st = useGet<{ serverNow: string; items: MyExam[] }>('/me/exams');
+  const st = useGet<{ serverNow: string; items: MyExam[]; notEligible?: NotEligible[] }>('/me/exams');
   return (
     <Card title="Your examinations" actions={<Link className="btn btn-sm" href="/schedule">All examinations</Link>}>
+      {st.data?.notEligible?.length ? <div className="card-b"><NotEligibleNotice items={st.data.notEligible} /></div> : null}
       <Async state={st} idle={<div className="card-b muted">Nothing to show yet.</div>}>{(d) => {
         const off = new Date(d.serverNow).getTime() - Date.now();
         const rows = [...d.items].map((r) => ({ r, p: presentExam(r, off) })).filter(({ p }) => p.key !== 'CLOSED_NOT_SAT' && p.key !== 'CANCELLED').sort((a, b) => examPriority(a.p) - examPriority(b.p)).slice(0, 3);
