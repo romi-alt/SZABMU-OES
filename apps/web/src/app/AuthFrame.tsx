@@ -24,9 +24,9 @@ export function AuthHeading({ icon, title, lead }: { icon: IconName; title: stri
   return <div className="auth-head"><span className="auth-tile"><Icon name={icon} size={22} /></span><div><h1>{title}</h1>{lead && <p className="muted">{lead}</p>}</div></div>;
 }
 
-interface FieldProps { label: string; icon: IconName; value: string; onChange: (v: string) => void; onBlur?: () => void; type?: 'text' | 'email' | 'password' | 'date'; required?: boolean; error?: string; hint?: string; placeholder?: string; autoComplete?: string; autoFocus?: boolean; inputMode?: 'email' | 'tel' | 'numeric' | 'text'; min?: string; max?: string; mono?: boolean }
+interface FieldProps { label: string; icon: IconName; value: string; onChange: (v: string) => void; onBlur?: () => void; type?: 'text' | 'email' | 'password' | 'date'; required?: boolean; error?: string; hint?: string; placeholder?: string; autoComplete?: string; autoFocus?: boolean; inputMode?: 'email' | 'tel' | 'numeric' | 'text'; min?: string; max?: string; mono?: boolean; maxLength?: number }
 /** Label above a bordered control with a leading icon; passwords get a show/hide switch. The error line is reserved so it never shifts the button. */
-export function AuthField({ label, icon, value, onChange, onBlur, type = 'text', required, error, hint, placeholder, autoComplete, autoFocus, inputMode, min, max, mono }: FieldProps) {
+export function AuthField({ label, icon, value, onChange, onBlur, type = 'text', required, error, hint, placeholder, autoComplete, autoFocus, inputMode, min, max, mono, maxLength }: FieldProps) {
   const id = useId(); const [shown, setShown] = useState(false); const isPw = type === 'password';
   return (
     <div className="af">
@@ -34,7 +34,7 @@ export function AuthField({ label, icon, value, onChange, onBlur, type = 'text',
       <div className={`af-wrap${error ? ' bad' : ''}`}>
         <Icon name={icon} />
         <input id={id} className={mono ? 'mono' : ''} type={isPw && shown ? 'text' : type} value={value} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} required={required} placeholder={placeholder}
-          autoComplete={autoComplete} autoFocus={autoFocus} inputMode={inputMode} min={min} max={max} aria-invalid={error ? true : undefined} aria-describedby={`${id}-m`} />
+          autoComplete={autoComplete} autoFocus={autoFocus} inputMode={inputMode} min={min} max={max} maxLength={maxLength} aria-invalid={error ? true : undefined} aria-describedby={`${id}-m`} />
         {isPw && <button type="button" className="af-eye" onClick={() => setShown(!shown)} aria-pressed={shown} aria-label={shown ? 'Hide characters' : 'Show characters'}><Icon name={shown ? 'eye' : 'eyeOff'} /></button>}
       </div>
       <span className={error ? 'err-text' : 'hint'} id={`${id}-m`} role={error ? 'alert' : undefined}>{error || hint}</span>
