@@ -7,7 +7,7 @@ export interface PalItem { id: string; number: number; index: number; kind: Pale
 const pad = (n: number) => String(n).padStart(2, '0');
 /** Non-colour cue for every state (WCAG 1.4.1): a glyph in the corner of the button, repeated in the legend. */
 export const GLYPH: Record<PaletteKind, string> = { answered: '✓', skipped: '»', unanswered: '?', notvisited: '' };
-const WORD: Record<PaletteKind, string> = { answered: 'answered', skipped: 'skipped', unanswered: 'unanswered', notvisited: 'not visited' };
+const WORD: Record<PaletteKind, string> = { answered: 'answered', skipped: 'not answered', unanswered: 'not answered', notvisited: 'not visited' };
 export const labelFor = (i: PalItem) => `Question ${i.number}, ${WORD[i.kind]}${i.marked ? ', marked for review' : ''}${i.unsynced ? ', not yet confirmed by the server' : ''}`;
 
 /**
@@ -44,7 +44,7 @@ export function QuestionPalette({ items, all, total, current, inView, counts, fi
           <button className="btn" type="button" onClick={nextNotAnswered}>Next not answered</button>
         </form>
         <span className={hint ? 'small faint' : 'sr-only'} id="jump-hint" role="status" aria-live="polite">{hint || 'Type a question number and press Enter, or press G anywhere to jump here.'}</span>
-        <div className="row wrap" role="group" aria-label="Filter questions">{([['all', 'All'], ['answered', 'Answered'], ['skipped', 'Skipped'], ['unanswered', 'Unanswered'], ['notvisited', 'Not visited'], ['marked', 'Marked']] as [Filter, string][]).map(([k, l]) => <button key={k} type="button" className="chip" aria-pressed={filter === k} onClick={() => setFilter(k)}>{l}{k !== 'all' ? ` ${counts[k] ?? 0}` : ''}</button>)}</div>
+        <div className="row wrap" role="group" aria-label="Filter questions">{([['all', 'All'], ['answered', 'Answered'], ['unanswered', 'Not answered'], ['notvisited', 'Not visited'], ['marked', 'Marked']] as [Filter, string][]).map(([k, l]) => <button key={k} type="button" className="chip" aria-pressed={filter === k} onClick={() => setFilter(k)}>{l}{k !== 'all' ? ` ${counts[k] ?? 0}` : ''}</button>)}</div>
         <ul className="pal" ref={listRef} aria-labelledby="palette-title">
           {items.map((x, at) => (
             <li key={x.id}>
@@ -56,7 +56,7 @@ export function QuestionPalette({ items, all, total, current, inView, counts, fi
         </ul>
         {!items.length && <div className="small faint">No questions match this filter.</div>}
         <ul className="legend" aria-label="Legend">
-          <li><i className="lg answered" aria-hidden />✓ Answered</li><li><i className="lg skipped" aria-hidden />» Skipped</li><li><i className="lg unanswered" aria-hidden />? Unanswered</li><li><i className="lg notvisited" aria-hidden />Not visited</li><li><i className="lg marked" aria-hidden />Marked for review</li><li><i className="lg unsynced" aria-hidden />! Not yet confirmed</li>
+          <li><i className="lg answered" aria-hidden />✓ Answered</li><li><i className="lg unanswered" aria-hidden />? Not answered</li><li><i className="lg notvisited" aria-hidden />Not visited</li><li><i className="lg marked" aria-hidden />Marked for review</li><li><i className="lg unsynced" aria-hidden />! Not yet confirmed</li>
         </ul>
       </div></div>
   );
