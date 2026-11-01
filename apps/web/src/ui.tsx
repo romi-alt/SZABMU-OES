@@ -93,7 +93,7 @@ export function Table<T>({ cols, rows, empty = 'Nothing to show.', rowKey }: { c
   );
 }
 export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: ReactNode }) {
-  return <label className="f">{label}{children}{hint && <span className="hint">{hint}</span>}{error && <span className="err-text">{error}</span>}</label>;
+  return <label className="f">{label}{children}{hint && <span className="hint">{hint}</span>}{error && <span className="err-text" role="alert">{error}</span>}</label>;
 }
 /**
  * Shared dialog. Focus moves into the dialog when it opens, Tab/Shift+Tab stay inside it, Escape and the backdrop close it, and focus returns to
