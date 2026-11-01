@@ -44,11 +44,12 @@ a { color: var(--maroon); } a:hover { color: var(--crimson); }
   .sidebar { position: fixed; z-index: 40; inset: 0 auto 0 0; width: min(300px, 86vw); height: 100dvh; transform: translateX(-100%); visibility: hidden; transition: transform .18s ease, visibility 0s .18s; }
   .nav-open .sidebar { transform: none; visibility: visible; transition: transform .18s ease; }
   .nav-open .nav-scrim { display: block; position: fixed; inset: 0; z-index: 30; background: rgba(36, 23, 22, 0.55); }
-  .shell .menu-btn { display: inline-flex; } .user-name { display: none; } .topbar { gap: 8px; flex-wrap: wrap; }
+  .shell .topbar .menu-btn { display: inline-flex; } .user-name { display: none; } .topbar { gap: 8px; flex-wrap: wrap; }
   .content { padding: 16px; } .topbar { padding: 10px 16px; }
   .bell-panel { position: fixed !important; left: 8px; right: 8px; top: 56px !important; width: auto !important; }
 }
-.menu-btn { display: none; }
+/* specificity above `.btn { display: inline-flex }`, which is declared later in this file */
+.topbar .menu-btn { display: none; }
 /* The scrim is an element inside the .shell grid: it must be out of the layout everywhere except while the phone drawer is open. */
 .nav-scrim { display: none; }
 .skip-link { position: absolute; left: -9999px; top: 8px; z-index: 100; background: var(--white); padding: 8px 12px; border: 2px solid var(--crimson); border-radius: 6px; } .skip-link:focus { left: 8px; }
