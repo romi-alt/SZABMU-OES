@@ -298,7 +298,7 @@ input.in:focus, select.in:focus, textarea.in:focus { outline: 0; border-color: v
 @media (max-width: 640px) { .user-chip { padding: 0 6px; } .user-chip .user-name { display: none; } }
 
 /* Auth: campus photograph under the brand panel */
-.auth-art { justify-content: flex-start; gap: 26px; background: linear-gradient(180deg, #4a0d18 0%, #4a0d18 26%, rgba(74, 13, 24, .55) 44%, rgba(74, 13, 24, 0) 62%), url('/campus.jpg') 22% 100% / auto 64% no-repeat, #35090f; }
+.auth-art { justify-content: flex-start; gap: 26px; background: linear-gradient(180deg, #4a0d18 0%, #4a0d18 26%, rgba(74, 13, 24, .55) 44%, rgba(74, 13, 24, 0) 62%), url('/campus.jpg') center bottom / 100% auto no-repeat, #35090f; }
 .auth-title { margin-top: 6px; } .auth-foot { margin-top: auto; text-shadow: 0 1px 6px rgba(0, 0, 0, .6); color: #fff; }
 .auth-card { border-radius: 22px; } .auth-tile, .auth-head .auth-tile { border-radius: 14px; } .af-wrap { border-radius: 12px; } .auth-btn { border-radius: 12px; }
 @media (max-width: 860px) { .auth-art { background: linear-gradient(180deg, #4a0d18, #35090f); } }
