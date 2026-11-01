@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { HEARTBEAT_STALE_SECONDS, LINKS } from '@oes/shared';
+import { LINKS } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
 import { RedisService } from '../../infra/redis.service';
 import { AuditService } from '../audit/audit.service';
@@ -34,7 +34,7 @@ export class InvigilationService {
     const where: Prisma.ExamWhereInput = u.role === 'INVIGILATOR'
       ? { invigilators: { some: { userId: u.id } } }
       : u.institutionIds === null ? {} : { institutions: { some: { institutionId: { in: u.institutionIds } } } };
-    return this.prisma.exam.findMany({ where: { ...where, status: { in: ['SCHEDULED', 'LIVE', 'CLOSED'] } }, orderBy: { opensAt: 'asc' }, take: 50, include: { course: { select: { code: true, title: true } }, _count: { select: { candidates: true } } } });
+    return this.prisma.exam.findMany({ where: { ...where, status: { in: ['SCHEDULED', 'ADMISSION_OPEN', 'LIVE', 'SUSPENDED', 'CLOSING', 'CLOSED', 'SCORING'] } }, orderBy: { opensAt: 'asc' }, take: 50, include: { course: { select: { code: true, title: true } }, _count: { select: { candidates: true } } } });
   }
 
   /**

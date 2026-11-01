@@ -184,7 +184,7 @@ export class ExamControlService {
     if (!d.confirm) throw badRequest('Explicit confirmation is required to resume an examination');
     return this.command(u, examId, 'RESUME', i, async ({ tx, exam, now }) => {
       const open = await tx.examSuspension.findMany({ where: { examId: exam.id, resumedAt: null }, orderBy: { suspendedAt: 'asc' } });
-      let target = d.suspensionId ? open.find((s) => s.id === d.suspensionId) : exam.status === 'SUSPENDED' ? open.find((s) => s.scope === 'EXAM') : open.length === 1 ? open[0] : undefined;
+      const target = d.suspensionId ? open.find((s) => s.id === d.suspensionId) : exam.status === 'SUSPENDED' ? open.find((s) => s.scope === 'EXAM') : open.length === 1 ? open[0] : undefined;
       if (!target) {
         if (d.suspensionId) { const done = await tx.examSuspension.findFirst({ where: { id: d.suspensionId, examId: exam.id } }); if (!done) throw notFound('Suspension'); return { changed: false, result: { note: 'This suspension was already resumed', suspensionId: done.id } }; }
         if (open.length > 1) throw conflict('AMBIGUOUS', 'Several suspensions are open; name the one to resume', { open: open.map((s) => ({ id: s.id, scope: s.scope, institutionId: s.institutionId })) });

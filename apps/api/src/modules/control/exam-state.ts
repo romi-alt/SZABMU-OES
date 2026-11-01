@@ -84,7 +84,7 @@ export interface ExamFacts { status: ExamState; admissionClosedAt: Date | null; 
 export function availableCommands(f: ExamFacts): { command: Command; allowed: boolean; reason?: string }[] {
   const s = f.status; const admissionOpen = s === 'ADMISSION_OPEN' || ((s === 'LIVE' || s === 'SUSPENDED') && !f.admissionClosedAt);
   const r = (command: Command, allowed: boolean, reason?: string) => ({ command, allowed, ...(allowed ? {} : { reason }) });
-  const bad = (c: Command) => `Not available while the examination is ${s}`;
+  const bad = (_c: Command) => `Not available while the examination is ${s}`;
   return [
     r('OPEN_ADMISSION', (s === 'SCHEDULED' || ((s === 'LIVE' || s === 'SUSPENDED') && !!f.admissionClosedAt)), admissionOpen ? 'Admission is already open' : bad('OPEN_ADMISSION')),
     r('CLOSE_ADMISSION', admissionOpen, 'Admission is not open'),
