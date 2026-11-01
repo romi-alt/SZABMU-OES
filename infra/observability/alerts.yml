@@ -1,0 +1,102 @@
+# Prometheus alerting rules for the SZABMU OES API (scrape job name: oes-api).
+# Thresholds are STARTING POINTS chosen from the 2,000-candidate load measurements (save p99 ≈ 250 ms) and must be
+# re-tuned after the first rehearsal. Every metric used here is verified to exist by apps/api/test/metrics.test.ts.
+groups:
+  - name: oes-exam-integrity
+    rules:
+      - alert: OESAnswerSaveFailures
+        expr: sum(rate(oes_answer_save_total{result="error"}[2m])) / clamp_min(sum(rate(oes_answer_save_total[2m])), 1) > 0.01
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "More than 1% of answer saves are failing with server errors"
+          runbook: "docs/operations/observability.md#answer-save-failures"
+      - alert: OESAnswerSaveAnyErrors
+        expr: sum(increase(oes_answer_save_total{result="error"}[5m])) > 0
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: "At least one answer save failed with a server error in the last 5 minutes (candidates retry automatically; check the database)"
+          runbook: "docs/operations/observability.md#answer-save-failures"
+      - alert: OESAnswerSaveSlow
+        expr: histogram_quantile(0.99, sum by (le) (rate(oes_answer_save_duration_seconds_bucket[5m]))) > 1
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Answer-save p99 latency above 1 s (autosave still works but candidates may see 'Saving…' for long)"
+          runbook: "docs/operations/observability.md#slow-saves"
+      - alert: OESAnswerSaveVerySlow
+        expr: histogram_quantile(0.99, sum by (le) (rate(oes_answer_save_duration_seconds_bucket[5m]))) > 3
+        for: 3m
+        labels: { severity: critical }
+        annotations:
+          summary: "Answer-save p99 latency above 3 s"
+          runbook: "docs/operations/observability.md#slow-saves"
+      - alert: OESSubmissionErrors
+        expr: sum(increase(oes_submit_total{result="error"}[5m])) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "Final submissions are failing with server errors (candidates cannot receive receipts)"
+          runbook: "docs/operations/observability.md#submission-errors"
+  - name: oes-platform
+    rules:
+      - alert: OESApiDown
+        expr: up{job="oes-api"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations: { summary: "OES API instance is not scrapable", runbook: "docs/operations/observability.md#api-down" }
+      - alert: OESDatabaseDown
+        expr: oes_db_up == 0
+        for: 30s
+        labels: { severity: critical }
+        annotations: { summary: "The API cannot reach PostgreSQL", runbook: "docs/operations/observability.md#database-down" }
+      - alert: OESDatabaseErrors
+        expr: sum(increase(oes_db_errors_total[5m])) > 0
+        for: 0m
+        labels: { severity: warning }
+        annotations: { summary: "Database errors surfaced as HTTP 5xx", runbook: "docs/operations/observability.md#database-down" }
+      - alert: OESRedisDown
+        expr: oes_redis_up == 0
+        for: 1m
+        labels: { severity: warning }
+        annotations: { summary: "Redis unreachable: exams continue (PostgreSQL is authoritative) but live monitoring, rate limits and password reset are degraded", runbook: "docs/operations/observability.md#redis-down" }
+      - alert: OESServerErrorRatio
+        expr: sum(rate(oes_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(oes_http_requests_total[5m])), 1) > 0.02
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "More than 2% of HTTP responses are 5xx", runbook: "docs/operations/observability.md#api-down" }
+      - alert: OESEventLoopLag
+        expr: oes_event_loop_lag_seconds > 0.2
+        for: 2m
+        labels: { severity: warning }
+        annotations: { summary: "API event-loop p99 delay above 200 ms (CPU saturation: scale out)", runbook: "docs/operations/observability.md#slow-saves" }
+  - name: oes-campus-and-security
+    rules:
+      - alert: OESCampusDisconnected
+        expr: |
+          (oes_campus_candidates{state="disconnected"} / on (institution) group_left sum by (institution) (oes_campus_candidates)) > 0.2
+          and on (institution) sum by (institution) (oes_campus_candidates) >= 10
+        for: 2m
+        labels: { severity: warning }
+        annotations: { summary: "More than 20% of a campus's in-progress candidates have lost connectivity (likely campus network/ISP outage)", runbook: "docs/operations/observability.md#campus-disconnections" }
+      - alert: OESAuthFailureSpike
+        expr: sum(rate(oes_auth_failures_total{kind=~"login_invalid|mfa_invalid"}[5m])) > 1
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Sustained failed sign-ins / MFA codes (credential stuffing or a misconfigured client)", runbook: "docs/operations/observability.md#authentication-failures" }
+      - alert: OESAccountLockouts
+        expr: sum(increase(oes_auth_failures_total{kind=~"login_locked|mfa_locked"}[10m])) > 20
+        for: 0m
+        labels: { severity: warning }
+        annotations: { summary: "Many lockout rejections: candidates may be locked out before an exam, or someone is attacking accounts", runbook: "docs/operations/observability.md#authentication-failures" }
+      - alert: OESForbiddenSpike
+        expr: sum(rate(oes_unauthorized_requests_total{status="403"}[5m])) > 0.5
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Sustained 403 responses (permission probing / IDOR attempts, or a broken client role)", runbook: "docs/operations/observability.md#unauthorized-requests" }
+      - alert: OESUnauthenticatedSpike
+        expr: sum(rate(oes_unauthorized_requests_total{status="401"}[5m])) > 5
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Sustained 401 responses (mass session expiry, cookie problem, or scanning)", runbook: "docs/operations/observability.md#unauthorized-requests" }
