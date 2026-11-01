@@ -30,6 +30,7 @@ test.describe('error and recovery states', () => {
 
   test('expired session: the next request returns the user to sign-in with an explanation', async ({ page, context }) => {
     await login(page, 'student.a001');
+    await page.waitForLoadState('networkidle');                                     // let the dashboard's own requests finish: expiring the cookie mid-load would (correctly) redirect before the click
     await context.clearCookies();                                                   // the session cookie is gone (expiry / revoked elsewhere)
     await page.getByRole('navigation').getByRole('link', { name: 'Results' }).click();                       // any in-app request now gets 401 UNAUTHENTICATED
     await expect(page).toHaveURL(/\/login/);
@@ -68,7 +69,7 @@ test.describe('error and recovery states', () => {
 
   test('unexpected application error: boundary inside the shell, no stack or message, retry works', async ({ page }) => {
     await login(page, 'student.a001');
-    await page.route('**/api/me/exams', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: 'not-a-list' }) }));
+    await page.route('**/api/me/exams', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [null] }) }));   // a payload the page cannot render: the error boundary, not a blank screen
     await page.goto('/schedule');
     await expect(page.getByTestId('error-boundary')).toBeVisible();
     await expect(page.getByRole('navigation').first()).toBeVisible();               // the portal shell is still there
