@@ -37,4 +37,16 @@ export class MailService {
       throw e;
     }
   }
+
+  /**
+   * Database-driven backstop for the outbox: delivers messages that were persisted but never sent (queue consumer down, Redis down) or
+   * that failed. Used by the finite reconcile command (cron). No-op without an SMTP host (outbox-only mode), bounded per call and per message.
+   */
+  async retryUndelivered(limit = 25): Promise<{ attempted: number; sent: number }> {
+    if (!this.cfg.SMTP_HOST) return { attempted: 0, sent: 0 };
+    const due = await this.prisma.outboundMessage.findMany({ where: { status: { in: ['PENDING', 'FAILED'] }, attempts: { lt: 5 }, createdAt: { gt: new Date(Date.now() - 24 * 3600_000) } }, orderBy: { createdAt: 'asc' }, take: limit, select: { id: true } });
+    let sent = 0;
+    for (const m of due) { try { await this.deliver(m.id); sent++; } catch { /* recorded on the row; retried on the next pass until attempts = 5 */ } }
+    return { attempted: due.length, sent };
+  }
 }

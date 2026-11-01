@@ -1,5 +1,9 @@
 name: CI
-on: { push: { branches: [main] }, pull_request: {} }
+# Pushes to claude/** branches run CI too, so work that lands directly on a shared branch is checked, not only pull requests.
+# (A branch with an open PR therefore gets two runs per push: one for the branch, one for the merge with its base.)
+on: { push: { branches: [main, 'claude/**'] }, pull_request: {} }
+# A newer push to the same ref supersedes a run that is still going.
+concurrency: { group: 'ci-${{ github.ref }}', cancel-in-progress: true }
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -29,3 +33,35 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+
+  # Hostinger managed Node.js hosting offers Node 18 / 20 / 22 / 24 only; the repo declares engines >=26. This job is the evidence for
+  # whether the application builds and passes its tests on the version it will actually run on (24). No e2e here: that runs on `verify`.
+  node24:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: oes, POSTGRES_PASSWORD: oes_dev_password, POSTGRES_DB: szabmu_oes_test }
+        ports: ["5433:5432"]
+        options: --health-cmd "pg_isready -U oes" --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6390:6379"]
+    env:
+      TEST_DATABASE_URL: postgresql://oes:oes_dev_password@localhost:5433/szabmu_oes_test
+      DATABASE_URL: postgresql://oes:oes_dev_password@localhost:5433/szabmu_oes_test
+      REDIS_URL: redis://localhost:6390
+      COOKIE_SECRET: ci-only-cookie-secret-0123456789abcdef0123
+      RECEIPT_SECRET: ci-only-receipt-secret-0123456789abcdef0123
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: node --version
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Worker and reconcile entry points exist after the build
+        run: test -f apps/api/dist/main.js && test -f apps/api/dist/worker.js && test -f apps/api/dist/cron/reconcile.js
