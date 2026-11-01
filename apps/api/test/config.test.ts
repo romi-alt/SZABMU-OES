@@ -26,6 +26,8 @@ describe('production configuration validation', () => {
     ['dev MinIO credentials', { S3_ACCESS_KEY: 'oes_dev_minio', S3_SECRET_KEY: 'oes_dev_minio_secret' }, /development MinIO/],
     ['proxy trust missing', { TRUST_PROXY: 'false' }, /TRUST_PROXY=true is required/],
     ['MFA not enforced', { MFA_ENFORCE: 'false' }, /MFA_ENFORCE=true is required/],
+    ['raised sign-in rate limit (test-only knob)', { LOGIN_RATE_IP_MAX: '5000' }, /must be left at their defaults/],
+    ['raised per-account sign-in limit (test-only knob)', { LOGIN_RATE_ID_MAX: '500' }, /must be left at their defaults/],
     ['MFA key missing', { MFA_KEY: undefined }, /MFA_KEY .* is required/],
     ['MFA key reused from another secret', { MFA_KEY: GOOD.COOKIE_SECRET }, /MFA_KEY must be a distinct/],
     ['metrics token missing', { METRICS_TOKEN: undefined }, /METRICS_TOKEN .* is required/],
