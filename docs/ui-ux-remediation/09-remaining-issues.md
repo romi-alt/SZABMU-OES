@@ -1,14 +1,12 @@
 # 09 — Remaining issues
 
-13 NOT_STARTED, 5 REQUIRES_POLICY_DECISION, 10 FIXED_NOT_FULLY_TESTED.
+13 NOT_STARTED, 5 REQUIRES_POLICY_DECISION, 8 FIXED_NOT_FULLY_TESTED.
 
 - **UI-011** (P2) Global — Muted text token (--ink-3 #8A7A77) — FIXED_NOT_FULLY_TESTED. Not re-measured on every tinted background; axe not re-run across all 197 loads
 - **UI-013** (P2) Dialogs — Modal component — FIXED_NOT_FULLY_TESTED. No dedicated Modal unit spec
-- **UI-016** (P2) Question actions — Save & next / Skip / Next — FIXED_NOT_FULLY_TESTED. Button set unchanged; only the count wording is addressed
 - **UI-022** (P2) Navigation — Routes reachable but not in the menu — REQUIRES_POLICY_DECISION. Whether hidden-but-reachable routes should be added to menus or blocked is a product/permissions decision (docs/route-permissions.md).
 - **UI-023** (P2) Dashboards — Tile-only dashboards — NOT_STARTED. Open: see audit register UI-023
 - **UI-024** (P2) Staff & accounts — Account list — FIXED_NOT_FULLY_TESTED. Destructive buttons (Deactivate, Reset password) in this list are still unconfirmed
-- **UI-028** (P2) Search / filter / pagination — List state — FIXED_NOT_FULLY_TESTED. Not applied to: lecturer assignments, enrolment, live-monitor search, notifications; users/audit/roster/questions/exams/incidents are covered by the shared hook but only students has a full Back/reload browser test
 - **UI-030** (P2) Control centre — Dialog confirm labels — FIXED_NOT_FULLY_TESTED. No spec asserts the new wording
 - **UI-031** (P2) Notifications — Notification panel — FIXED_NOT_FULLY_TESTED. No per-event grouping or pagination; API still returns the latest 100
 - **UI-033** (P2) Loading states — Async/Loading — NOT_STARTED. Open: see audit register UI-033

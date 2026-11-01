@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { post, fmtTime, openStream, useGet } from '@/api';
 import { isCampusScoped } from '@oes/shared';
 import { useMe } from '@/session';
-import { Async, Card, Confirm, Field, PageHead, Stat, Status, Table, useAction } from '@/ui';
+import { useUrlState } from '@/url-state';
+import { Async, Card, Confirm, Field, ListEmpty, PageHead, Stat, Status, Table, useAction } from '@/ui';
 
 export default function MonitorExam() {
   const { examId } = useParams<{ examId: string }>(); const { me, can } = useMe(); const { run } = useAction();
-  const [page, setPage] = useState(1); const [q, setQ] = useState(''); const [act, setAct] = useState<{ kind: 'extend' | 'force' | 'incident'; row: any } | null>(null);
+  const url = useUrlState({ page: '1', q: '' }); const page = Number(url.vals.page) || 1; const q = url.vals.q; const setPage = (n: number) => url.set('page', String(n)); const setQ = (v: string) => url.set('q', v); const [act, setAct] = useState<{ kind: 'extend' | 'force' | 'incident'; row: any } | null>(null);
   const [live, setLive] = useState(false); const [snap, setSnap] = useState<any>(null);
   const first = useGet<any>(`/invigilation/exams/${examId}/snapshot`);
   const st = useGet<any>(`/invigilation/exams/${examId}/candidates?page=${page}&pageSize=50${q ? `&search=${encodeURIComponent(q)}` : ''}`);
@@ -30,7 +31,7 @@ export default function MonitorExam() {
           <div className="grid g4"><Stat k="Candidates" v={t.allocated} s={`${t.allocated - t.admitted} not started`} /><Stat k="In progress" v={t.inProgress + t.suspended} s={`${t.disconnected ?? '—'} disconnected${t.suspended ? ` · ${t.suspended} suspended` : ''}`} /><Stat k="Submitted" v={t.submitted + t.autoSubmitted} s={`${t.autoSubmitted} automatic`} /><Stat k="Open incidents" v={t.activeIncidents} /></div>
           <Card flush>
             <div className="filters"><Field label="Find candidate"><input className="in" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Reg. no. or name" /></Field></div>
-            <Table rowKey={(r: any) => r.studentId} rows={rows} empty="No candidates." cols={[
+            <Table rowKey={(r: any) => r.studentId} rows={rows} empty={q ? <ListEmpty noun="candidates" filters={[`“${q}”`]} onClear={url.reset} /> : 'No candidates.'} cols={[
               { h: 'Reg. no.', cell: (r: any) => <span className="code">{r.regNo}</span> }, { h: 'Name', cell: (r: any) => r.fullName }, { h: 'Campus', cell: (r: any) => r.institution },
               { h: 'Status', cell: (r: any) => <Status s={r.suspended ? 'SUSPENDED' : r.status} /> }, { h: 'Connection', cell: (r: any) => <Status s={r.connection} /> },
               { h: 'Answered', num: true, cell: (r: any) => r.attemptId ? r.answered : '—' }, { h: 'Deadline', cell: (r: any) => fmtTime(r.deadlineAt) }, { h: 'Flags', num: true, cell: (r: any) => r.integrityFlags || '' },

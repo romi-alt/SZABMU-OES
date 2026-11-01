@@ -113,11 +113,11 @@ test.describe.serial('examination player safety (100-question paper)', () => {
 
   test('UI-005/012: palette is operable by keyboard — one tab stop, arrow keys, Home/End, G to jump — and states have names and glyphs', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 }); await enter(page, 'student.a005');
-    await page.getByTestId('opt-A').click(); await page.getByRole('button', { name: 'Next →', exact: true }).click(); await page.getByRole('button', { name: 'Skip question' }).click(); await page.getByRole('button', { name: 'Mark for review' }).click();
-    const pal = page.locator('#question-navigator ul.pal'); await expect(pal.getByRole('button', { name: 'Question 1, answered' })).toBeVisible(); await expect(pal.getByRole('button', { name: 'Question 2, skipped' })).toBeVisible();
-    await expect(pal.getByRole('button', { name: /^Question 3, unanswered, marked for review/ })).toBeVisible();
+    await page.getByTestId('opt-A').click(); await page.getByRole('button', { name: 'Next →', exact: true }).click(); await page.getByRole('button', { name: 'Next →', exact: true }).click(); await page.getByRole('button', { name: 'Mark for review' }).click();
+    const pal = page.locator('#question-navigator ul.pal'); await expect(pal.getByRole('button', { name: 'Question 1, answered' })).toBeVisible(); await expect(pal.getByRole('button', { name: 'Question 2, not answered' })).toBeVisible();
+    await expect(pal.getByRole('button', { name: /^Question 3, not answered, marked for review/ })).toBeVisible();
     expect(await pal.locator('button').count()).toBe(100); expect(await pal.locator('[role=listitem]').count(), 'no role override on buttons').toBe(0);
-    const glyphs = await pal.locator('button .g').evaluateAll((els) => els.slice(0, 3).map((e) => e.textContent)); expect(glyphs).toEqual(['✓', '»', '?']);   // not colour alone
+    const glyphs = await pal.locator('button .g').evaluateAll((els) => els.slice(0, 3).map((e) => e.textContent)); expect(glyphs).toEqual(['✓', '?', '?']);   // not colour alone
     expect(await pal.locator('button[tabindex="0"]').count(), 'roving tabindex: a single tab stop').toBe(1);
     await pal.getByRole('button', { name: /^Question 3,/ }).focus(); await page.keyboard.press('ArrowRight'); await expect(pal.getByRole('button', { name: /^Question 4,/ })).toBeFocused();
     await page.keyboard.press('End'); await expect(pal.getByRole('button', { name: /^Question 100,/ })).toBeFocused(); await page.keyboard.press('Home'); await expect(pal.getByRole('button', { name: /^Question 1,/ })).toBeFocused();

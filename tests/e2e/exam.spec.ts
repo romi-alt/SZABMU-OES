@@ -46,21 +46,27 @@ test.describe.serial('student examination — real API and database', () => {
     await page.getByRole('button', { name: 'Unmark review' }).click();
     await expect(page.locator('.pal button.marked')).toHaveCount(0);
 
-    // answer again, then Save & next
+    // answer again, then Next (autosave: one forward action, no separate "Save & next" or "Skip")
     await page.getByTestId('opt-A').click();
-    await page.getByRole('button', { name: /save & next/i }).click();
+    await page.getByTestId('next-or-review').click();
     await expect(page.locator('.q-head')).toContainText('QUESTION 02 / 12');
+    await expect(page.getByRole('button', { name: /save & next|skip question/i })).toHaveCount(0);
 
-    // skip question 2 → palette shows skipped, moves to 3
-    await page.getByRole('button', { name: 'Skip question' }).click();
+    // moving on from question 2 without answering leaves it "not answered"
+    await page.getByTestId('next-or-review').click();
     await expect(page.locator('.q-head')).toContainText('QUESTION 03 / 12');
-    await expect(page.locator('.pal button.skipped')).toHaveCount(1);
+    await expect(page.locator('.pal button.unanswered')).toHaveCount(2);                  // question 2, and question 3 which is open but not answered
+
+    // UI-016: one forward action; "skipped" no longer exists as a separate state or filter
+    await expect(page.getByTestId('next-or-review')).toHaveText('Next →');
+    await expect(page.getByRole('group', { name: 'Filter questions' }).getByRole('button', { name: /^Skipped/ })).toHaveCount(0);
+    await expect(page.getByRole('group', { name: 'Filter questions' }).getByRole('button', { name: /^Not answered/ })).toBeVisible();
 
     // jump via palette; filter
     await page.locator('.pal button').nth(7).click();
     await expect(page.locator('.q-head')).toContainText('QUESTION 08 / 12');
-    await page.getByRole('button', { name: /^Skipped 1/ }).click();
-    await expect(page.locator('.pal button')).toHaveCount(1);
+    await page.getByRole('button', { name: /^Not answered 3/ }).click();                  // questions 2, 3 and 8: visited, not answered
+    await expect(page.locator('.pal button')).toHaveCount(3);
     await page.getByRole('button', { name: 'All', exact: true }).click();
     await expect(page.locator('.pal button')).toHaveCount(12);
 
@@ -91,6 +97,8 @@ test.describe.serial('student examination — real API and database', () => {
     const after = await page.getByTestId('remaining').innerText();
     expect(after <= before).toBe(true);
 
+    // the last question's forward action is "Review answers →" (UI-016)
+    await page.locator('.pal button').nth(11).click(); await expect(page.getByTestId('next-or-review')).toHaveText('Review answers →');
     // review & submit
     await page.getByRole('button', { name: /review & submit/i }).click();
     await expect(page.getByRole('heading', { name: 'Review your answers' })).toBeVisible();

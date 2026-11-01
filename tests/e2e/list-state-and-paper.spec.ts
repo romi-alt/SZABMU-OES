@@ -27,6 +27,17 @@ test.describe('list state lives in the address bar (UI-028)', () => {
   });
 });
 
+test('enrolment course/term and the monitor candidate search are kept in the URL', async ({ page }) => {
+  await login(page, 'admin.a'); await page.goto('/enrolment'); await expect(page.getByLabel('Course')).toBeVisible();
+  await page.getByLabel('Course').selectOption({ label: 'MBBS-PATH-4 — Pathology' }); await expect(page).toHaveURL(/course=/);
+  const chosen = new URL(page.url()).searchParams.get('course')!; expect(chosen.length).toBeGreaterThan(10);
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Students' }).click(); await expect(page).toHaveURL(/\/students/); await page.goBack();
+  await expect(page).toHaveURL(/\/enrolment\?.*course=/); await expect(page.getByLabel('Course')).toHaveValue(chosen, { timeout: 15_000 }); await expect(page.locator('tbody tr').first()).toBeVisible();
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Live monitor' }).click(); await page.getByRole('link', { name: /Monitor/ }).first().click();
+  await expect(page.locator('tbody tr').first()).toBeVisible(); await page.getByLabel('Find candidate').fill('zzzqq'); await expect(page).toHaveURL(/q=zzzqq/);
+  await expect(page.getByTestId('list-empty')).toContainText('No candidates match “zzzqq”'); await page.reload(); await expect(page.getByLabel('Find candidate')).toHaveValue('zzzqq');
+});
+
 test.describe.serial('paper builder (UI-027)', () => {
   let examId = '';
   test.afterAll(async ({ playwright }) => { if (!examId) return; const cce = await apiAs(playwright, 'cce'); await cce.post(`/api/exams/${examId}/cancel`, { data: {} }).catch(() => undefined); await cce.dispose(); });
