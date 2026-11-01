@@ -56,24 +56,27 @@ export class DeliveryService {
     const studentId = this.studentIdOf(u);
     const now = await this.prisma.dbNow();
     const cands = await this.prisma.examCandidate.findMany({
-      where: { studentId, exam: { status: { in: ['SCHEDULED', 'LIVE', 'CLOSED', 'RESULT_PENDING', 'PUBLISHED'] } } },
+      where: { studentId, exam: { status: { in: ['SCHEDULED', 'ADMISSION_OPEN', 'LIVE', 'SUSPENDED', 'CLOSING', 'CLOSED', 'SCORING', 'RESULT_PENDING', 'PUBLISHED'] } } },
       include: { exam: { include: { course: { select: { code: true, title: true, semester: true } }, _count: { select: { questions: true } } } } },
       orderBy: { exam: { opensAt: 'asc' } },
     });
-    const attempts = await this.prisma.attempt.findMany({ where: { studentId, examId: { in: cands.map((c) => c.examId) } }, select: { id: true, examId: true, status: true, receiptCode: true, submittedAt: true, deadlineAt: true } });
+    const attempts = await this.prisma.attempt.findMany({ where: { studentId, examId: { in: cands.map((c) => c.examId) } }, select: { id: true, examId: true, status: true, receiptCode: true, submittedAt: true, deadlineAt: true, suspendedAt: true } });
     const am = new Map(attempts.map((a) => [a.examId, a]));
     return {
       serverNow: now,
       items: cands.map((c) => {
         const a = am.get(c.examId) ?? null;
-        const open = ['SCHEDULED', 'LIVE'].includes(c.exam.status) && now >= c.exam.opensAt && now < c.exam.closesAt;
+        // A NEW attempt needs the control state to allow entry (admission open, not suspended, not closed) and the window; AUTOMATIC exams also follow the clock.
+        const open = startableStates(c.exam.controlMode).includes(c.exam.status as ExamState) && !c.exam.admissionClosedAt && now < c.exam.closesAt
+          && (c.exam.controlMode === 'MANUAL' || !!c.exam.officialStartAt || now >= c.exam.opensAt);
         const inProgress = a?.status === 'IN_PROGRESS';
         // A new attempt needs an ADMITTED roster decision; resuming an in-progress attempt never re-evaluates eligibility.
-        const canStart = (c.status === 'ADMITTED' && open && !a) || (open && inProgress) || (inProgress && now < new Date(a!.deadlineAt.getTime() + SAVE_GRACE_SECONDS * 1000));
+        const canStart = (c.status === 'ADMITTED' && open && !a) || (open && inProgress) || (inProgress && (!!a!.suspendedAt || now < new Date(a!.deadlineAt.getTime() + SAVE_GRACE_SECONDS * 1000)));
         return {
           examId: c.examId, code: c.exam.code, title: c.exam.title, course: c.exam.course, status: c.exam.status, opensAt: c.exam.opensAt, closesAt: c.exam.closesAt,
           durationMin: c.exam.durationMin + c.extraTimeMin, totalMarks: c.exam.totalMarks, questionCount: c.exam._count.questions, instructions: c.exam.instructions, negativeMarking: c.exam.negativeMarking,
-          attempt: a && { id: a.id, status: a.status, receiptCode: a.receiptCode, submittedAt: a.submittedAt }, canStart,
+          attempt: a && { id: a.id, status: a.status, receiptCode: a.receiptCode, submittedAt: a.submittedAt }, canStart, timingPolicy: c.exam.timingPolicy, suspended: !!a?.suspendedAt,
+          admission: c.exam.status === 'ADMISSION_OPEN' ? 'OPEN' : c.exam.admissionClosedAt ? 'CLOSED' : undefined,
         };
       }),
     };
@@ -112,6 +115,7 @@ export class DeliveryService {
       throw conflict('TIME_EXPIRED', 'Your time has ended; the attempt was submitted automatically');
     }
     if (!attempt) {
+      if (exam.admissionClosedAt && ['SCHEDULED', 'ADMISSION_OPEN', 'LIVE', 'SUSPENDED', 'CLOSING'].includes(exam.status)) throw conflict('ADMISSION_CLOSED', 'Admission to this examination has closed. Contact the examination office.', { status: exam.status, serverNow: now });
       if (exam.status === 'SUSPENDED') throw conflict('EXAM_SUSPENDED', 'The examination is suspended. Wait for instructions from the examination office.', { status: exam.status, serverNow: now });
       if (!startableStates(exam.controlMode).includes(exam.status as ExamState) || exam.paperStatus !== 'APPROVED') throw conflict('NOT_AVAILABLE', 'This examination is not available', { status: exam.status, serverNow: now });
       if (exam.admissionClosedAt) throw conflict('ADMISSION_CLOSED', 'Admission to this examination has closed. Contact the examination office.', { status: exam.status, serverNow: now });

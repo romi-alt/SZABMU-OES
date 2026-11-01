@@ -207,7 +207,7 @@ export class ExamsService {
     const student = await this.prisma.student.findUnique({ where: { id: studentId }, select: { institutionId: true } });
     if (!student || !scope.allows(u, student.institutionId)) throw notFound('Student');
     if (!exam.institutions.some((i) => i.institutionId === student.institutionId)) throw badRequest("The student's institution does not participate in this examination");
-    if (!['SCHEDULED', 'LIVE'].includes(exam.status)) throw conflict('BAD_STATE', 'Eligibility can only be overridden for scheduled or live examinations');
+    if (!['SCHEDULED', 'ADMISSION_OPEN', 'LIVE', 'SUSPENDED'].includes(exam.status)) throw conflict('BAD_STATE', 'Eligibility can only be overridden for scheduled or live examinations');
     const reason = d.reason.trim();
     const newDecision = d.decision === 'GRANT' ? 'ADMITTED' : 'REVOKED';
     const out = await this.prisma.$transaction(async (tx) => {
@@ -279,7 +279,7 @@ export class ExamsService {
 
   async cancel(u: AuthUser, examId: string, reason: string, ip?: string) {
     const exam = await this.load(u, examId);
-    if (['LIVE', 'CLOSED', 'RESULT_PENDING', 'PUBLISHED', 'CANCELLED'].includes(exam.status)) throw conflict('BAD_STATE', 'This exam can no longer be cancelled');
+    if (['ADMISSION_OPEN', 'LIVE', 'SUSPENDED', 'CLOSING', 'CLOSED', 'SCORING', 'RESULT_PENDING', 'PUBLISHED', 'CANCELLED'].includes(exam.status)) throw conflict('BAD_STATE', 'This exam can no longer be cancelled');
     await this.prisma.exam.update({ where: { id: examId }, data: { status: 'CANCELLED' } });
     await this.audit.log({ actor: u, action: 'exam.cancel', entity: 'exam', entityId: examId, meta: { reason }, ip });
     return { status: 'CANCELLED' };
