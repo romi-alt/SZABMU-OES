@@ -1,6 +1,6 @@
 # 09 — Remaining issues
 
-18 NOT_STARTED, 5 REQUIRES_POLICY_DECISION, 7 FIXED_NOT_FULLY_TESTED.
+17 NOT_STARTED, 5 REQUIRES_POLICY_DECISION, 8 FIXED_NOT_FULLY_TESTED.
 
 - **UI-011** (P2) Global — Muted text token (--ink-3 #8A7A77) — FIXED_NOT_FULLY_TESTED. Not re-measured on every tinted background; axe not re-run across all 197 loads
 - **UI-013** (P2) Dialogs — Modal component — FIXED_NOT_FULLY_TESTED. No dedicated Modal unit spec
@@ -19,7 +19,7 @@
 - **UI-036** (P2) Exam header — Sticky header — NOT_STARTED. Open: see audit register UI-036
 - **UI-037** (P2) Charts/tiles — aria-pressed on non-interactive chips — NOT_STARTED. Open: see audit register UI-037
 - **UI-038** (P2) Audit trail — Table — NOT_STARTED. Open: see audit register UI-038
-- **UI-039** (P3) Auth pages — Layout at 360–390 px — NOT_STARTED. Open: see audit register UI-039
+- **UI-039** (P3) Auth pages — Layout at 360–390 px — FIXED_NOT_FULLY_TESTED. The 401 console probe on public pages (second half of the finding) is NOT addressed; verify page not re-tested
 - **UI-040** (P3) Entry — Reload behaviour — NOT_STARTED. Open: see audit register UI-040
 - **UI-041** (P3) Long clinical stems — Question layout on phones — NOT_STARTED. Open: see audit register UI-041
 - **UI-042** (P3) Results vs Performance — Consistency — REQUIRES_POLICY_DECISION. Needs a decision on which of Results/Performance is authoritative.

@@ -11,6 +11,8 @@ import { AuthGuard } from './common/auth';
 import { AllExceptionsFilter } from './common/errors';
 import { AuditService } from './modules/audit/audit.service';
 import { AuthService } from './modules/auth/auth.service';
+import { RegistrationService } from './modules/auth/registration.service';
+import { RegistrationController } from './modules/auth/registration.controller';
 import { AuthController } from './modules/auth/auth.controller';
 import { MfaService } from './modules/auth/mfa.service';
 import { OrgService } from './modules/org/org.service';
@@ -38,11 +40,11 @@ import { ExamControlService } from './modules/control/control.service';
 import { ExamControlController } from './modules/control/control.controller';
 
 @Module({
-  controllers: [AuthController, OrgController, CourseAssignmentsController, ExamsController, DeliveryController, ResultsController, InvigilationController, ReportsController, ExamControlController, HealthController, MetricsController],
+  controllers: [AuthController, RegistrationController, OrgController, CourseAssignmentsController, ExamsController, DeliveryController, ResultsController, InvigilationController, ReportsController, ExamControlController, HealthController, MetricsController],
   providers: [
     { provide: CONFIG, useFactory: () => loadConfig() },
     PrismaService, RedisService, QueuesService, MailService, MetricsService, AuditService, NotificationsService,
-    AuthService, MfaService, OrgService, CourseAccessService, QuestionsService, ExamsService, DeliveryService, ResultsService, InvigilationService, ReportsService, ExamEventsService, MonitorService, LifecycleService, ExamControlService, JobsService,
+    AuthService, RegistrationService, MfaService, OrgService, CourseAccessService, QuestionsService, ExamsService, DeliveryService, ResultsService, InvigilationService, ReportsService, ExamEventsService, MonitorService, LifecycleService, ExamControlService, JobsService,
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],

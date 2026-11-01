@@ -58,6 +58,8 @@ describe('authorization coverage', () => {
         "GET /api/public/verify",
         "POST /api/auth/forgot",
         "POST /api/auth/login",
+        "POST /api/auth/register",
+        "POST /api/auth/register/verify",
         "POST /api/auth/reset",
         "POST /api/auth/verify-code",
       ]
