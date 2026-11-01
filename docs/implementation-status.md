@@ -219,4 +219,4 @@ No database change; the shared development database was not touched (12,023 user
 ### Checkpoint — UI/UX remediation (local commits, not pushed)
 - Done: all 8 P1 audit issues FIXED_VERIFIED plus shared-cause P2 items; student self-registration built (docs/ui-ux-remediation/12-student-registration.md, policy P-31 awaiting Registrar). Tracker: see 11-issue-tracker.md.
 - Gates on HEAD: lint 0; typecheck clean; builds OK; shared 52/52; API 260/260; Playwright 70/70; fault 17 passed/1 skipped.
-- Next action: UI-026/027/028 (forms, paper picker, list state), UI-009 follow-ups, then P3. Fault suite not re-run for the last two batches (no backend/engine change). Pushing needs authorisation.
+- Next action: UI-027/028 (paper picker, list state), UI-016 button set, then P3 items. Pushing needs authorisation per batch.

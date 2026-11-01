@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { del, fmtDate, post, useGet } from '@/api';
-import { Async, Confirm, Field, Modal, Notice, PageHead, Table, useAction } from '@/ui';
+import { Async, Confirm, Field, Modal, Notice, PageHead, Table, useAction, CancelButton } from '@/ui';
 
 /** Lecturer ↔ course assignments. A lecturer can author or manage questions only for courses listed here. */
 export default function Assignments() {
@@ -22,12 +22,12 @@ export default function Assignments() {
         { h: '', cell: (r: any) => <button className="btn btn-sm" onClick={() => setRevoke(r)}>Revoke</button> },
       ]} />}</Async>
       {add && (
-        <Modal title="Assign lecturer to course" onClose={() => setAdd(false)} footer={<><button className="btn" onClick={() => setAdd(false)}>Cancel</button>
+        <Modal title="Assign lecturer to course" onClose={() => setAdd(false)} missing={[!userId && 'Lecturer', !courseId && 'Course'].filter(Boolean) as string[]} footer={<><CancelButton />
           <button className="btn btn-primary" disabled={busy || !userId || !courseId} onClick={() => run(async () => { await post('/course-assignments', { userId, courseId, institutionId: inst }); setAdd(false); list.reload(); }, 'Assignment saved')}>Assign</button></>}>
           <div className="stack">
             <Field label="Campus"><select className="in" value={inst} onChange={(e) => { setInst(e.target.value); setUserId(''); }}>{(insts.data ?? []).map((i: any) => <option key={i.id} value={i.id}>{i.code} — {i.name}</option>)}</select></Field>
-            <Field label="Lecturer"><select className="in" value={userId} onChange={(e) => setUserId(e.target.value)}><option value="">Select…</option>{(lecturers.data?.items ?? []).map((u: any) => <option key={u.id} value={u.id}>{u.fullName}</option>)}</select></Field>
-            <Field label="Course"><select className="in" value={courseId} onChange={(e) => setCourseId(e.target.value)}><option value="">Select…</option>{courses.map((c: any) => <option key={c.id} value={c.id}>{c.code} — {c.title} ({c.program})</option>)}</select></Field>
+            <Field label="Lecturer" required><select className="in" value={userId} onChange={(e) => setUserId(e.target.value)}><option value="">Select…</option>{(lecturers.data?.items ?? []).map((u: any) => <option key={u.id} value={u.id}>{u.fullName}</option>)}</select></Field>
+            <Field label="Course" required><select className="in" value={courseId} onChange={(e) => setCourseId(e.target.value)}><option value="">Select…</option>{courses.map((c: any) => <option key={c.id} value={c.id}>{c.code} — {c.title} ({c.program})</option>)}</select></Field>
             <Notice>The lecturer immediately gains access to this course's question bank at the selected campus.</Notice>
           </div>
         </Modal>
