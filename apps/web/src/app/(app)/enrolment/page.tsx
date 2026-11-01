@@ -2,11 +2,12 @@
 import { useState } from 'react';
 import { patch, post, useGet } from '@/api';
 import { useMe } from '@/session';
+import { useUrlState } from '@/url-state';
 import { Async, Card, Confirm, Empty, ErrorBox, Field, Loading, Notice, PageHead, Status, Table, useAction } from '@/ui';
 
 export default function Enrolment() {
   const { me, can } = useMe(); const { run } = useAction(); const programs = useGet<any[]>('/programs'); const insts = useGet<any[]>('/institutions');
-  const [courseId, setCourseId] = useState(''); const [term, setTerm] = useState('2026-SPRING'); const [inst, setInst] = useState(''); const [att, setAtt] = useState<Record<string, string>>({}); const [cond, setCond] = useState<any>(null); const [note, setNote] = useState('');
+  const url = useUrlState({ course: '', term: '2026-SPRING', inst: '' }); const courseId = url.vals.course; const term = url.vals.term; const inst = url.vals.inst; const setCourseId = (v: string) => url.set('course', v); const setTerm = (v: string) => url.set('term', v); const setInst = (v: string) => url.set('inst', v); const [att, setAtt] = useState<Record<string, string>>({}); const [cond, setCond] = useState<any>(null); const [note, setNote] = useState('');
   const courses: any[] = Array.isArray(programs.data) ? programs.data.flatMap((p) => (Array.isArray(p.courses) ? p.courses : [])) : [];
   const instList: any[] = Array.isArray(insts.data) ? insts.data : []; const cid = courseId || courses[0]?.id; const iid = inst || me?.institutions[0]?.id || instList[0]?.id;
   const st = useGet<any[]>(cid && iid ? `/enrollments?courseId=${cid}&term=${term}&institutionId=${iid}` : null);

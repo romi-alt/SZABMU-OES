@@ -76,15 +76,16 @@ export class OrgService {
   }
 
   // ── users ──
-  async listUsers(u: AuthUser, q: { role?: Role; institutionId?: string; search?: string; page: number; pageSize: number }) {
+  async listUsers(u: AuthUser, q: { role?: Role; staffOnly?: boolean; institutionId?: string; search?: string; page: number; pageSize: number }) {
     const where: Prisma.UserWhereInput = {
       role: q.role,
       ...(q.search ? { OR: [{ fullName: { contains: q.search, mode: 'insensitive' } }, { email: { contains: q.search.toLowerCase() } }] } : {}),
     };
     if (u.institutionIds !== null) {
       where.institutions = { some: { institutionId: q.institutionId && scope.allows(u, q.institutionId) ? q.institutionId : { in: u.institutionIds } } };
-      where.role = q.role && CAMPUS_ADMIN_MAY_CREATE.includes(q.role) ? q.role : { in: CAMPUS_ADMIN_MAY_CREATE };
+      where.role = q.role && CAMPUS_ADMIN_MAY_CREATE.includes(q.role) ? q.role : { in: q.staffOnly ? CAMPUS_ADMIN_MAY_CREATE.filter((r) => r !== 'STUDENT') : CAMPUS_ADMIN_MAY_CREATE };
     } else if (q.institutionId) where.institutions = { some: { institutionId: q.institutionId } };
+    if (q.staffOnly && !q.role && u.institutionIds === null) where.role = { not: 'STUDENT' };   // additive: the account list defaults to staff; students are managed from the Students page
     const [items, total] = await Promise.all([
       this.prisma.user.findMany({ where, orderBy: { fullName: 'asc' }, skip: (q.page - 1) * q.pageSize, take: q.pageSize, select: { id: true, email: true, fullName: true, role: true, active: true, lastLoginAt: true, institutions: { select: { institution: { select: { id: true, code: true, name: true } } } } } }),
       this.prisma.user.count({ where }),

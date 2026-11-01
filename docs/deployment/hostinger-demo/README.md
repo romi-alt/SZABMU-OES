@@ -13,8 +13,8 @@
 | Hosting | Hostinger Cloud Enterprise (order `1009002313`, hPanel user `u943531942`), **one** managed Node.js website |
 | Node.js | 24 (highest Hostinger offers; CI job `node24` is green for build/typecheck/lint/tests) |
 | Source | GitHub `romi-alt/SZABMU-OES`, branch `main` — Hostinger Git auto-deploy rebuilds on every push |
-| PostgreSQL | **Neon** free tier, project `szabmu-oes` (`empty-voice-15975689`), PG 16, region `aws-ap-southeast-1` (Singapore), org of the account that owns the "Elevariq" project |
-| Redis | **Upstash** free tier, database `szabmu-oes`, AWS `ap-southeast-1` (Singapore), TLS (`rediss://`) — 500k commands/month, 10k/s |
+| PostgreSQL | **Neon** free tier, project `szabmu-oes-us` (`muddy-tooth-28867630`), PG 16, region `aws-us-east-1` — same coast as the Hostinger web server (`us-bos-web1774`, Boston). The first project `szabmu-oes` (Singapore, `empty-voice-15975689`) is no longer used |
+| Redis | **Upstash** free tier (one database allowed), `szabmu-oes`, TLS (`rediss://`), 500k commands/month. Created in `ap-southeast-1`; **to be recreated in `us-east-1`** (the free tier allows one database, so the old one must be deleted first) |
 | Entry point | `scripts/hostinger-single-site.mjs` (`npm run start:hostinger`) |
 
 ## Why it looks like this
@@ -38,7 +38,7 @@
 
 ## How it was done (reproducible)
 
-1. **Neon** (console, signed-in browser): created project `szabmu-oes`, PG 16, `aws-ap-southeast-1`. Copied the owner connection string (`sslmode=require`).
+1. **Neon** (console, signed-in browser): created project `szabmu-oes-us`, PG 16, `aws-us-east-1`. Copied the owner connection string (`sslmode=require`).
 2. **Upstash** (console): created Redis `szabmu-oes`, Free plan, AWS Singapore. Used the TCP `rediss://default:<token>@<host>:6379` URL.
 3. **Schema + demo data**, from a workstation (never from the Hostinger build — see `../hostinger-managed/04-database-requirements.md` D10):
    ```bash
@@ -102,6 +102,9 @@ so the first request after a quiet period is slower.
   while the parent got `ECONNREFUSED` — the host's process layer owns `listen()`. Serve everything from the one process on `PORT`.
 - **Hostinger's runtime log only records `console.*`.** Child output written with `stdio: 'inherit'` vanished; forward it via `console`.
 - **Remote PostgreSQL needs longer transaction timeouts** (Prisma `P2028` at 5 s). Seeding over the internet takes many minutes.
+- **Put the database next to the web server.** The Hostinger server is in Boston; Neon/Upstash were first created in Singapore,
+  adding ~230 ms to every query and making the Redis health ping (500 ms command timeout) flap. Check the server in the runtime log
+  (`lifecycle reconciler started on us-bos-…`) before choosing regions.
 - **The account is near its Node.js site limit** (10 slots); this demo uses the last one.
 - **Login lockout:** 5 failed sign-ins lock an account for 15 min. A failed attempt while the API was down returns 500 and does not count,
   but repeated wrong passwords do — if locked, wait 15 min or re-run the seed.
@@ -111,3 +114,15 @@ so the first request after a quiet period is slower.
 - Commit `.env` files or connection strings. They are in Hostinger env vars only.
 - Use this database for real students/staff, or copy it into a production database.
 - Point a production domain at this site without first closing the blockers in `../hostinger-managed/release-blockers.md`.
+
+## Repository state at deployment (2026-11-01)
+
+`main` contains PRs #1, #4–#7 plus the integration merge of `claude/oes-platform-foundation` (UI/UX batches), `claude/frontend-hardening`
+(PR #2), `claude/hosting-hostinger-plan` and `claude/ci-baseline-foundation`. Conflicts in `apps/web/src/app/(app)/layout.tsx` (notification
+menu: accessible disclosure from #2 + icon button / unread filter from foundation) and `apps/web/src/app/(app)/exams/page.tsx` (typed DTOs
+from #2 + URL state / required markers from foundation) were resolved by keeping both sides.
+
+**Not merged: PR #3 `claude/hosting-stage1-no-redis`.** It removes Redis/BullMQ but predates the exam-control backend now on `main`, whose
+event channel, live monitor, control service and student registration use Redis (`modules/control/events.service.ts`, `monitor.service.ts`,
+`control.service.ts`, `auth/registration.service.ts`). Merging needs those ported to the database-backed design first (hosting track, see
+`docs/COORDINATION.md`); a mechanical conflict resolution would break live exam control.

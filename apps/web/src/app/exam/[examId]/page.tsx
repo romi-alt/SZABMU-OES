@@ -150,8 +150,8 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
   const all = useMemo<PalItem[]>(() => questions.map((x, i) => { const t = engine.get(x.id); return { id: x.id, number: x.number, index: i, kind: paletteKind(t), marked: t.marked, unsynced: t.rev > t.savedRev }; }), [questions, engine.getVersion()]);
   const visible = useMemo(() => all.filter(({ kind, marked }) => filter === 'all' || (filter === 'marked' ? marked : kind === filter)), [all, filter]);
 
-  // Saving is automatic and never blocks navigation: both actions give pending saves a short head start, then carry on (UI-004).
-  async function saveAndNext() { await engine.flushAll(1200); go(idx + 1); }
+  // Saving is automatic and never blocks navigation: Next gives pending saves a short head start, then carries on (UI-004). One forward action (UI-016).
+  function nextQuestion() { go(idx + 1); void engine.flushAll(1200); }          // moves at once; any pending save is nudged along in the background and stays tracked until confirmed
   async function openReview() {
     await engine.flushAll(1500);                                   // normal case: everything is confirmed before the screen opens
     if (engine.pendingCount() === 0) { const bad = await engine.reconcile().catch(() => null); setMsg(bad && bad.length ? `${bad.length} answer(s) differed from what the server holds and were refreshed. Please review.` : ''); }
@@ -211,13 +211,13 @@ function Player({ engine, questions, exam, attemptId, clientId, onSubmitted, onT
             </div>
             <div className="q-foot">
               <button className="btn" onClick={() => go(idx - 1)} disabled={idx === 0}>← Previous</button>
-              <button className="btn" onClick={() => { engine.skip(q.id); go(idx + 1); }} disabled={idx === questions.length - 1 && st.state === 'ANSWERED'}>Skip question</button>
               <button className="btn" onClick={() => engine.toggleMark(q.id)} aria-pressed={st.marked}>{st.marked ? 'Unmark review' : 'Mark for review'}</button>
-              <button className="btn" onClick={() => engine.clear(q.id)} disabled={!st.selectedLabel}>Clear response</button>
+              <ClearResponse key={q.id} engine={engine} qid={q.id} selected={st.selectedLabel} />
               <span className="grow" />
               <span className={`save-state ${indicator.c}`} role="status" aria-live="polite" data-testid="save-state">{indicator.t}</span>
-              <button className="btn btn-green" onClick={saveAndNext}>{idx === questions.length - 1 ? 'Save' : 'Save & next →'}</button>
-              <button className="btn" onClick={() => go(idx + 1)} disabled={idx === questions.length - 1}>Next →</button>
+              {idx === questions.length - 1
+                ? <button className="btn btn-green" onClick={() => void openReview()} data-testid="next-or-review">Review answers →</button>
+                : <button className="btn btn-green" onClick={nextQuestion} data-testid="next-or-review">Next →</button>}
             </div>
           </section>
         ) : <ReviewView engine={engine} questions={questions} attemptId={attemptId} clientId={clientId} submitKey={submitKey.current} onBack={(n) => go(n ?? idx)} onSubmitted={onSubmitted} />}
@@ -254,9 +254,8 @@ function QuestionBlock({ engine, q, total, current, onFocus }: { engine: ExamEng
         </div>
       </div>
       <div className="q-foot">
-        <button className="btn" onClick={() => engine.skip(q.id)} disabled={st.state === 'ANSWERED'}>Skip question</button>
         <button className="btn" onClick={() => engine.toggleMark(q.id)} aria-pressed={st.marked}>{st.marked ? 'Unmark review' : 'Mark for review'}</button>
-        <button className="btn" onClick={() => engine.clear(q.id)} disabled={!st.selectedLabel}>Clear response</button>
+        <ClearResponse key={q.id} engine={engine} qid={q.id} selected={st.selectedLabel} />
         <span className="grow" />
         <span className={`save-state ${ind.c}`} role="status" aria-live="polite">{ind.t}</span>
       </div>
@@ -296,7 +295,7 @@ function ReviewView({ engine, questions, attemptId, clientId, submitKey, onBack,
     <section className="card" aria-label="Review answers">
       <div className="card-h"><h2>Review your answers</h2><div className="row"><span className="small muted" data-testid="review-time-left">Time left <b className="mono">{left}</b></span><button className="btn btn-sm" onClick={() => onBack()}>← Back to questions</button></div></div>
       <div className="card-b stack">
-        <div className="grid g4"><Cnt k="Answered" v={c.answered} /><Cnt k="Skipped" v={c.skipped} /><Cnt k="Unanswered" v={c.unanswered} /><Cnt k="Not visited" v={c.notvisited} /></div>
+        <div className="grid g4"><Cnt k="Answered" v={c.answered} /><Cnt k="Not answered" v={c.skipped + c.unanswered} /><Cnt k="Not visited" v={c.notvisited} /></div>
         {pending.length > 0
           ? <Notice tone="warn"><div data-testid="review-unconfirmed" role="status"><b>{pending.length === 1 ? '1 answer is' : `${pending.length} answers are`} not confirmed by the server yet.</b> They are kept on this device and retried automatically; until the server confirms them they are <b>not</b> counted as saved.{' '}
             {pendingNums.map((p, k) => <span key={p.id}>{k ? ', ' : ''}<button className="btn-link" onClick={() => onBack(p.i)}>Question {p.n}</button></span>)}. <button className="btn btn-sm" onClick={() => void engine.retryNow()} data-testid="review-retry">Retry saving now</button></div></Notice>
@@ -317,6 +316,18 @@ function ReviewView({ engine, questions, attemptId, clientId, submitKey, onBack,
     </section>
   );
 }
+/** Clearing a saved answer is reversible for 10 s: "Answer cleared. Undo" restores the previous choice (UI-015). */
+function ClearResponse({ engine, qid, selected }: { engine: ExamEngine; qid: string; selected: string | null }) {
+  const [undo, setUndo] = useState<string | null>(null);
+  useEffect(() => { if (!undo) return; const t = setTimeout(() => setUndo(null), 10000); return () => clearTimeout(t); }, [undo]);
+  return (
+    <>
+      <button className="btn" onClick={() => { if (selected) { setUndo(selected); engine.clear(qid); } }} disabled={!selected}>Clear response</button>
+      {undo && !selected && <span role="status" className="small" data-testid="clear-undo">Answer cleared. <button className="btn-link" onClick={() => { engine.select(qid, undo); setUndo(null); }}>Undo</button></span>}
+    </>
+  );
+}
+
 const Cnt = ({ k, v }: { k: string; v: number }) => <div className="card stat"><div className="k">{k}</div><div className="v">{v}</div></div>;
 
 function ReceiptView({ receipt, attemptId, examTitle, onDone }: { receipt: Receipt; attemptId?: string; examTitle?: string; onDone: () => void }) {

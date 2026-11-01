@@ -18,7 +18,7 @@ test('all MCQs on one page: answer several, skip and mark in place, palette jump
   await expect(cards.nth(6).locator('.save-state')).toHaveText('✓ Saved');
   await expect(page.locator('.exam-bar')).toContainText('Answered 2 / 12');
 
-  await cards.nth(4).getByRole('button', { name: 'Skip question' }).click();      // skip in place, does not erase anything
+  await expect(cards.nth(4).getByRole('button', { name: 'Skip question' })).toHaveCount(0);   // one way to leave a question unanswered: don't answer it
   await cards.nth(2).getByRole('button', { name: 'Mark for review' }).click();    // answered + marked
   await expect(page.getByTestId('all-opt-3-B')).toHaveAttribute('aria-checked', 'true');
 
