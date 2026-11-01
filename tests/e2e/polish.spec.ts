@@ -53,3 +53,9 @@ test('UI-036/041/052: on a phone the exam header is slim and the Next/Mark bar s
   await p.evaluate(() => window.scrollTo(0, document.body.scrollHeight)); const foot = (await p.locator('.exam .q-foot').first().boundingBox())!; expect(foot.y + foot.height).toBeLessThanOrEqual(844 + 1);
   await c.close();
 });
+
+test('public artwork (white logo, campus photo) is served as images, never rewritten to the portal 404', async ({ request }) => {
+  for (const [path, type] of [['/logo.png', 'image/png'], ['/logo-white.png', 'image/png'], ['/campus.jpg', 'image/jpeg']] as const) {
+    const res = await request.get(path); expect(res.status(), path).toBe(200); expect(res.headers()['content-type'], path).toContain(type);
+  }
+});
