@@ -8,7 +8,9 @@
 
 | Item | Value |
 |---|---|
-| Live URL | https://yellowgreen-grasshopper-337716.hostingersite.com (free Hostinger subdomain) |
+| Student portal | https://oes.szabmu.site (candidates sit exams) |
+| Staff dashboard | https://dashboard.szabmu.site (college / university roles) |
+| Original free URL | https://yellowgreen-grasshopper-337716.hostingersite.com (mapped to the student portal) |
 | Health check | `GET /api/health` → `{"status":"ok","db":true,"redis":true}` |
 | Hosting | Hostinger Cloud Enterprise (order `1009002313`, hPanel user `u943531942`), **one** managed Node.js website |
 | Node.js | 24 (highest Hostinger offers; CI job `node24` is green for build/typecheck/lint/tests) |
@@ -60,11 +62,13 @@
    | `API_INTERNAL_URL` | `http://127.0.0.1:47321` (**build-time**) |
    | `API_PORT` | `47321` |
    | `API_NODE_ENV` | `development` (demo; see deviations) |
-   | `WEB_ORIGIN` | `https://yellowgreen-grasshopper-337716.hostingersite.com` |
+   | `WEB_ORIGIN` | `https://oes.szabmu.site,https://dashboard.szabmu.site,https://yellowgreen-grasshopper-337716.hostingersite.com` |
    | `TRUST_PROXY` | `true` (behind Hostinger's edge) |
    | `DEV_EXPOSE_CODES` | `false` |
    | `RUN_WORKERS` | `true` (BullMQ consumers + lifecycle reconciler run inside the API child) |
-   | `PORTAL_ENFORCE`, `MFA_ENFORCE` | `false` (demo) |
+   | `PORTAL_ENFORCE` | `true` |
+| `PORTAL_HOSTS` | `oes.szabmu.site=student,dashboard.szabmu.site=staff,yellowgreen-grasshopper-337716.hostingersite.com=student` |
+| `MFA_ENFORCE` | `false` (demo) |
 
 6. **Deploy:** `hosting_deploy` with `git: { repository: "romi-alt/SZABMU-OES", branch: "main" }`, `type: nodejs`, Node 24,
    app type `other`, root `.`, build script `build`, entry file `scripts/hostinger-single-site.mjs`. Auto-deploy is on: every push to `main` rebuilds.
@@ -89,9 +93,9 @@ WEB_ORIGIN="https://oes.szabmu.site,https://dashboard.szabmu.site"
 - Verified locally: student↔student 200, staff↔staff 200, cross-portal sign-in 401, spoofed header 401, `/exams` only on staff, `/register` only on student.
 
 Hostname requirement: Hostinger's free `*.hostingersite.com` domains accept neither subdomains nor parked domains, so the two portals
-need a real domain. The account owns `szabmu.site`; attach `oes.szabmu.site` and `dashboard.szabmu.site` to this website (hPanel →
-Websites → the site → Domains → parked/alias), then set the three variables above and restart. Until then `PORTAL_HOSTS` is unset and the
-free domain serves every role.
+use the account's real domain `szabmu.site`. **Live since 2026-11-01:** `oes.szabmu.site` and `dashboard.szabmu.site` are parked on this
+website (DNS: Hostinger `ALIAS` → `*.cdn.hstgr.net`, TLS issued automatically); `PORTAL_HOSTS` also maps the free URL to `student`.
+Live check: student on oes 200, CCE on dashboard 200, cross-portal 401 both ways, `/exams` 404 on oes and 200 on dashboard.
 
 ## Operating it
 
@@ -110,7 +114,7 @@ free domain serves every role.
 | Production rule | Demo | Consequence |
 |---|---|---|
 | `NODE_ENV=production` on the API (enforces `productionProblems()`) | API child runs `NODE_ENV=development` (`API_NODE_ENV`) | session cookie lacks the `Secure` flag (site is still HTTPS-only); no production config gate |
-| Two portals (`oes.` students / `dashboard.` staff), `PORTAL_ENFORCE=true` | one site, every role | students and staff share one origin |
+| Two portals on two Node.js sites | two host names on one process (enforced) | a crash or deploy affects both portals at once |
 | `MFA_ENFORCE=true` | off | seeded staff sign in with password only |
 | Separate always-on worker host | workers inside the API child (`RUN_WORKERS=true`) | if Hostinger idles/restarts the process, timers pause until the next request wakes it |
 | PITR backups, monitoring | Neon free-tier history only; no alerting | not suitable for real candidates |
