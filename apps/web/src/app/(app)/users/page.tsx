@@ -7,16 +7,16 @@ import { ROLES, ROLE_LABEL } from '@oes/shared';
 
 export default function Users() {
   const { me } = useMe(); const { run, busy } = useAction(); const [page, setPage] = useState(1); const [role, setRole] = useState(''); const [search, setSearch] = useState('');
-  const insts = useGet<any[]>('/institutions'); const st = useGet<any>(`/users?page=${page}&pageSize=25${role ? `&role=${role}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`);
+  const insts = useGet<any[]>('/institutions'); const st = useGet<any>(`/users?page=${page}&pageSize=25${role ? `&role=${role}` : '&staffOnly=true'}${search ? `&search=${encodeURIComponent(search)}` : ''}`);
   const [add, setAdd] = useState(false); const [secret, setSecret] = useState<string | null>(null);
   const roles = me?.role === 'SUPER_ADMIN' ? ROLES : (['LECTURER', 'INVIGILATOR', 'STUDENT'] as const);
   const [f, setF] = useState({ fullName: '', email: '', role: 'LECTURER', institutionIds: [] as string[] });
   return (
     <>
-      <PageHead title={me?.role === 'SUPER_ADMIN' ? 'Users' : 'Staff & accounts'} sub="Create accounts, deactivate leavers and reset passwords. Every action is audited."><button className="btn btn-green" onClick={() => setAdd(true)}>+ New account</button></PageHead>
+      <PageHead title={me?.role === 'SUPER_ADMIN' ? 'Users' : 'Staff & accounts'} sub="Staff accounts: create, deactivate leavers and reset passwords. Students are managed from the Students page (choose Student in the filter to see them). Every action is audited."><button className="btn btn-green" onClick={() => setAdd(true)}>+ New account</button></PageHead>
       {secret && <Notice tone="ok"><b>Temporary password (shown once):</b> <span className="mono">{secret}</span> — the user must change it at first sign-in.</Notice>}
       <Card flush>
-        <div className="filters"><Field label="Role"><select className="in" value={role} onChange={(e) => { setRole(e.target.value); setPage(1); }}><option value="">All</option>{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></Field><Field label="Search"><input className="in" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} /></Field></div>
+        <div className="filters"><Field label="Role"><select className="in" value={role} onChange={(e) => { setRole(e.target.value); setPage(1); }}><option value="">All staff</option>{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></Field><Field label="Search"><input className="in" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} /></Field></div>
         <Async state={st}>{(d) => <><Table rowKey={(r: any) => r.id} rows={d.items} cols={[
           { h: 'Name', cell: (r: any) => <b>{r.fullName}</b> }, { h: 'Email', cell: (r: any) => <span className="small">{r.email}</span> }, { h: 'Role', cell: (r: any) => ROLE_LABEL[r.role as keyof typeof ROLE_LABEL] }, { h: 'Institutions', cell: (r: any) => r.institutions.map((i: any) => i.code).join(', ') || 'University-wide' },
           { h: 'Last sign-in', cell: (r: any) => fmtDT(r.lastLoginAt) }, { h: 'Status', cell: (r: any) => <Status s={r.active ? 'ACTIVE' : 'CANCELLED'} /> },

@@ -2,6 +2,7 @@
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { post, fmtTime, openStream, useGet } from '@/api';
+import { isCampusScoped } from '@oes/shared';
 import { useMe } from '@/session';
 import { Async, Card, Confirm, Field, PageHead, Stat, Status, Table, useAction } from '@/ui';
 
@@ -12,14 +13,16 @@ export default function MonitorExam() {
   const first = useGet<any>(`/invigilation/exams/${examId}/snapshot`);
   const st = useGet<any>(`/invigilation/exams/${examId}/candidates?page=${page}&pageSize=50${q ? `&search=${encodeURIComponent(q)}` : ''}`);
   const [minutes, setMinutes] = useState(10); const [reason, setReason] = useState(''); const [sev, setSev] = useState('LOW'); const [type, setType] = useState('TECHNICAL');
+  const refused = !!first.error && first.error.status >= 400 && first.error.status < 500;   // not found / not permitted: nothing to reconnect to
   const reload = st.reload; const last = useRef(0);
   // Push (SSE) with automatic catch-up on reconnect; polling only while the stream is down. Scope is enforced by the server for this campus.
-  useEffect(() => openStream(`/invigilation/exams/${examId}/stream`, { status: setLive, event: (name, data) => { if (name === 'stats') { setSnap(data); if (Date.now() - last.current > 5000) { last.current = Date.now(); void reload(); } } else if (name !== 'state') void reload(); } }), [examId, reload]);
-  useEffect(() => { if (live) return; const t = setInterval(() => { void reload(); void first.reload(); }, 8000); return () => clearInterval(t); }, [live, reload, first.reload]);
+  useEffect(() => refused ? undefined : openStream(`/invigilation/exams/${examId}/stream`, { status: setLive, event: (name, data) => { if (name === 'stats') { setSnap(data); if (Date.now() - last.current > 5000) { last.current = Date.now(); void reload(); } } else if (name !== 'state') void reload(); } }), [examId, reload, refused]);
+  useEffect(() => { if (live || refused) return; const t = setInterval(() => { void reload(); void first.reload(); }, 8000); return () => clearInterval(t); }, [live, refused, reload, first.reload]);
   const close = () => { setAct(null); setReason(''); };
+  const scope = !me ? '' : isCampusScoped(me.role) ? `${me.institutions.map((i) => i.code).join(', ') || 'Your campus'} only` : 'All participating campuses';
   return (
     <>
-      <PageHead title="Live monitor" sub={<>{live ? 'Live (push)' : 'Reconnecting — refreshing every 8 s'}. Your campus only. Counts and answers come from the database; connection state from candidate heartbeats.</>} />
+      <PageHead title="Live monitor" sub={<>{refused ? 'Live updates are off for this examination' : live ? 'Live (push)' : 'Reconnecting — refreshing every 8 s'}. <span data-testid="monitor-scope">{scope}</span>. Counts and answers come from the database; connection state from candidate heartbeats.</>} />
       <Async state={first}>{(f) => <Async state={st}>{(d) => {
         const sn = snap ?? f; const t = sn.totals; const rows = d.rows;
         return <div className="stack-lg">

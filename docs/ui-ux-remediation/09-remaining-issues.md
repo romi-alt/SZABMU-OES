@@ -1,16 +1,13 @@
 # 09 — Remaining issues
 
-23 NOT_STARTED, 5 REQUIRES_POLICY_DECISION, 5 FIXED_NOT_FULLY_TESTED.
+18 NOT_STARTED, 5 REQUIRES_POLICY_DECISION, 7 FIXED_NOT_FULLY_TESTED.
 
 - **UI-011** (P2) Global — Muted text token (--ink-3 #8A7A77) — FIXED_NOT_FULLY_TESTED. Not re-measured on every tinted background; axe not re-run across all 197 loads
 - **UI-013** (P2) Dialogs — Modal component — FIXED_NOT_FULLY_TESTED. No dedicated Modal unit spec
-- **UI-015** (P2) Question actions — Clear response — NOT_STARTED. Open: see audit register UI-015
-- **UI-016** (P2) Question actions — Save & next / Skip / Next — NOT_STARTED. Open: see audit register UI-016
-- **UI-020** (P2) Live monitor — Subtitle copy — NOT_STARTED. Open: see audit register UI-020
-- **UI-021** (P2) Primary navigation — Labels vs page titles — NOT_STARTED. Open: see audit register UI-021
+- **UI-016** (P2) Question actions — Save & next / Skip / Next — FIXED_NOT_FULLY_TESTED. Button set unchanged; only the count wording is addressed
 - **UI-022** (P2) Navigation — Routes reachable but not in the menu — REQUIRES_POLICY_DECISION. Whether hidden-but-reachable routes should be added to menus or blocked is a product/permissions decision (docs/route-permissions.md).
 - **UI-023** (P2) Dashboards — Tile-only dashboards — NOT_STARTED. Open: see audit register UI-023
-- **UI-024** (P2) Staff & accounts — Account list — NOT_STARTED. Open: see audit register UI-024
+- **UI-024** (P2) Staff & accounts — Account list — FIXED_NOT_FULLY_TESTED. Destructive buttons (Deactivate, Reset password) in this list are still unconfirmed
 - **UI-026** (P2) Forms — Create/Save buttons — NOT_STARTED. Open: see audit register UI-026
 - **UI-027** (P2) Paper builder — Question picker — NOT_STARTED. Open: see audit register UI-027
 - **UI-028** (P2) Search / filter / pagination — List state — NOT_STARTED. Open: see audit register UI-028
@@ -36,4 +33,4 @@
 - **UI-051** (P2) Eligibility feedback — Empty state for an excluded candidate — NOT_STARTED. Open: see audit register UI-051
 - **UI-052** (P3) Long answer options — Option cards on phones — NOT_STARTED. Open: see audit register UI-052
 
-Suggested next batch: UI-015/016 (clear-response and question-action wording), UI-020/021 labels, UI-024/026/027/028 forms and list state, then the P3 mobile/tokens set.
+Suggested next batch: UI-026/027/028 (forms, paper picker, list state), UI-016 button set, then, then the P3 mobile/tokens set.
