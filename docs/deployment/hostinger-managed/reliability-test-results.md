@@ -10,7 +10,7 @@ Reason (verified): the sandbox cannot reach the npm registry or `www.hostinger.c
 | Hostinger account read-only queries (VPS list, website list, DNS zone, orders) | done — facts in doc 01/07 |
 | `docker compose config` on the (earlier, VPS-oriented) template | valid — not part of this plan |
 | TypeScript **syntax** parse of new/changed files | no syntax errors — **not** type-checking, **not** running |
-| Student / staff / API production builds | **not run here**; CI evidence pending: `verify` (Node 26) and `node24` jobs on branch `claude/hosting-hostinger-plan` |
+| Student / staff / API production builds | **not run here**. CI evidence (run 20, commit b4ae2cf): `node24` job **passed** (npm ci, typecheck, lint, `npm test`, `npm run build` of web+api, and `main.js`/`worker.js`/`cron/reconcile.js` exist). `verify` (Node 26) passed the same steps and failed only at `test:e2e` (known: this branch's ci.yml lacks the `.env`/redis-tools steps added in PR #2). Build in CI is a monorepo build, not the exact hPanel per-app build; Node 24 at runtime on Hostinger is still unproven |
 | Any test | **not run here** |
 
 ## The 14-step scenario, mapped to existing tests (run by the other session on local disposable infrastructure; not re-run)
