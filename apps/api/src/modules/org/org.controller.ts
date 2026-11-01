@@ -42,7 +42,7 @@ export class OrgController {
   @Perm('program.manage') @Post('programs/:id/courses') addCourse(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.org.createCourse(u, id, parse(courseDto, b), ip); }
   @Perm('program.read') @Get('courses') courses(@Query() q: Record<string, string>) { const d = parse(z.object({ programId: uuid.optional(), semester: z.coerce.number().int().optional() }), q); return this.org.listCourses(d.programId, d.semester); }
 
-  @Perm('user.manage') @Get('users') users(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) { return this.org.listUsers(u, parse(page.extend({ role: role.optional(), institutionId: uuid.optional(), search: z.string().max(100).optional() }), q)); }
+  @Perm('user.manage') @Get('users') users(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) { return this.org.listUsers(u, parse(page.extend({ role: role.optional(), staffOnly: z.enum(['true', 'false']).transform((v) => v === 'true').optional(), institutionId: uuid.optional(), search: z.string().max(100).optional() }), q)); }
   @Perm('user.manage') @Post('users') addUser(@CurrentUser() u: AuthUser, @Body() b: unknown, @Ip() ip: string) { return this.org.createUser(u, parse(userDto, b), ip); }
   @Perm('user.manage') @Patch('users/:id') patchUser(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.org.updateUser(u, id, parse(userPatch, b), ip); }
   @Perm('user.manage') @Post('users/:id/reset-password') resetPw(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Ip() ip: string) { return this.org.resetUserPassword(u, id, ip); }

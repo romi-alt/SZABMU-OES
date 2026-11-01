@@ -4,6 +4,7 @@ export * from './exam-rules';
 export * from './password';
 export * from './constants';
 export * from './links';
+export type * from './dto';
 export * from './exam-status';
 export * from './phone';
 export * from './portal';

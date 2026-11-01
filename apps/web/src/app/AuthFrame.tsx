@@ -1,15 +1,47 @@
+'use client';
+import { useId, useState, type ReactNode } from 'react';
 import { BrandLogo } from '@/brand';
-import type { ReactNode } from 'react';
+import { Icon, type IconName } from '@/icons';
 
-export function AuthFrame({ headline, body, children }: { headline: string; body: string; children: ReactNode }) {
+export { Icon };
+
+/** Minimal split layout: brand panel with a curved edge on the left, one calm card on the right. Phones get a slim brand header. */
+export function AuthFrame({ children }: { children: ReactNode; headline?: string; body?: string }) {
   return (
     <div className="auth">
-      <section className="auth-art" aria-hidden={false}>
-        <BrandLogo plate priority className="auth-logo" />
-        <div><h2>{headline}</h2><p>{body}</p></div>
-        <div className="small" style={{ color: '#B58F8B' }}>Examination Portal · Secure, role-based access with a full audit trail.</div>
+      <section className="auth-art">
+        <BrandLogo white priority className="auth-logo" />
+        <div className="auth-title"><i className="auth-bar" aria-hidden /><p className="auth-brand">OES Portal<br />SZABMU</p></div>
+        <small className="auth-foot">Secure, role-based access with a full audit trail.</small>
       </section>
-      <main className="auth-form"><div className="auth-box">{children}</div></main>
+      <main className="auth-form"><div className="auth-card">{children}</div></main>
     </div>
   );
+}
+
+/** Card heading: icon tile + title (+ optional lead line). */
+export function AuthHeading({ icon, title, lead }: { icon: IconName; title: string; lead?: ReactNode }) {
+  return <div className="auth-head"><span className="auth-tile"><Icon name={icon} size={22} /></span><div><h1>{title}</h1>{lead && <p className="muted">{lead}</p>}</div></div>;
+}
+
+interface FieldProps { label: string; icon: IconName; value: string; onChange: (v: string) => void; onBlur?: () => void; type?: 'text' | 'email' | 'password' | 'date'; required?: boolean; error?: string; hint?: string; placeholder?: string; autoComplete?: string; autoFocus?: boolean; inputMode?: 'email' | 'tel' | 'numeric' | 'text'; min?: string; max?: string; mono?: boolean; maxLength?: number }
+/** Label above a bordered control with a leading icon; passwords get a show/hide switch. The error line is reserved so it never shifts the button. */
+export function AuthField({ label, icon, value, onChange, onBlur, type = 'text', required, error, hint, placeholder, autoComplete, autoFocus, inputMode, min, max, mono, maxLength }: FieldProps) {
+  const id = useId(); const [shown, setShown] = useState(false); const isPw = type === 'password';
+  return (
+    <div className="af">
+      <label htmlFor={id}>{label}{required && <> <span aria-hidden className="req">*</span></>}</label>
+      <div className={`af-wrap${error ? ' bad' : ''}`}>
+        <Icon name={icon} />
+        <input id={id} className={mono ? 'mono' : ''} type={isPw && shown ? 'text' : type} value={value} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} required={required} placeholder={placeholder}
+          autoComplete={autoComplete} autoFocus={autoFocus} inputMode={inputMode} min={min} max={max} maxLength={maxLength} aria-invalid={error ? true : undefined} aria-describedby={`${id}-m`} />
+        {isPw && <button type="button" className="af-eye" onClick={() => setShown(!shown)} aria-pressed={shown} aria-label={shown ? 'Hide characters' : 'Show characters'}><Icon name={shown ? 'eye' : 'eyeOff'} /></button>}
+      </div>
+      <span className={error ? 'err-text' : 'hint'} id={`${id}-m`} role={error ? 'alert' : undefined}>{error || hint}</span>
+    </div>
+  );
+}
+
+export function AuthButton({ children, busy, disabled }: { children: ReactNode; busy?: boolean; disabled?: boolean }) {
+  return <button className="auth-btn" disabled={busy || disabled}>{children}<Icon name="arrow" size={18} /></button>;
 }

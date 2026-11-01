@@ -205,6 +205,7 @@ model Institution {
   departments       Department[]
   users             UserInstitution[]
   students          Student[]
+  roster            RosterEntry[]
   questions         Question[]
   exams             ExamInstitution[]
   candidates        ExamCandidate[]
@@ -227,15 +228,16 @@ model Department {
 }
 
 model Program {
-  id          String    @id @default(uuid()) @db.Uuid
-  code        String    @unique
+  id          String        @id @default(uuid()) @db.Uuid
+  code        String        @unique
   name        String
-  level       String    @default("UNDERGRADUATE")
-  durationYrs Int       @default(5)
-  active      Boolean   @default(true)
+  level       String        @default("UNDERGRADUATE")
+  durationYrs Int           @default(5)
+  active      Boolean       @default(true)
   courses     Course[]
   students    Student[]
-  createdAt   DateTime  @default(now()) @db.Timestamptz
+  roster      RosterEntry[]
+  createdAt   DateTime      @default(now()) @db.Timestamptz
 
   @@map("programs")
 }
@@ -349,6 +351,28 @@ model PasswordHistory {
 }
 
 // ───────────────────────── Students & enrolment ─────────────────────────
+
+/// Official register of students entitled to claim an account (supplied by the institution / Registrar). A person can only self-register
+/// by matching an unclaimed entry on registration number + date of birth AND proving control of the email they give.
+model RosterEntry {
+  id              String      @id @default(uuid()) @db.Uuid
+  institutionId   String      @db.Uuid
+  programId       String      @db.Uuid
+  regNo           String      @unique
+  fullName        String
+  dateOfBirth     DateTime    @db.Date
+  semester        Int
+  batchYear       Int
+  claimedAt       DateTime?   @db.Timestamptz
+  claimedByUserId String?     @db.Uuid
+  importedBy      String?     @db.Uuid
+  institution     Institution @relation(fields: [institutionId], references: [id])
+  program         Program     @relation(fields: [programId], references: [id])
+  createdAt       DateTime    @default(now()) @db.Timestamptz
+
+  @@index([institutionId, claimedAt])
+  @@map("roster_entries")
+}
 
 model Student {
   id                   String                @id @default(uuid()) @db.Uuid

@@ -13,7 +13,7 @@ test.describe('error and recovery states', () => {
     expect(res?.status()).toBe(404);
     await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Go to dashboard' })).toBeVisible();
-    await expect(page.locator('img[src*="logo.png"]').first()).toBeVisible();      // university identity retained
+    await expect(page.locator('img[src*="logo"]').first()).toBeVisible();      // university identity retained
     await noInternals(page);
   });
 
@@ -22,7 +22,7 @@ test.describe('error and recovery states', () => {
     await page.goto('/users');
     await expect(page.getByTestId('error-forbidden')).toBeVisible();
     await expect(page.getByRole('heading', { name: /do not have access/i })).toBeVisible();
-    await expect(page.getByText(/not permitted/i)).toBeVisible();                   // the server's own reason is kept
+    await expect(page.getByText(/This page is available to:/)).toBeVisible();      // names who can use the page
     await expect(page.getByRole('link', { name: 'Go to dashboard' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);    // retrying a refusal is pointless
     await noInternals(page);
