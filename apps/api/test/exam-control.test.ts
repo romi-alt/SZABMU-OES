@@ -5,6 +5,7 @@ import { ExamsService } from '../src/modules/exams/exams.service';
 import { LifecycleService } from '../src/modules/control/lifecycle.service';
 import { ExamEventsService } from '../src/modules/control/events.service';
 import { JobsService } from '../src/modules/jobs.service';
+import { DeliveryService } from '../src/modules/delivery/delivery.service';
 
 /**
  * Live exam control, end to end against real PostgreSQL + Redis. Exams are built through the REAL services (create → paper → four-eyes
@@ -555,5 +556,18 @@ describe('29 monitoring: bounded, authoritative and campus-scoped', () => {
     expect(v.commands.find((c: { command: string }) => c.command === 'CLOSE')).toMatchObject({ allowed: true });
     expect(v.health).toHaveProperty('lifecycle.status'); expect(v.health).toHaveProperty('outbox.pending'); expect(v.health.redis).toHaveProperty('available');
     expect(v.health.saves.scope).toMatch(/this API instance/);
+  });
+});
+
+describe('refused-save diagnosis never invents TIME_EXPIRED (found under load: a resume racing a refused save)', () => {
+  it('reports what is true: suspended, expired, or — when the state moved on — a retryable STATE_CHANGED', async () => {
+    const x = await makeExam({ suspendPolicy: 'FREEZE_CLOCK' }); const cce = await as(ctx, 'cce'); await cce.post(ctl(x, 'start'), {});
+    const st = await startAs('student.a002', x); const studentId = (await ctx.prisma.attempt.findUniqueOrThrow({ where: { id: st.attemptId } })).studentId;
+    const diag = (): Promise<{ code: string }> => (ctx.app.get(DeliveryService) as unknown as { diagnoseRejectedSave(a: string, s: string, c: string): Promise<{ code: string }> }).diagnoseRejectedSave(st.attemptId!, studentId, st.clientId);
+    expect((await diag()).code).toBe('STATE_CHANGED');                                    // healthy attempt: the refusal was a moment ago and state has since changed (e.g. resumed)
+    await cce.post(ctl(x, 'suspend'), { scope: 'EXAM', reason: 'Diagnosis scenario one', confirm: true }); expect((await diag()).code).toBe('EXAM_SUSPENDED');
+    await cce.post(ctl(x, 'resume'), { confirm: true }); expect((await diag()).code).toBe('STATE_CHANGED');
+    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = clock_timestamp() - interval '3 hours', "deadlineAt" = clock_timestamp() - interval '2 minutes' WHERE id = ${st.attemptId}::uuid`;
+    expect((await diag()).code).toBe('TIME_EXPIRED');
   });
 });

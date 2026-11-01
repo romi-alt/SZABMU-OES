@@ -69,6 +69,7 @@ export class MetricsService {
   readonly controlCommands = new Counter('oes_exam_control_commands_total', 'Exam control commands by command and outcome', ['command', 'outcome']);
   readonly eventsPublished = new Counter('oes_exam_events_published_total', 'Outbox events published to Redis');
   readonly eventsPublishFailed = new Counter('oes_exam_events_publish_failed_total', 'Outbox publish attempts that failed (retried, bounded)');
+  readonly monitorCompute = new Histogram('oes_monitor_snapshot_seconds', 'Time to compute the shared per-exam monitor aggregate (runs at most once per ~1.5 s per exam per process, regardless of viewers)', LAT);
   readonly sseConnections = new Gauge('oes_sse_connections', 'Open SSE connections on this API process');
   readonly lifecycleRuns = new Counter('oes_lifecycle_runs_total', 'Lifecycle reconciler runs by outcome (ok | error | skipped_not_leader)', ['outcome']);
   readonly lifecycleTransitions = new Counter('oes_lifecycle_transitions_total', 'Automatic lifecycle transitions performed by the reconciler', ['kind']);
@@ -82,7 +83,7 @@ export class MetricsService {
   private readonly loopLag = new Gauge('oes_event_loop_lag_seconds', 'p99 event-loop delay since last scrape');
   private readonly rss = new Gauge('oes_process_resident_memory_bytes', 'Resident set size');
   private readonly started = new Gauge('oes_process_start_time_seconds', 'Process start time (unix)');
-  private readonly all = [this.http, this.httpDuration, this.saves, this.saveDuration, this.submits, this.submitDuration, this.dbErrors, this.authFailures, this.authSuccess, this.unauthorized, this.unhandled, this.controlCommands, this.eventsPublished, this.eventsPublishFailed, this.sseConnections, this.lifecycleRuns, this.lifecycleTransitions, this.lifecycleAge, this.outboxPending, this.outboxOldest, this.dbUp, this.redisUp, this.active, this.campus, this.loopLag, this.rss, this.started];
+  private readonly all = [this.http, this.httpDuration, this.saves, this.saveDuration, this.submits, this.submitDuration, this.dbErrors, this.authFailures, this.authSuccess, this.unauthorized, this.unhandled, this.controlCommands, this.eventsPublished, this.eventsPublishFailed, this.sseConnections, this.monitorCompute, this.lifecycleRuns, this.lifecycleTransitions, this.lifecycleAge, this.outboxPending, this.outboxOldest, this.dbUp, this.redisUp, this.active, this.campus, this.loopLag, this.rss, this.started];
   private readonly lag: ReturnType<typeof monitorEventLoopDelay> = monitorEventLoopDelay({ resolution: 20 });
   private campusAt = 0;
 

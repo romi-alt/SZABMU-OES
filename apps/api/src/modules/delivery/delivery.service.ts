@@ -241,7 +241,10 @@ export class DeliveryService {
     if (a.status !== 'IN_PROGRESS') return conflict('ATTEMPT_CLOSED', 'This attempt has already been submitted', { receiptCode: a.receiptCode });
     if (a.activeClientId !== clientId) return conflict('SESSION_SUPERSEDED', 'This examination is open in another window or device. Reload to continue there.');
     if (a.suspendedAt) return conflict('EXAM_SUSPENDED', 'The examination is suspended. Your saved answers are safe; wait for instructions from the examination office.');
-    return conflict('TIME_EXPIRED', 'The examination time has ended');
+    // Only claim expiry if the database clock says so. Otherwise the state changed between the refused write and this diagnosis (for example the
+    // exam was resumed): tell the client to retry rather than make it believe its time is up.
+    if (await this.isExpired(a, await this.prisma.dbNow())) return conflict('TIME_EXPIRED', 'The examination time has ended');
+    return conflict('STATE_CHANGED', 'The examination state changed while saving. Retrying.');
   }
 
   /**
