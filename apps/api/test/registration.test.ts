@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Client, as, boot, type Ctx } from './helpers';
 
 /** Student self-registration against the official register: matching, enumeration safety, email proof, single claim, authorization, scope. */
@@ -31,6 +31,9 @@ describe('roster import', () => {
 });
 
 describe('registration flow', () => {
+  // Every test calls from the same client IP; reset the per-IP / per-number limiters so tests do not throttle each other.
+  // ('is rate limited per registration number' accumulates hits inside one test, so it still proves the limit.)
+  beforeEach(async () => { const keys = await ctx.redis.client.keys('rl:reg:*'); if (keys.length) await ctx.redis.client.del(...keys); });
   const start = (r: { regNo: string; dateOfBirth: string }, email: string, password = PW) => anon().post('/auth/register', { regNo: r.regNo, dateOfBirth: r.dateOfBirth, email, password });
 
   it('matching details + emailed code create a STUDENT bound to the roster entry; the person can then sign in; the entry is claimed', async () => {
