@@ -24,7 +24,8 @@ function PaperBuilder({ exam, reload }: { exam: any; reload: () => void }) {
   const total = chosen.reduce((a, b) => a + b.marks, 0);
   const byDiff = chosen.reduce<Record<string, number>>((m, c) => { const d = String(known.current.get(c.id)?.difficulty ?? '?').toLowerCase(); m[d] = (m[d] ?? 0) + 1; return m; }, {});
   const edit = (fn: (c: PaperItem[]) => PaperItem[]) => setItems(fn(chosen));
-  const rows: any[] = bank.data?.items ?? [];
+  // While a new search/filter is loading, the previous result is stale: never count it or let "Add all shown" add it.
+  const bankReady = !bank.loading && !!bank.data; const rows: any[] = bankReady ? bank.data.items : [];
   const filters = [search && `“${search}”`, diff && diff.toLowerCase(), type && (type === 'CLINICAL_MCQ' ? 'clinical' : 'MCQ')].filter(Boolean) as string[];
   useEffect(() => { if (!dirty) return; const h = (e: BeforeUnloadEvent) => { e.preventDefault(); }; window.addEventListener('beforeunload', h); return () => window.removeEventListener('beforeunload', h); }, [dirty]);
   const move = (i: number, d: -1 | 1) => edit((c) => { const n = [...c]; const j = i + d; if (j < 0 || j >= n.length) return c; [n[i], n[j]] = [n[j]!, n[i]!]; return n; });
@@ -49,7 +50,7 @@ function PaperBuilder({ exam, reload }: { exam: any; reload: () => void }) {
           <Field label="Type"><select className="in" value={type} onChange={(e) => setType(e.target.value)}><option value="">All</option><option value="MCQ">MCQ</option><option value="CLINICAL_MCQ">Clinical</option></select></Field>
         </div>
         <div className="row between wrap small" style={{ marginBottom: 8 }}>
-          <span className="muted" data-testid="bank-count">Showing {rows.length}{bank.data && bank.data.total > rows.length ? ` of ${bank.data.total} — refine the search to see the rest` : ''}.</span>
+          <span className="muted" data-testid="bank-count" aria-live="polite">{!bankReady ? 'Loading questions…' : <>Showing {rows.length}{bank.data.total > rows.length ? ` of ${bank.data.total} — refine the search to see the rest` : ''}.</>}</span>
           <span className="row"><button className="btn btn-sm" disabled={!rows.length} onClick={() => edit((c) => [...c, ...rows.filter((r) => !ids.has(r.id)).map((r) => ({ id: r.id, marks: 1 }))])} data-testid="select-matching">Add all {rows.length} shown</button>
             <button className="btn btn-sm" disabled={!rows.some((r) => ids.has(r.id))} onClick={() => edit((c) => c.filter((x) => !rows.some((r) => r.id === x.id)))}>Remove shown</button></span>
         </div>

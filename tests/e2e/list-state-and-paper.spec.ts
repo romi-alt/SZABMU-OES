@@ -52,10 +52,11 @@ test.describe.serial('paper builder (UI-027)', () => {
     await login(page, 'examiner'); await page.goto(`/exams/${examId}`);
     await expect(page.getByText(/Question paper \(0 questions · 0 marks\)/)).toBeVisible();
     const count = page.getByTestId('bank-count'); await expect(count).toContainText(/Showing \d+/);
-    const total = Number((await count.innerText()).match(/Showing (\d+)/)![1]); expect(total).toBeGreaterThan(3);
+    const shown = async () => Number((await count.innerText()).match(/Showing (\d+)/)?.[1] ?? NaN);
+    await expect.poll(shown).toBeGreaterThan(3); const total = await shown();
 
-    await page.getByLabel('Difficulty').selectOption('EASY'); await expect.poll(async () => Number((await count.innerText()).match(/Showing (\d+)/)![1])).toBeLessThan(total);
-    const easy = Number((await count.innerText()).match(/Showing (\d+)/)![1]);
+    await page.getByLabel('Difficulty').selectOption('EASY'); await expect.poll(shown).toBeLessThan(total);
+    const easy = await shown();
     await page.getByTestId('select-matching').click(); await expect(page.getByText(new RegExp(`Question paper \\(${easy} questions · ${easy} marks\\)`))).toBeVisible();
     await expect(page.getByTestId('paper-unsaved')).toBeVisible(); await expect(page.getByTestId('paper-summary')).toContainText(`Easy ${easy}`);
     await page.getByLabel('Search').fill('zzzqq'); await expect(page.getByTestId('list-empty')).toContainText('No approved questions match “zzzqq”');
