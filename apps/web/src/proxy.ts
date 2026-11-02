@@ -20,12 +20,14 @@ export function proxy(request: NextRequest) {
     blocked.headers.set('Content-Security-Policy', csp);
     return blocked;
   }
+  // Hand the RESOLVED portal (never the raw client header) to server components, e.g. so the staff sign-in page omits candidate-only wording.
+  if (portal) headers.set(PORTAL_HEADER, portal); else headers.delete(PORTAL_HEADER);
   const res = NextResponse.next({ request: { headers } });
   res.headers.set('Content-Security-Policy', csp);
   return res;
 }
 
 export const config = {
-  // Documents only: not the API rewrite, Next's static/image assets, or the public icons/logo.
-  matcher: [{ source: '/((?!api|_next/static|_next/image|favicon.ico|icon.png|logo.png).*)', missing: [{ type: 'header', key: 'next-router-prefetch' }, { type: 'header', key: 'purpose', value: 'prefetch' }] }],
+  // Documents only: not the API rewrite, Next's static/image assets, or the public icons, logos and campus photo (a document-only matcher: these must never be rewritten to the portal 404).
+  matcher: [{ source: '/((?!api|_next/static|_next/image|favicon.ico|icon.png|logo.png|logo-white.png|campus.jpg).*)', missing: [{ type: 'header', key: 'next-router-prefetch' }, { type: 'header', key: 'purpose', value: 'prefetch' }] }],
 };
