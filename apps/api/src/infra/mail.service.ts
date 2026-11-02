@@ -4,6 +4,8 @@ import { CONFIG, type Config } from '../config';
 import { PrismaService } from './prisma.service';
 import { QUEUES, QueuesService } from './queues.service';
 
+const ENQUEUE_TIMEOUT_MS = 3000;
+
 /**
  * Transport options. Authenticated SMTP (SMTP_USER/SMTP_PASS) always requires TLS with a verified certificate, so credentials
  * never cross the wire in clear text — whatever NODE_ENV says. An unauthenticated relay keeps the old dev behaviour (Mailpit).
@@ -27,7 +29,13 @@ export class MailService {
 
   async enqueue(toEmail: string, subject: string, body: string, kind: string) {
     const m = await this.prisma.outboundMessage.create({ data: { toEmail, subject, body, kind } });
-    await this.queues.add(QUEUES.mail, 'send', { id: m.id }, { jobId: `mail-${m.id}` }).catch((e) => this.log.warn(`enqueue failed: ${e.message}`));
+    // The row above is the source of truth; the queue is only the fast path. Never let an unreachable Redis hold the HTTP request
+    // (BullMQ waits indefinitely for a connection) — give up after a few seconds and leave the row for the outbox backstop.
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`queue unavailable after ${ENQUEUE_TIMEOUT_MS} ms`)), ENQUEUE_TIMEOUT_MS); });
+    await Promise.race([this.queues.add(QUEUES.mail, 'send', { id: m.id }, { jobId: `mail-${m.id}` }), timeout])
+      .catch((e) => this.log.warn(`enqueue failed (message ${m.id} stays in the outbox): ${e.message}`))
+      .finally(() => clearTimeout(timer));
     return m;
   }
 
