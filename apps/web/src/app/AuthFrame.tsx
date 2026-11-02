@@ -14,8 +14,7 @@ export function AuthFrame({ children, note, wide }: { children: ReactNode; note?
       <section className="auth-art">
         <div className="auth-art-text">
           <BrandLogo white priority className="auth-logo" />
-          <div className="auth-title"><i className="auth-bar" aria-hidden /><p className="auth-brand">OES Portal<br />SZABMU</p></div>
-          <p className="auth-sub">Online Examination System</p>
+          <div className="auth-title"><i className="auth-bar" aria-hidden /><p className="auth-brand">SZABMU Online<br />Examination Center</p></div>
           <p className="auth-desc">A secure and role-based platform for managing and taking online examinations at SZABMU.</p>
           <ul className="auth-feats">
             <li><Icon name="laptop" size={30} /><span>Take Exams<br />Online</span></li>

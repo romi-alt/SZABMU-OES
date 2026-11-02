@@ -502,3 +502,5 @@ a.auth-btn, a.auth-btn:hover { color: #fff; }
 .auth-art-text { gap: 14px; max-width: none; } .auth-brand { font-size: clamp(32px, 2.6vw, 42px); } .auth-feats { margin-top: 6px; }
 .auth-form { padding: 24px 20px; gap: 14px; }
 @media (max-width: 860px) { .auth, .auth-wide { grid-template-columns: minmax(0, 1fr); } .auth-art { padding: 20px 20px 22px; } }
+
+.brand-name { font-size: 18px; line-height: 1.25; }
