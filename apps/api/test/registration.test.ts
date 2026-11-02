@@ -47,11 +47,11 @@ describe('sign-up (registration number + email + password + emailed code)', () =
     expect(await ctx.prisma.auditLog.count({ where: { action: 'student.signed_up', entityId: u.id } })).toBe(1);
   });
 
-  it('answers identically whether the email or number is free, so it cannot be probed; a taken email, a taken number (any case) or an existing student gets nothing', async () => {
+  it('tells the student why no code was sent: number already registered (any case), email in use, or an existing student number — and creates nothing', async () => {
     await clear(); const regNo = `PROBE-${++seq}`; const a = await start(regNo, 'probe1@example.test'); await verify('probe1@example.test', a.body.devCode);
-    await clear(); const same = await start(regNo.toLowerCase(), 'probe2@example.test'); expect(same.status).toBe(200); expect(same.body.devCode).toBeUndefined();   // number reserved (case-insensitive)
-    await clear(); const mail = await start(`PROBE-X-${seq}`, 'probe1@example.test'); expect(mail.body.devCode).toBeUndefined(); expect(mail.body.message).toBe(a.body.message);
-    await clear(); const existing = await start('DMC-A-2024-0001', 'probe3@example.test'); expect(existing.status).toBe(200); expect(existing.body.devCode).toBeUndefined();   // belongs to an existing student
+    await clear(); const same = await start(regNo.toLowerCase(), 'probe2@example.test'); expect(same.status).toBe(409); expect(same.body.code).toBe('ALREADY_REGISTERED');
+    await clear(); const mail = await start(`PROBE-X-${seq}`, 'probe1@example.test'); expect(mail.status).toBe(409); expect(mail.body.code).toBe('EMAIL_IN_USE');
+    await clear(); const existing = await start('DMC-A-2024-0001', 'probe3@example.test'); expect(existing.status).toBe(409); expect(existing.body.code).toBe('ALREADY_REGISTERED');
     expect(await ctx.prisma.user.count({ where: { email: { in: ['probe2@example.test', 'probe3@example.test'] } } })).toBe(0);
   });
 

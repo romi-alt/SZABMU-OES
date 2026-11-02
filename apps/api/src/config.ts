@@ -21,6 +21,11 @@ const schema = z.object({
   S3_SECRET_KEY: z.string().optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().default(1025),
+  /** SMTP AUTH credentials (e.g. a Hostinger mailbox: smtp.hostinger.com, 465 + SMTP_SECURE=true, or 587 STARTTLS). Unset ⇒ unauthenticated relay. */
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  /** 'true' = implicit TLS (port 465). 'false' = plain connect upgraded via STARTTLS (587/1025). Unset ⇒ true only on port 465. */
+  SMTP_SECURE: z.enum(['true', 'false']).optional(),
   MAIL_FROM: z.string().default('SZABMU Examinations <exams@szabmu.example>'),
   DEV_EXPOSE_CODES: z.enum(['true', 'false']).default('false'),
   RUN_WORKERS: z.enum(['true', 'false']).default('true'),

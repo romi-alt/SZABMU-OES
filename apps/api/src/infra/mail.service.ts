@@ -4,6 +4,19 @@ import { CONFIG, type Config } from '../config';
 import { PrismaService } from './prisma.service';
 import { QUEUES, QueuesService } from './queues.service';
 
+const ENQUEUE_TIMEOUT_MS = 3000;
+
+/**
+ * Transport options. Authenticated SMTP (SMTP_USER/SMTP_PASS) always requires TLS with a verified certificate, so credentials
+ * never cross the wire in clear text — whatever NODE_ENV says. An unauthenticated relay keeps the old dev behaviour (Mailpit).
+ */
+export function smtpTransportOptions(cfg: Pick<Config, 'SMTP_HOST' | 'SMTP_PORT' | 'SMTP_USER' | 'SMTP_PASS' | 'SMTP_SECURE' | 'NODE_ENV'>) {
+  const secure = cfg.SMTP_SECURE ? cfg.SMTP_SECURE === 'true' : cfg.SMTP_PORT === 465;
+  const auth = cfg.SMTP_USER && cfg.SMTP_PASS ? { user: cfg.SMTP_USER, pass: cfg.SMTP_PASS } : undefined;
+  const strict = cfg.NODE_ENV === 'production' || !!auth;
+  return { host: cfg.SMTP_HOST, port: cfg.SMTP_PORT, secure, auth, requireTLS: !secure && strict, tls: { rejectUnauthorized: strict } };
+}
+
 /** Outbox pattern: every message is persisted first, then delivered by a BullMQ worker. */
 @Injectable()
 export class MailService {
@@ -16,7 +29,13 @@ export class MailService {
 
   async enqueue(toEmail: string, subject: string, body: string, kind: string) {
     const m = await this.prisma.outboundMessage.create({ data: { toEmail, subject, body, kind } });
-    await this.queues.add(QUEUES.mail, 'send', { id: m.id }, { jobId: `mail-${m.id}` }).catch((e) => this.log.warn(`enqueue failed: ${e.message}`));
+    // The row above is the source of truth; the queue is only the fast path. Never let an unreachable Redis hold the HTTP request
+    // (BullMQ waits indefinitely for a connection) — give up after a few seconds and leave the row for the outbox backstop.
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error(`queue unavailable after ${ENQUEUE_TIMEOUT_MS} ms`)), ENQUEUE_TIMEOUT_MS); });
+    await Promise.race([this.queues.add(QUEUES.mail, 'send', { id: m.id }, { jobId: `mail-${m.id}` }), timeout])
+      .catch((e) => this.log.warn(`enqueue failed (message ${m.id} stays in the outbox): ${e.message}`))
+      .finally(() => clearTimeout(timer));
     return m;
   }
 
@@ -29,7 +48,7 @@ export class MailService {
       return;
     }
     try {
-      const t = nodemailer.createTransport({ host: this.cfg.SMTP_HOST, port: this.cfg.SMTP_PORT, secure: false, requireTLS: this.cfg.NODE_ENV === 'production', tls: { rejectUnauthorized: this.cfg.NODE_ENV === 'production' } });
+      const t = nodemailer.createTransport(smtpTransportOptions(this.cfg));
       await t.sendMail({ from: this.cfg.MAIL_FROM, to: m.toEmail, subject: m.subject, text: m.body });
       await this.prisma.outboundMessage.update({ where: { id }, data: { status: 'SENT', sentAt: new Date(), attempts: { increment: 1 } } });
     } catch (e) {
