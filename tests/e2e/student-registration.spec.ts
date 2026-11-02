@@ -38,7 +38,7 @@ test.describe.serial('student registration', () => {
     await page.getByRole('button', { name: 'Add student' }).click(); dlg = page.getByRole('dialog');                      // same number again: the server's reason is shown, dialog stays open
     await dlg.getByLabel(/Registration number/).fill(one); await dlg.getByLabel(/Full name/).fill('Dup'); await dlg.getByLabel(/Date of birth/).fill('2003-05-17'); await dlg.getByLabel(/Programme/).selectOption('MBBS');
     await dlg.getByRole('button', { name: 'Add student' }).click(); await expect(page.getByText(new RegExp(`Already on the register.*${one}`))).toBeVisible(); await expect(dlg).toBeVisible();
-    await dlg.getByRole('button', { name: 'Cancel' }).click();
+    await dlg.getByRole('button', { name: 'Cancel' }).click(); await dlg.getByTestId('discard-changes').click(); await expect(dlg).toHaveCount(0);   // typed input: Cancel asks first
 
     const a = `CSV-${letters(6)}`; const b = `CSV-${letters(6)}`;
     await page.getByRole('button', { name: 'Import register (CSV)' }).click(); dlg = page.getByRole('dialog');
