@@ -4,13 +4,14 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { post } from '@/api';
 import { usePortal } from '@/portal-context';
+import { teacherRegisterHref } from '@/portal-urls';
 import { useMe } from '@/session';
 import { errMsg } from '@/ui';
 import { AuthButton, AuthField, AuthFrame, AuthHeading } from '../AuthFrame';
 
 export default function Login() {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
-  const staff = usePortal() === 'staff'; const router = useRouter(); const { me, refresh } = useMe(); const [expired, setExpired] = useState(false);
+  const portal = usePortal(); const staff = portal === 'staff'; const router = useRouter(); const { me, refresh } = useMe(); const [expired, setExpired] = useState(false);
   useEffect(() => { try { if (sessionStorage.getItem('oes:expired') === '1') { setExpired(true); sessionStorage.removeItem('oes:expired'); } } catch { /* storage unavailable */ } }, []);
   useEffect(() => { if (me) router.replace('/dashboard'); }, [me, router]);
   async function submit(e: React.FormEvent) {
@@ -30,6 +31,7 @@ export default function Login() {
         <AuthButton busy={busy} disabled={!email || !password}>{busy ? 'Signing in…' : 'Sign in'}</AuthButton>
       </form>
       {!staff && <p className="auth-alt"><span>New student?</span><Link href="/register" className="auth-link">Create your account</Link></p>}
+      <p className="auth-alt" style={{ borderTop: 0, paddingTop: 0, marginTop: 0 }}><span>New teacher?</span><a href={teacherRegisterHref(portal)} className="auth-link">Register as a teacher</a></p>
     </AuthFrame>
   );
 }

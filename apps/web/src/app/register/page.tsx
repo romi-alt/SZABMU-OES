@@ -53,6 +53,7 @@ export default function Register() {
           <AuthButton busy={busy}>Create Account</AuthButton>
         </form>
         <p className="auth-alt">Already registered? <Link href="/login" className="auth-link">Sign in</Link></p>
+        <p className="auth-alt" style={{ borderTop: 0, paddingTop: 0, marginTop: 0 }}><span>Teaching staff?</span><Link href="/register/teacher" className="auth-link">Register as a teacher</Link></p>
         <p className="small faint" style={{ margin: 0, textAlign: 'center' }}>Not on the register? Ask your campus examination office. Registering does not enrol you in any examination.</p>
       </>}
       {step === 'code' && <>

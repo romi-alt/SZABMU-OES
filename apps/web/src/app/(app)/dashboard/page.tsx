@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { fmtDT, humanizeTimes, useGet } from '@/api';
 import { Icon, iconForRoute } from '@/icons';
 import { useMe } from '@/session';
+import { TeacherOverview } from './TeacherOverview';
 import { Async, Card, PageHead, Stat } from '@/ui';
 import { examPriority, isSafeAppLink } from '@oes/shared';
 import { ExamActionLink, ExamStatusCell, presentExam, type MyExam, NotEligibleNotice, type NotEligible } from '@/exam-status-ui';
@@ -67,9 +68,10 @@ function MyExams() {
 }
 
 export default function Dashboard() {
-  const { me } = useMe(); const st = useGet<any>('/dashboard');
+  const { me } = useMe(); const st = useGet<any>(me && me.role !== 'TEACHER' ? '/dashboard' : null);
   if (!me) return null;
-  const first = me.fullName.replace(/^(Dr\.|Prof\.)\s*/, '').split(' ')[0];
+  if (me.role === 'TEACHER') return <TeacherOverview first={me.fullName.replace(/^(Dr\.?|Prof\.?)\s+/, '').split(' ')[0] ?? ''} />;
+  const first = me.fullName.replace(/^(Dr\.?|Prof\.?)\s+/, '').split(' ')[0];
   return (
     <>
       <PageHead title={`Welcome back, ${first}`} sub={me.student ? `${me.student.program} · Semester ${me.student.semester} · Reg. ${me.student.regNo}` : me.institutions.map((i) => i.name).join(', ') || 'University-wide access'}>

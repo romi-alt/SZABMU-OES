@@ -7,10 +7,10 @@ import { usePortal } from '@/portal-context';
 export { Icon };
 
 /** Split layout: burgundy brand panel with the campus photo in a curved window on the left, one calm card (and an optional note) on the right. Phones get a slim brand header. */
-export function AuthFrame({ children, note }: { children: ReactNode; note?: ReactNode }) {
+export function AuthFrame({ children, note, wide }: { children: ReactNode; note?: ReactNode; wide?: boolean }) {
   const staff = usePortal() === 'staff'; // the staff dashboard never mentions candidate-only things such as the exam schedule
   return (
-    <div className="auth">
+    <div className={`auth${wide ? ' auth-wide' : ''}`}>
       <section className="auth-art">
         <div className="auth-photo" aria-hidden />
         <div className="auth-art-text">
