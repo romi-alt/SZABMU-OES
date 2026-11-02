@@ -88,7 +88,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       <aside className={`sidebar ${navOpen ? 'open' : ''}`} id="primary-nav" aria-label="Site navigation">
         <button className="btn btn-sm nav-close" onClick={() => { setNavOpen(false); menuBtn.current?.focus(); }} aria-label="Close menu">Close ✕</button>
         <BrandLogo white priority className="brand" />
-        <div className="brand-name"><i className="auth-bar" aria-hidden />OES Portal</div>
+        <div className="brand-name"><i className="auth-bar" aria-hidden />SZABMU Online Examination Center</div>
         <nav className="nav" aria-label="Primary"><div className="nav-label">{nav.label}</div>
           {(gated ? [] : nav.items).map((i) => <Link key={i.href} href={i.href} aria-current={path === i.href || (i.href !== '/dashboard' && path.startsWith(i.href)) ? 'page' : undefined}><Icon name={iconForRoute(i.href)} size={18} /><span>{i.label}</span></Link>)}
         </nav>
