@@ -67,3 +67,15 @@ test('the staff portal sign-in page never mentions the exam schedule; the studen
   await expect(staff.getByText('New student?')).toHaveCount(0); await expect(staff.getByText(/exam schedule/i)).toHaveCount(0); await expect(staff.getByText('Schedule', { exact: false })).toHaveCount(0);
   await staff.close();
 });
+
+test('A-01: times inside notifications use the app format (zone and layout), never a raw ISO/UTC string', async ({ page }) => {
+  await login(page, 'student.a002'); const feed = page.getByTestId('recent-activity'); await expect(feed).toBeVisible();
+  await expect(feed).not.toContainText(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/); await expect(feed).toContainText(/Opens \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}/);
+});
+
+test('A-02: on a phone the dashboard tiles are a compact strip and the student\'s examinations are on the first screen', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await login(page, 'student.a002');
+  await expect(page.getByRole('heading', { name: 'Your examinations' })).toBeInViewport();
+  const tiles = page.locator('.dash-tiles .stat'); await expect(tiles).toHaveCount(4); const a = await tiles.nth(0).boundingBox(); const b = await tiles.nth(1).boundingBox();
+  expect(Math.abs(a!.y - b!.y), 'two tiles per row').toBeLessThan(2);
+});

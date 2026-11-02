@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useMe } from '@/session';
 import { NAV, crumbFor, ruleFor } from '@/nav';
-import { get, post, fmtDT } from '@/api';
+import { get, post, fmtDT, humanizeTimes } from '@/api';
 import { Loading } from '@/ui';
 import { Icon, iconForRoute } from '@/icons';
 import { PERMISSIONS, ROLE_LABEL, isSafeAppLink, type Permission, type Role, type NotificationDto, type NotificationsDto } from '@oes/shared';
@@ -42,7 +42,7 @@ function Bell() {
             <ul className="bell-list">{data.items.filter((n) => !unreadOnly || !n.readAt).map((n) => (
               <li key={n.id} className={n.readAt ? '' : 'unread'}>
                 <div className="bell-title">{!n.readAt && <span className="sr-only">Unread: </span>}{isSafeAppLink(n.link) ? <Link href={n.link} data-testid="notification-link" onClick={() => { setOpen(false); void markRead(n); }}>{n.title}</Link> : n.title}</div>
-                <div className="small muted">{n.body}</div>
+                <div className="small muted">{humanizeTimes(n.body)}</div>
                 <div className="row small faint"><span>{fmtDT(n.createdAt)}</span>{!n.readAt && <button className="btn-link small" onClick={() => void markRead(n)}>Mark read</button>}</div>
               </li>))}
             </ul>)}

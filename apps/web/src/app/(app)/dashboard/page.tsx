@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { fmtDT, useGet } from '@/api';
+import { fmtDT, humanizeTimes, useGet } from '@/api';
 import { Icon, iconForRoute } from '@/icons';
 import { useMe } from '@/session';
 import { Async, Card, PageHead, Stat } from '@/ui';
@@ -44,7 +44,7 @@ function RecentActivity() {
         <ul className="activity" data-testid="recent-activity">{d.items.slice(0, 5).map((n: Note) => (
           <li key={n.id} className={n.readAt ? '' : 'unread'}><span className="act-dot" aria-hidden /><div className="act-b">
             <b>{isSafeAppLink(n.link) ? <Link href={n.link!}>{n.title}</Link> : n.title}</b>
-            <div className="small muted">{n.body}</div><div className="small faint">{fmtDT(n.createdAt)}{n.readAt ? '' : ' · new'}</div></div></li>))}</ul>}
+            <div className="small muted">{humanizeTimes(n.body)}</div><div className="small faint">{fmtDT(n.createdAt)}{n.readAt ? '' : ' · new'}</div></div></li>))}</ul>}
       </Async>
     </Card>
   );
@@ -77,7 +77,7 @@ export default function Dashboard() {
       </PageHead>
       <Async state={st}>{(d) => (
         <div className="stack-lg">
-          <div className={`grid g${Math.min(5, TILES[me.role]!.length)}`}>{TILES[me.role]!.map((t) => {
+          <div className={`grid dash-tiles g${Math.min(5, TILES[me.role]!.length)}`}>{TILES[me.role]!.map((t) => {
             const v = d[t.key]; const tile = <Stat key={t.k} icon={t.href ? iconForRoute(t.href) : 'performance'} k={t.k} v={v === null || v === undefined ? '—' : t.key === 'avgPercent' ? `${v}%` : v} s={t.s} />;
             return t.href ? <Link key={t.k} href={t.href} style={{ textDecoration: 'none', color: 'inherit' }}>{tile}</Link> : tile;
           })}</div>
