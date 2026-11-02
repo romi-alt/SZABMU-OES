@@ -423,3 +423,10 @@ a:has(> .stat) { display: block; border-radius: 16px; transition: transform .12s
 .start-rules li { counter-increment: rule; position: relative; padding-left: 38px; line-height: 1.55; }
 .start-rules li::before { content: counter(rule); position: absolute; left: 0; top: 1px; width: 26px; height: 26px; border-radius: 50%; background: #F6DEDB; color: var(--maroon); font-size: 13px; font-weight: 700; display: grid; place-items: center; }
 @media (max-width: 640px) { .start-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } .exam-bar::after { left: 12px; right: 12px; } .layout-toggle > .small { display: none; } .layout-toggle .btn { padding: 0 10px; font-size: 12px; } }
+
+/* dashboards on phones: the stat tiles form a compact 2-column strip so the first real task (an open exam, a pending paper) is on the first screen */
+@media (max-width: 600px) {
+  .dash-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .dash-tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .dash-tiles .stat { padding: 12px 14px; } .dash-tiles .stat .v { font-size: 26px; } .dash-tiles .stat .s, .dash-tiles .stat-ico { display: none; }
+}

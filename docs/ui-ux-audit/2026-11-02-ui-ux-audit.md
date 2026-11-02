@@ -29,10 +29,12 @@ Severity: **P1** misleads or blocks a core task; **P2** clear friction, workarou
 
 ### P1
 
-**A-01 — Conflicting time zones in notifications.** The student dashboard's Recent activity shows *"Opens 2026-11-02T13:05:31.173Z"* (raw ISO string, UTC) while the schedule beside it shows *"02 Nov 2026 18:05"* (server local time). The two differ by five hours on a screen whose job is to say when an exam opens.
+**A-01 — Conflicting time zones in notifications. FIXED (3 Nov 2026).** The student dashboard's Recent activity shows *"Opens 2026-11-02T13:05:31.173Z"* (raw ISO string, UTC) while the schedule beside it shows *"02 Nov 2026 18:05"* (server local time). The two differ by five hours on a screen whose job is to say when an exam opens.
 *Cause:* the notification body is built on the server with `exam.opensAt.toISOString()` (`apps/api/src/modules/exams/exams.service.ts:150`). *Fix direction:* send structured data (or a pre-formatted local string) and format it with the same helper the schedule uses; additive API change.
+*Fixed by:* the web app now rewrites any ISO timestamp inside notification text with the app's own date formatter (`humanizeTimes`, `apps/web/src/api.ts`), in the dashboard feed and the bell panel, so existing stored notifications are corrected too; the API is unchanged. Test: `polish.spec.ts` (A-01).
 
-**A-02 — On a phone, a student's main action is below the fold.** At 390×844 the dashboard stacks four tiles (Open now, Scheduled, Results published, Average score — about one full screen) before "Your examinations → Start". The reason a candidate opens the app is the fourth thing they scroll to. *Fix direction:* put the exam card first on phones, or show the tiles as a compact 2×2 grid.
+**A-02 — On a phone, a student's main action is below the fold. FIXED (3 Nov 2026).** At 390×844 the dashboard stacks four tiles (Open now, Scheduled, Results published, Average score — about one full screen) before "Your examinations → Start". The reason a candidate opens the app is the fourth thing they scroll to. *Fix direction:* put the exam card first on phones, or show the tiles as a compact 2×2 grid.
+*Fixed by:* dashboard tiles are a two-column strip on phones (`.dash-tiles`); the examinations card, with its Start button, is now on the first screen at 390×844. Test: `polish.spec.ts` (A-02).
 
 ### P2
 
@@ -40,7 +42,7 @@ Severity: **P1** misleads or blocks a core task; **P2** clear friction, workarou
 
 **A-04 — Mobile tables become very long stacked cards.** Each student is seven lines, each audit entry six, each question nine. Eight students fill roughly three and a half screens. With real cohorts (hundreds) this needs a compact card (two or three lines showing the key fields), with details on demand. Evidence: phone screenshots of Students, Audit trail, Question bank.
 
-**A-05 — Dashboard tiles are not interactive and there is no "what needs me now".** `Stat` is a plain `div`; a count such as "Papers to approve 0 / Live exams 1" cannot be clicked, and nothing says what to do next. *(known: UI-023, NOT_STARTED).* "Quick actions" on the student dashboard repeat the four menu items exactly.
+**A-05 — Dashboards list counts but not "what needs me now".** *Correction (3 Nov 2026): the first version of this report said the stat tiles are not clickable. That was wrong — each tile is a link with a deep link, for example Papers to approve opens the pending-paper list; I had read the `Stat` component, not the page that wraps it.* What remains true: there is no prioritised "needs your attention" list, nothing in a tile signals that it is a link on touch screens (no arrow), and the student's "Quick actions" repeat the four menu items exactly *(known: UI-023, NOT_STARTED).*
 
 **A-06 — Disabled primary buttons without an explanation.** Sign in and Update password are washed out (white on pale rose, 2.9:1) until fields are filled, with no hint why. Disabled controls are exempt from contrast rules, but the pattern hides the reason and looks broken. *Fix direction:* keep the button enabled and show field errors on submit (the form fields already have inline errors), or add a short hint.
 
