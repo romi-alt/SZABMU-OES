@@ -31,7 +31,7 @@ test.describe.serial('student registration', () => {
     const one = `ONE-${letters(6)}`;
     await page.getByRole('button', { name: 'Add student' }).click(); let dlg = page.getByRole('dialog');
     await dlg.getByRole('button', { name: 'Add student' }).click();                                                       // empty: each field explains itself, nothing is sent
-    for (const m of [/Enter the registration number/, /full name/, /Choose the date of birth/, /Choose a programme/]) await expect(dlg.getByText(m)).toBeVisible();
+    for (const m of [/Enter the registration number/, /full name/, /Choose the date of birth/, /Choose a programme\./]) await expect(dlg.getByRole('alert').filter({ hasText: m })).toBeVisible();
     await dlg.getByLabel(/Registration number/).fill(one); await dlg.getByLabel(/Full name/).fill('Single Add Test'); await dlg.getByLabel(/Date of birth/).fill('2003-05-17');
     await dlg.getByLabel(/Programme/).selectOption('MBBS'); await dlg.getByRole('button', { name: 'Add student' }).click();
     await expect(page.getByRole('status').filter({ hasText: `Single Add Test (${one}) added` })).toBeVisible(); await expect(dlg).toHaveCount(0);
