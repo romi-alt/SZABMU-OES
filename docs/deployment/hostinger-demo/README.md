@@ -168,3 +168,7 @@ from #2 + URL state / required markers from foundation) were resolved by keeping
 event channel, live monitor, control service and student registration use Redis (`modules/control/events.service.ts`, `monitor.service.ts`,
 `control.service.ts`, `auth/registration.service.ts`). Merging needs those ported to the database-backed design first (hosting track, see
 `docs/COORDINATION.md`); a mechanical conflict resolution would break live exam control.
+
+## Automatic database migrations at start (added with the teacher/onboarding release)
+
+`scripts/hostinger-single-site.mjs` calls `scripts/auto-migrate.mjs` before it serves: it runs `prisma migrate deploy` (only committed, additive migrations, each once; never reset or destructive) against the **direct** Neon endpoint (a `-pooler` host name is rewritten, or set `MIGRATE_DATABASE_URL`). It is a no-op when nothing is pending and never stops the site from starting; a failure is logged as `[migrate] FAILED …`. Set `AUTO_MIGRATE=false` to turn it off. Release `teacher_registration_and_pools` + `student_onboarding` are applied this way on first start. Check the site log for `[migrate] applied pending migrations`.

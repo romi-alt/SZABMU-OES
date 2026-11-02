@@ -17,6 +17,7 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { autoMigrate } from './auto-migrate.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(root, 'package.json'));
@@ -60,6 +61,7 @@ function stampPortal(req) {
 }
 
 async function main() {
+  autoMigrate(root);                       // additive, idempotent, never fatal (see scripts/auto-migrate.mjs)
   const api = await startApi();
   if (PORTAL_HOSTS.size) process.env.PORTAL_FROM_HEADER = 'true';
   const web = await startWeb();
