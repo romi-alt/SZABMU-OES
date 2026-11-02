@@ -136,6 +136,12 @@ the resets were transient (the Upstash database is in Singapore, the web server 
 | live monitor (falls back to polling) | live push (SSE) via Redis pub/sub |
 
 Done 2026-11-01: Redis now lives in `us-east-1` next to the Boston web server (health `ok`, ~0.9 s round trip from Pakistan).
+
+**Correction (2026-11-02):** the steady stream of `Error: read ECONNRESET` in the runtime log was *not* transient. The BullMQ connection
+(`apps/api/src/infra/queues.service.ts`) was built from host/port/password only and dropped TLS, so every queue connection to Upstash
+(`rediss://`, TLS-only) was reset, `queue.add()` waited forever, and any request that enqueued work (password-reset / registration
+mail) hung with no response. The health check uses a different client that keeps TLS, so it stayed `ok`. Fixed by `bullConnection()`
+(keeps TLS, username, password, db) plus a 3 s cap on enqueueing mail; the outbox row is always written first.
 Removing the dependency entirely is still PR #3 (after porting the exam-control services).
 
 ## Lessons (things that cost time)
