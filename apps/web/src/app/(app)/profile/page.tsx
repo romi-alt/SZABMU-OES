@@ -4,6 +4,7 @@ import { checkPassword, isValidPhone, PHONE_HINT } from '@oes/shared';
 import { patch, post, fmtDT, fmtDate } from '@/api';
 import { useMe } from '@/session';
 import { Card, Field, Notice, PageHead, useAction, useToast } from '@/ui';
+import { TeacherDetails } from './TeacherDetails';
 
 export default function Profile() {
   const { me, refresh, logout } = useMe(); const { run, busy } = useAction(); const toast = useToast();
@@ -17,6 +18,7 @@ export default function Profile() {
       <PageHead title="My profile" sub="Personal details and account security." />
       {me.mustChangePw && <Notice tone="warn"><b>You are using a temporary password.</b> Choose a new one below to continue.</Notice>}
       <div className="grid g2" style={{ marginTop: 14, alignItems: 'start' }}>
+        {me.role === 'TEACHER' ? <TeacherDetails /> : (
         <Card title="Account details" actions={<button className="btn btn-green btn-sm" disabled={busy || detailsInvalid} onClick={() => run(async () => { await patch('/auth/profile', { phone, ...(me.student ? { address, guardianPhone: guardian } : {}) }); await refresh(); }, 'Profile saved')}>Save changes</button>}>
           <div className="stack">
             <div className="grid g2"><Field label="Full name" hint="Managed by your institution"><input className="in" value={me.fullName} readOnly /></Field><Field label="Email"><input className="in" value={me.email} readOnly /></Field></div>
@@ -26,6 +28,7 @@ export default function Profile() {
             <div className="small faint">Last sign-in: {fmtDT(me.lastLoginAt)}</div>
           </div>
         </Card>
+        )}
         {me.role !== 'STUDENT' && (
           <Card title="Two-factor authentication">
             <div className="stack">

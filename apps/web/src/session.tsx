@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { SESSION_EXPIRED_EVENT, get, post } from './api';
 import type { Role } from '@oes/shared';
 
-export interface Me { id: string; email: string; fullName: string; role: Role; permissions: string[]; mustChangePw: boolean; mfa?: { enabled: boolean; state: 'ok' | 'pending' | 'enroll'; required: boolean }; studentId: string | null; phone?: string; lastLoginAt?: string; institutions: { id: string; code: string; name: string }[]; student?: { id: string; regNo: string; semester: number; program: string; programName: string; institution: { id: string; name: string; code: string }; address?: string; dateOfBirth?: string; guardianPhone?: string } | null }
+export interface Me { id: string; email: string; fullName: string; role: Role; permissions: string[]; mustChangePw: boolean; mfa?: { enabled: boolean; state: 'ok' | 'pending' | 'enroll'; required: boolean }; studentId: string | null; teacher?: { status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED'; reviewNote?: string | null } | null; phone?: string; lastLoginAt?: string; institutions: { id: string; code: string; name: string }[]; student?: { id: string; regNo: string; semester: number; program: string; programName: string; institution: { id: string; name: string; code: string }; address?: string; dateOfBirth?: string; guardianPhone?: string } | null }
 interface Ctx { me: Me | null; loading: boolean; refresh: () => Promise<void>; logout: () => Promise<void>; can: (p: string) => boolean }
 const C = createContext<Ctx>({ me: null, loading: true, refresh: async () => undefined, logout: async () => undefined, can: () => false });
 export const useMe = () => useContext(C);
@@ -25,7 +25,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const onExpired = () => { try { sessionStorage.setItem('oes:expired', '1'); } catch { /* storage unavailable */ } setMe(null); };
     window.addEventListener(SESSION_EXPIRED_EVENT, onExpired); return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);
-  const publicPath = path === '/login' || path === '/forgot' || path === '/register' || path === '/verify';
+  const publicPath = path === '/login' || path === '/forgot' || path === '/register' || path.startsWith('/register/') || path === '/verify';
   useEffect(() => { if (!loading && !me && !publicPath && !document.documentElement.dataset.publicPage) router.replace('/login'); }, [loading, me, publicPath, router]);
   // A signed-in user whose second factor is outstanding can only be on /mfa (the API enforces this regardless).
   useEffect(() => { if (me && me.mfa && me.mfa.state !== 'ok' && path !== '/mfa') router.replace('/mfa'); }, [me, path, router]);

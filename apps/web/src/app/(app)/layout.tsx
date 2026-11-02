@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { BrandLogo } from '@/brand';
+import { TeacherApproval } from './teacher-status';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useMe } from '@/session';
@@ -77,6 +78,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }, [navOpen]);
   if (loading || !me) return <div style={{ padding: 40 }}><Loading /></div>;
   const nav = NAV[me.role];
+  // A teacher whose registration is pending, rejected or suspended sees only their approval status (the API refuses every working route as well).
+  const gated = me.role === 'TEACHER' && !!me.teacher && me.teacher.status !== 'APPROVED';
   const rule = ruleFor(path); const denied = !!rule && !me.permissions.includes(rule.perm);
   const crumb = nav.items.find((i) => path.startsWith(i.href))?.label ?? crumbFor(path);
   return (
@@ -87,7 +90,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <BrandLogo white priority className="brand" />
         <div className="brand-name"><i className="auth-bar" aria-hidden />OES Portal</div>
         <nav className="nav" aria-label="Primary"><div className="nav-label">{nav.label}</div>
-          {nav.items.map((i) => <Link key={i.href} href={i.href} aria-current={path === i.href || (i.href !== '/dashboard' && path.startsWith(i.href)) ? 'page' : undefined}><Icon name={iconForRoute(i.href)} size={18} /><span>{i.label}</span></Link>)}
+          {(gated ? [] : nav.items).map((i) => <Link key={i.href} href={i.href} aria-current={path === i.href || (i.href !== '/dashboard' && path.startsWith(i.href)) ? 'page' : undefined}><Icon name={iconForRoute(i.href)} size={18} /><span>{i.label}</span></Link>)}
         </nav>
         <div className="sidebar-foot">{me.institutions.map((i) => i.code).join(' · ') || 'University-wide'}</div>
       </aside>
@@ -98,7 +101,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <div className="crumbs">{ROLE_LABEL[me.role]} › <b>{crumb}</b></div>
           <div className="row topbar-r"><Bell /><span className="user-chip" title={me.email}><span className="user-av" aria-hidden><Icon name="user" size={16} /></span><span className="user-name">{me.fullName}</span></span><button className="btn btn-sm icon-btn" onClick={logout} aria-label="Sign out" title="Sign out"><Icon name="logout" size={18} /></button></div>
         </header>
-        <main className="content" id="main" tabIndex={-1}>{me.mustChangePw && path !== '/profile' ? <ForceChange /> : denied && rule ? <NoAccess name={rule.name} perm={rule.perm} /> : children}</main>
+        <main className="content" id="main" tabIndex={-1}>{gated ? <TeacherApproval /> : me.mustChangePw && path !== '/profile' ? <ForceChange /> : denied && rule ? <NoAccess name={rule.name} perm={rule.perm} /> : children}</main>
       </div>
     </div>
   );
