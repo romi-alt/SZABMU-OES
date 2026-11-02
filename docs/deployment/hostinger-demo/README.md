@@ -118,7 +118,7 @@ Live check: student on oes 200, CCE on dashboard 200, cross-portal 401 both ways
 | `MFA_ENFORCE=true` | off | seeded staff sign in with password only |
 | Separate always-on worker host | workers inside the API child (`RUN_WORKERS=true`) | if Hostinger idles/restarts the process, timers pause until the next request wakes it |
 | PITR backups, monitoring | Neon free-tier history only; no alerting | not suitable for real candidates |
-| Real mail | `SMTP_HOST` unset → mail stays in the DB outbox | password-reset codes are not delivered |
+| Real mail | Hostinger mailbox `no-reply@szabmu.site` via authenticated SMTP (`SMTP_HOST=smtp.hostinger.com`, `SMTP_PORT=465`, `SMTP_SECURE=true`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`); while `SMTP_HOST` is unset mail stays in the DB outbox | seeded `@demo.szabmu.invalid` accounts still receive nothing — only accounts with a real address get codes. Add `SMTP_PASS` in the hPanel form, never via the env-var API (it is a full replace and values read back masked) |
 
 Free-tier limits to watch: Upstash 500k commands/month (BullMQ polling consumes some continuously); Neon free compute auto-suspends when idle,
 so the first request after a quiet period is slower.
