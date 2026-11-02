@@ -82,6 +82,12 @@ export async function seed(app: INestApplicationContext, opts: { studentsPerCamp
       studs.push({ id: s.id, institutionId: inst.id });
     }
   }
+  // Official register entries nobody has claimed yet, so self-registration can be tried out of the box.
+  // Reg no DEMO-A-2025-000N / DEMO-B-2025-000N, date of birth 2005-01-0N (N = 1..5). Documented in docs/deployment/hostinger-demo/README.md.
+  await prisma.rosterEntry.createMany({ data: ([[a, 'A'], [b, 'B']] as const).flatMap(([inst, t]) => [1, 2, 3, 4, 5].map((n) => ({
+    institutionId: inst.id, programId: mbbs.id, regNo: `DEMO-${t}-2025-000${n}`, fullName: `${FIRST[(n + 3) % FIRST.length]} ${LAST[(n * 5 + (t === 'A' ? 1 : 4)) % LAST.length]} (demo)`,
+    dateOfBirth: new Date(`2005-01-0${n}`), semester: 1, batchYear: 2025,
+  }))) });
   void c;
   const sa = await asUser(prisma, `super.admin@${DOMAIN}`);
   void superU; void cce;
