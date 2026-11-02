@@ -106,6 +106,7 @@ Live check: student on oes 200, CCE on dashboard 200, cross-portal 401 both ways
 | Runtime logs | `hosting_nodejs_runtime-logs` (only `console.*` output is captured — raw child-process stdio is not) |
 | New migration | run `npm run db:migrate` from a workstation with the Neon `DATABASE_URL`, **before** pushing code that needs it |
 | Reset demo data | `NODE_ENV=development node apps/api/dist/seed/seed.js --reset` against Neon (wipes everything) |
+| Try student self-registration | the seed puts 10 unclaimed register entries in: reg no `DEMO-A-2025-0001`…`0005` (DMC-A) and `DEMO-B-2025-0001`…`0005` (DMC-B), date of birth `2005-01-0N` for entry N (e.g. `DEMO-A-2025-0003` → `2005-01-03`). Register on the student site with one of them and a real email; each entry can be claimed once. More: dashboard → Student register → Add student / Import |
 | Build logs / failure analysis | `hosting_get-deployment` with the domain |
 | Rotate a secret | change it in Neon/Upstash or generate a new one → replace the full env set → restart (rebuild if build-time) |
 
