@@ -29,5 +29,5 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   // Documents only: not the API rewrite, Next's static/image assets, or the public icons, logos and campus photo (a document-only matcher: these must never be rewritten to the portal 404).
-  matcher: [{ source: '/((?!api|_next/static|_next/image|favicon.ico|icon.png|logo.png|logo-white.png|campus.jpg).*)', missing: [{ type: 'header', key: 'next-router-prefetch' }, { type: 'header', key: 'purpose', value: 'prefetch' }] }],
+  matcher: [{ source: '/((?!api|_next/static|_next/image|favicon.ico|icon.png|logo.png|logo-white.png).*)', missing: [{ type: 'header', key: 'next-router-prefetch' }, { type: 'header', key: 'purpose', value: 'prefetch' }] }],
 };

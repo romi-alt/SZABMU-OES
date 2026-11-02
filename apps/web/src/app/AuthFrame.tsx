@@ -12,7 +12,6 @@ export function AuthFrame({ children, note, wide }: { children: ReactNode; note?
   return (
     <div className={`auth${wide ? ' auth-wide' : ''}`}>
       <section className="auth-art">
-        <div className="auth-photo" aria-hidden />
         <div className="auth-art-text">
           <BrandLogo white priority className="auth-logo" />
           <div className="auth-title"><i className="auth-bar" aria-hidden /><p className="auth-brand">OES Portal<br />SZABMU</p></div>

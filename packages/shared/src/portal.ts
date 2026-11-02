@@ -22,7 +22,7 @@ export const roleAllowedOnPortal = (role: Role, portal: Portal): boolean => port
 /** Pages (first path segment) both portals serve: sign-in, recovery, public certificate verification, MFA step, the role-aware dashboard and profile. */
 const SHARED_PAGES = ['', 'login', 'forgot', 'verify', 'mfa', 'dashboard', 'profile'] as const;
 /** Candidate-only pages. These call `/me/*` endpoints that only the STUDENT role holds. */
-const STUDENT_PAGES = ['schedule', 'results', 'performance', 'exam', 'certificate', 'register'] as const;
+const STUDENT_PAGES = ['schedule', 'results', 'performance', 'exam', 'certificate', 'register', 'complete-profile'] as const;
 /** Staff-only pages (see apps/web/src/nav.ts for which role sees which). */
 const STAFF_PAGES = ['questions', 'exams', 'students', 'enrolment', 'roster', 'assignments', 'users', 'teachers', 'classes', 'pools', 'my-students', 'institutions', 'programs', 'monitor', 'incidents', 'audit'] as const;
 

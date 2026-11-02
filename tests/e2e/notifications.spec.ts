@@ -12,7 +12,7 @@ test('a notification is a working link: it opens the page it refers to and marks
   await expect(link).toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/schedule$/);                                          // an existing route, not a dead /student/schedule
-  await expect(page.getByRole('heading', { name: 'Exam schedule' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'My Examinations' })).toBeVisible();
   await expect(page.getByText(/This page could not be found|404/)).toHaveCount(0);
   await expect.poll(unread).toBe(before - 1);                                           // clicking also marked it read
 });

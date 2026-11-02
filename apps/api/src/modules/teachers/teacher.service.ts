@@ -38,7 +38,7 @@ export class TeacherService {
   }
 
   async profile(u: AuthUser) {
-    const p = await this.prisma.teacherProfile.findUnique({ where: { userId: u.id }, include: { user: { select: { fullName: true, email: true, phone: true, lastLoginAt: true } } } });
+    const p = await this.prisma.teacherProfile.findUnique({ where: { userId: u.id }, omit: { photo: false }, include: { user: { select: { fullName: true, email: true, phone: true, lastLoginAt: true } } } });
     if (!p) throw forbidden('This account has no teacher registration');
     return { fullName: p.user.fullName, email: p.user.email, phone: p.user.phone, employeeId: p.employeeId, department: p.department, designation: p.designation, status: p.status, lastLoginAt: p.user.lastLoginAt,
       photo: p.photo && p.photoMime ? `data:${p.photoMime};base64,${Buffer.from(p.photo).toString('base64')}` : null };
