@@ -17,11 +17,38 @@ test.describe.serial('student registration', () => {
     await login(page, 'admin.a'); await page.goto('/roster');
     await expect(page.getByRole('heading', { name: 'Student register', exact: true })).toBeVisible(); await expect.poll(() => page.title()).toMatch(/Student register/);
     await page.getByRole('button', { name: 'Import register (CSV)' }).click();
-    const dlg = page.getByRole('dialog'); const box = dlg.getByLabel(/Register \(one student per line\)/);
-    await box.fill(`${reg},Zainab Test,09/03/2004,MBBS,2,2025`); await expect(dlg).toContainText('1 to fix'); await expect(dlg).toContainText('date of birth must look like'); await expect(dlg.getByRole('button', { name: /^Import/ })).toBeDisabled();
+    const dlg = page.getByRole('dialog'); await dlg.getByText('…or paste the rows instead').click(); const box = dlg.getByLabel(/Register \(one student per line\)/);
+    await box.fill(`${reg},Zainab Test,2004-02-30,MBBS,2,2025`); await expect(dlg).toContainText('real past date');                     // impossible date is not rolled over
+    await box.fill(`${reg},Zainab Test,2004-03-09,MBBS,2,2025\n${reg.toLowerCase()},Other,2004-03-09,MBBS,2,2025`); await expect(dlg).toContainText('already on line 1');
+    await box.fill(`${reg},Zainab Test,09/03/2004,MBBS,2,2025`); await expect(dlg).toContainText('1 to fix'); await expect(dlg).toContainText('date of birth must be a real past date like'); await expect(dlg.getByRole('button', { name: /^Import/ })).toBeDisabled();
     await box.fill(`regNo,fullName,dateOfBirth,programCode,semester,batchYear\n${reg},Zainab Test,2004-03-09,MBBS,2,2025`); await expect(dlg).toContainText('ready to import');
     await dlg.getByRole('button', { name: /^Import 1 entry/ }).click(); await expect(page.getByRole('status').filter({ hasText: '1 student added' })).toBeVisible();
     await page.getByLabel('Search').fill(reg); await expect(page.locator('tbody tr', { hasText: reg })).toContainText('Not registered yet'); await expect(page.locator('body')).not.toContainText('2004-03-09');
+  });
+
+  test('campus admin adds one student with a form, and imports a class from a CSV file with a preview', async ({ page }) => {
+    await login(page, 'admin.a'); await page.goto('/roster');
+    const one = `ONE-${letters(6)}`;
+    await page.getByRole('button', { name: 'Add student' }).click(); let dlg = page.getByRole('dialog');
+    await dlg.getByRole('button', { name: 'Add student' }).click();                                                       // empty: each field explains itself, nothing is sent
+    for (const m of [/Enter the registration number/, /full name/, /Choose the date of birth/, /Choose a programme/]) await expect(dlg.getByText(m)).toBeVisible();
+    await dlg.getByLabel(/Registration number/).fill(one); await dlg.getByLabel(/Full name/).fill('Single Add Test'); await dlg.getByLabel(/Date of birth/).fill('2003-05-17');
+    await dlg.getByLabel(/Programme/).selectOption('MBBS'); await dlg.getByRole('button', { name: 'Add student' }).click();
+    await expect(page.getByRole('status').filter({ hasText: `Single Add Test (${one}) added` })).toBeVisible(); await expect(dlg).toHaveCount(0);
+    await page.getByRole('button', { name: 'Add student' }).click(); dlg = page.getByRole('dialog');                      // same number again: the server's reason is shown, dialog stays open
+    await dlg.getByLabel(/Registration number/).fill(one); await dlg.getByLabel(/Full name/).fill('Dup'); await dlg.getByLabel(/Date of birth/).fill('2003-05-17'); await dlg.getByLabel(/Programme/).selectOption('MBBS');
+    await dlg.getByRole('button', { name: 'Add student' }).click(); await expect(page.getByText(new RegExp(`Already on the register.*${one}`))).toBeVisible(); await expect(dlg).toBeVisible();
+    await dlg.getByRole('button', { name: 'Cancel' }).click();
+
+    const a = `CSV-${letters(6)}`; const b = `CSV-${letters(6)}`;
+    await page.getByRole('button', { name: 'Import register (CSV)' }).click(); dlg = page.getByRole('dialog');
+    await dlg.getByTestId('roster-file').setInputFiles({ name: 'class.xlsx', mimeType: 'application/vnd.ms-excel', buffer: Buffer.from('x') });
+    await expect(dlg).toContainText('must be saved as CSV first');
+    await dlg.getByTestId('roster-file').setInputFiles({ name: 'class.csv', mimeType: 'text/csv', buffer: Buffer.from(`${String.fromCharCode(0xfeff)}regNo,fullName,dateOfBirth,programCode,semester,batchYear\r\n${a},"Raza, Ali",2003-11-21,mbbs,2,2025\r\n${b},Hina Noor,2004-01-02,MBBS,2,2025\r\n,,,,,\r\n`) });
+    await expect(dlg).toContainText('Loaded class.csv'); await expect(dlg).toContainText('2 valid lines — ready to import');
+    await expect(dlg.getByTestId('roster-preview')).toContainText('Raza, Ali');
+    await dlg.getByRole('button', { name: /^Import 2 entries/ }).click(); await expect(page.getByRole('status').filter({ hasText: '2 students added' })).toBeVisible();
+    await page.getByLabel('Search').fill(a); await expect(page.locator('tbody tr', { hasText: a })).toContainText('MBBS');
   });
 
   test('registration page validates inline, then the emailed code creates the account', async ({ page }) => {
@@ -32,7 +59,7 @@ test.describe.serial('student registration', () => {
     await fill(page, { regNo: reg, dob: '2004-03-09', email, pw: PW, pw2: PW + 'x' }); await expect(page.getByText('Passwords do not match.')).toBeVisible();
     await page.getByLabel(/Confirm password/).fill(PW); await expect(page.getByText('Passwords do not match.')).toHaveCount(0);
     await page.getByRole('button', { name: /Create Account/ }).click();
-    await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible(); await expect(page.getByTestId('register-info')).toContainText('If your details match');
+    await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible(); await expect(page.getByTestId('register-info')).toContainText(`We sent a 6-digit code to ${email}`);
     const code = (await page.getByTestId('dev-code').innerText()).replace(/\D/g, '').slice(-6);
     await page.getByLabel('Digit 1').click(); await page.keyboard.type('000000' === code ? '111111' : '000000'); await page.getByRole('button', { name: /Create Account/ }).click();
     await expect(page.getByRole('alert').filter({ hasText: /incorrect or has expired/ })).toBeVisible();
@@ -47,13 +74,20 @@ test.describe.serial('student registration', () => {
     await page.goto('/profile'); await expect(page.getByLabel('Registration no.')).toHaveValue(reg); await expect(page.getByLabel('Institution', { exact: true }).first()).toHaveValue(/Medical College A/i);
   });
 
-  test('wrong date of birth, an unknown number and a claimed number all look the same to the visitor', async ({ page }) => {
+  test('no code screen when no code was sent: a wrong date of birth and an unknown number get the same explanation', async ({ page }) => {
     const seen: string[] = [];
-    for (const v of [{ regNo: reg, dob: '2004-03-09' }, { regNo: reg, dob: '2001-01-01' }, { regNo: 'NOPE-' + letters(5), dob: '2004-03-09' }]) {
+    for (const v of [{ regNo: reg, dob: '2001-01-01' }, { regNo: 'NOPE-' + letters(5), dob: '2004-03-09' }]) {
       await page.goto('/register'); await fill(page, { ...v, email: `${letters(8).toLowerCase()}@example.test`, pw: PW }); await page.getByRole('button', { name: /Create Account/ }).click();
-      await expect(page.getByTestId('register-info')).toBeVisible(); seen.push(await page.getByTestId('register-info').innerText()); await expect(page.getByTestId('dev-code')).toHaveCount(0);
+      await expect(page.getByTestId('register-error')).toContainText("couldn't find a student"); seen.push(await page.getByTestId('register-error').innerText());
+      await expect(page.getByRole('heading', { name: 'Check your email' })).toHaveCount(0); await expect(page.getByTestId('dev-code')).toHaveCount(0);
     }
-    expect(new Set(seen).size).toBe(1);
+    expect(new Set(seen).size).toBe(1);                                                           // neither half of the details can be probed alone
+  });
+
+  test('a number that already has an account says so (with sign-in links) to someone with the right date of birth', async ({ page }) => {
+    await page.goto('/register'); await fill(page, { regNo: reg, dob: '2004-03-09', email: `${letters(8).toLowerCase()}@example.test`, pw: PW }); await page.getByRole('button', { name: /Create Account/ }).click();
+    const err = page.getByTestId('register-error'); await expect(err).toContainText('already exists'); await expect(err.getByRole('link', { name: 'Forgot password' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Check your email' })).toHaveCount(0);
   });
 
   test('phone width: no sideways scroll on the registration page', async ({ browser }) => {
