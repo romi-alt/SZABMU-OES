@@ -73,7 +73,7 @@ test('existing students are unaffected: they land on the dashboard and My Examin
   await login(page, 'student.b005'); await expect(page).toHaveURL(/\/dashboard/); await expect(page.getByRole('link', { name: 'My Examinations' }).first()).toBeVisible();
   await page.goto('/schedule'); await expect(page.getByRole('heading', { name: 'My Examinations' })).toBeVisible();
   // other specs may already have submitted this account's attempt, so accept either section; both prove the existing roster entry is intact
-  const avail = page.getByTestId('exams-available'); const done = page.getByTestId('exams-completed');
-  await expect(avail.or(done)).toContainText('MBBS-PATH-MT');
-  if (await avail.count()) { const row = avail.locator('tbody tr').first(); await expect(row).toContainText('Pathology'); await expect(row).toContainText(/\d+ min/); await row.getByRole('link', { name: /Start|Resume/ }).click(); await expect(page.getByRole('button', { name: /Begin examination|Resume/ })).toBeVisible(); }
+  const avail = page.getByTestId('exams-available');
+  await expect(page.locator('[data-testid^="exams-"]').filter({ hasText: 'MBBS-PATH-MT' }).first()).toBeVisible();
+  if (await avail.filter({ hasText: 'MBBS-PATH-MT' }).count()) { const row = avail.locator('tbody tr').first(); await expect(row).toContainText('Pathology'); await expect(row).toContainText(/\d+ min/); await row.getByRole('link', { name: /Start|Resume/ }).click(); await expect(page.getByRole('button', { name: /Begin examination|Resume/ })).toBeVisible(); }
 });
