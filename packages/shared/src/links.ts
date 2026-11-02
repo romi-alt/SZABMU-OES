@@ -9,6 +9,9 @@ export const LINKS = {
   incidents: '/incidents',
   questions: '/questions',
   monitor: '/monitor',
+  teachers: '/teachers',
+  pools: '/pools',
+  classes: '/classes',
   exam: (examId: string) => `/exams/${examId}`,
 } as const;
 
