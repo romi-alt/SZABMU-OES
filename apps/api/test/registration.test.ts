@@ -46,12 +46,26 @@ describe('registration flow', () => {
     expect(await ctx.prisma.auditLog.count({ where: { action: 'student.self_registered', entityId: stu.userId } })).toBe(1);
   });
 
-  it('answers identically whether or not the details match, so the register cannot be probed', async () => {
+  it('says clearly when no code was sent, without letting either half of the details be probed alone', async () => {
     const r = row(); await load([r]);
-    const good = await start(r, 'probe.good@example.test'); const wrongDob = await start({ ...r, dateOfBirth: '2004-03-10' }, 'probe.dob@example.test');
-    const unknown = await start({ regNo: 'NOPE-0000', dateOfBirth: r.dateOfBirth }, 'probe.none@example.test'); const taken = await start(r, 'student.a001@demo.szabmu.invalid');
-    for (const x of [wrongDob, unknown, taken]) { expect(x.status).toBe(good.status); expect(x.body.message).toBe(good.body.message); expect(x.body.devCode).toBeUndefined(); }
+    const good = await start(r, 'probe.good@example.test');
+    expect(good.status).toBe(200); expect(good.body.message).toContain('probe.good@example.test');
+    const wrongDob = await start({ ...r, dateOfBirth: '2004-03-10' }, 'probe.dob@example.test');
+    const unknown = await start({ regNo: 'NOPE-0000', dateOfBirth: r.dateOfBirth }, 'probe.none@example.test');
+    for (const x of [wrongDob, unknown]) { expect(x.status).toBe(422); expect(x.body.code).toBe('REGISTER_NO_MATCH'); expect(x.body.devCode).toBeUndefined(); }
+    expect(wrongDob.body.message).toBe(unknown.body.message);                                    // wrong DOB ≡ unknown number
+    const taken = await start(r, 'student.a001@demo.szabmu.invalid');                             // matching details, email belongs to someone else
+    expect(taken.status).toBe(409); expect(taken.body.code).toBe('EMAIL_IN_USE'); expect(taken.body.devCode).toBeUndefined();
     expect(await ctx.prisma.user.count({ where: { email: { startsWith: 'probe.' } } })).toBe(0);
+  });
+
+  it('reports an already-claimed number only to someone who also knows the date of birth', async () => {
+    const r = row(); await load([r]); const email = 'claim.first@example.test';
+    const s = await start(r, email); expect((await anon().post('/auth/register/verify', { email, code: s.body.devCode })).status).toBe(200);
+    const again = await start(r, 'claim.second@example.test');
+    expect(again.status).toBe(409); expect(again.body.code).toBe('ALREADY_REGISTERED');
+    const guess = await start({ ...r, dateOfBirth: '1999-12-31' }, 'claim.third@example.test');
+    expect(guess.status).toBe(422); expect(guess.body.code).toBe('REGISTER_NO_MATCH');
   });
 
   it('wrong codes are limited to five tries, then the pending registration is destroyed', async () => {

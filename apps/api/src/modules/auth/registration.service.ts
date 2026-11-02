@@ -13,14 +13,25 @@ import { CONFIG, type Config } from '../../config';
 
 const TTL_SEC = 15 * 60;
 const MAX_ATTEMPTS = 5;
-const GENERIC = 'If your details match the official student register, a 6-digit code has been sent to that email address. Enter it to finish creating your account.';
+/**
+ * Visitor-facing outcomes. A student must be told why nothing arrives, so failures are explicit — but disclosure stays narrow:
+ * a wrong registration number and a wrong date of birth give the SAME message (neither half can be probed alone), and
+ * "already registered" / "email in use" are only revealed to someone who already knows a matching number + date of birth.
+ * Probing is further capped by the per-IP and per-number rate limits above.
+ */
+const NO_MATCH = "We couldn't find a student with this registration number and date of birth on your college's register. Check both against your admission letter. If they are correct, your college may not have added you yet — contact your campus examination office.";
+const ALREADY = 'An account already exists for this registration number. Sign in, or use "Forgot password" if you cannot remember it.';
+const EMAIL_IN_USE = 'This email address is already used by another account. Use a different email address, or sign in.';
+
+/** "A, B, C and 4 more" — keeps error messages readable for large files. */
+const list = (xs: string[], max = 10) => xs.slice(0, max).join(', ') + (xs.length > max ? ` and ${xs.length - max} more` : '');
 
 interface Pending { rosterId: string; passwordHash: string; codeHash: string; attempts: number }
 
 /**
  * Student self-registration against the official register (roster).
- *  1. start(): registration no. + date of birth must match an UNCLAIMED roster entry, and the email must be free. The answer is always the same
- *     generic message, so the endpoint cannot be used to discover who is on the register or which emails have accounts.
+ *  1. start(): registration no. + date of birth must match an UNCLAIMED roster entry, and the email must be free. Failures are explicit
+ *     (see NO_MATCH / ALREADY / EMAIL_IN_USE for what is and is not disclosed), so a student never waits for a code that was not sent.
  *  2. verify(): the 6-digit code mailed to that address proves control of it; only then is the account created (role STUDENT, the roster's
  *     institution/programme/semester), and the roster entry is claimed exactly once.
  * No exam access follows from registering: enrolment, eligibility and admission rules are unchanged.
@@ -37,9 +48,9 @@ export class RegistrationService {
     const passwordHash = await argon2.hash(d.password, { type: argon2.argon2id });     // always computed: response time must not reveal a match
     const entry = await this.prisma.rosterEntry.findFirst({ where: { regNo: { equals: regNo, mode: 'insensitive' } } });
     const emailTaken = !!(await this.prisma.user.findUnique({ where: { email }, select: { id: true } }));
-    const matches = !!entry && !entry.claimedAt && entry.dateOfBirth.toISOString().slice(0, 10) === d.dateOfBirth;
+    const dobOk = !!entry && entry.dateOfBirth.toISOString().slice(0, 10) === d.dateOfBirth;
     let devCode: string | undefined;
-    if (matches && !emailTaken) {
+    if (entry && dobOk && !entry.claimedAt && !emailTaken) {
       const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
       const pending: Pending = { rosterId: entry.id, passwordHash, codeHash: sha256(`${email}:${code}`), attempts: 0 };
       await this.redis.client.set(`reg:${email}`, JSON.stringify(pending), 'EX', TTL_SEC);
@@ -47,9 +58,13 @@ export class RegistrationService {
       if (this.cfg.DEV_EXPOSE_CODES === 'true') devCode = code;
       await this.audit.log({ actor: null, action: 'auth.register_requested', entity: 'roster', entityId: entry.id, institutionId: entry.institutionId, meta: { email }, ip });
     } else {
-      await this.audit.log({ actor: null, action: 'auth.register_unmatched', entity: 'roster', meta: { regNo, reason: !entry ? 'unknown' : entry.claimedAt ? 'claimed' : !matches ? 'dob' : 'email_taken' }, ip });
+      const reason = !entry ? 'unknown' : !dobOk ? 'dob' : entry.claimedAt ? 'claimed' : 'email_taken';   // order matters: see NO_MATCH
+      await this.audit.log({ actor: null, action: 'auth.register_unmatched', entity: 'roster', meta: { regNo, reason }, ip });
+      if (reason === 'unknown' || reason === 'dob') throw new AppError(422, 'REGISTER_NO_MATCH', NO_MATCH);
+      if (reason === 'claimed') throw conflict('ALREADY_REGISTERED', ALREADY);
+      throw conflict('EMAIL_IN_USE', EMAIL_IN_USE);
     }
-    return { ok: true, message: GENERIC, ...(devCode ? { devCode } : {}) };
+    return { ok: true, message: `We sent a 6-digit code to ${email}. It expires in ${TTL_SEC / 60} minutes. Not in your inbox? Check Spam or Junk.`, ...(devCode ? { devCode } : {}) };
   }
 
   async verify(emailRaw: string, code: string, ip: string) {
@@ -79,14 +94,19 @@ export class RegistrationService {
   async importRoster(u: AuthUser, institutionId: string, rows: { regNo: string; fullName: string; dateOfBirth: string; programCode: string; semester: number; batchYear: number }[], ip?: string) {
     scope.assert(u, institutionId);
     const regs = rows.map((r) => r.regNo.trim().toLowerCase());
-    if (new Set(regs).size !== regs.length) throw badRequest('Duplicate registration number within the file');
-    const codes = [...new Set(rows.map((r) => r.programCode.trim()))];
-    const programs = await this.prisma.program.findMany({ where: { code: { in: codes } }, select: { id: true, code: true } });
-    const byCode = new Map(programs.map((p) => [p.code, p.id])); const unknown = codes.filter((c) => !byCode.has(c));
-    if (unknown.length) throw badRequest(`Unknown programme code(s): ${unknown.join(', ')}`);
+    const dupes = [...new Set(regs.filter((r, i) => regs.indexOf(r) !== i))];
+    if (dupes.length) throw badRequest(`The same registration number appears more than once: ${list(dupes)}`, { regNos: dupes });
+    // Programme codes are matched case-insensitively ("mbbs" = "MBBS"); the canonical code is stored.
+    const codes = [...new Set(rows.map((r) => r.programCode.trim().toUpperCase()))];
+    const programs = await this.prisma.program.findMany({ where: { code: { in: codes, mode: 'insensitive' } }, select: { id: true, code: true } });
+    const byCode = new Map(programs.map((p) => [p.code.toUpperCase(), p.id])); const unknown = codes.filter((c) => !byCode.has(c));
+    if (unknown.length) {
+      const valid = (await this.prisma.program.findMany({ select: { code: true }, orderBy: { code: 'asc' } })).map((p) => p.code);
+      throw badRequest(`Unknown programme code(s): ${list(unknown)}. Valid codes: ${list(valid, 20)}.`);
+    }
     const existing = await this.prisma.$queryRaw<{ regNo: string }[]>`SELECT "regNo" FROM roster_entries WHERE lower("regNo") = ANY(${regs}) UNION SELECT "regNo" FROM students WHERE lower("regNo") = ANY(${regs})`;
-    if (existing.length) throw conflict('ROSTER_DUPLICATES', 'Some registration numbers are already registered', { regNos: existing.map((e) => e.regNo) });
-    await this.prisma.rosterEntry.createMany({ data: rows.map((r) => ({ institutionId, programId: byCode.get(r.programCode.trim())!, regNo: r.regNo.trim(), fullName: r.fullName.trim(), dateOfBirth: new Date(r.dateOfBirth), semester: r.semester, batchYear: r.batchYear, importedBy: u.id })) });
+    if (existing.length) throw conflict('ROSTER_DUPLICATES', `Already on the register (nothing was imported): ${list(existing.map((e) => e.regNo))}. Remove ${existing.length === 1 ? 'it' : 'them'} and import again.`, { regNos: existing.map((e) => e.regNo) });
+    await this.prisma.rosterEntry.createMany({ data: rows.map((r) => ({ institutionId, programId: byCode.get(r.programCode.trim().toUpperCase())!, regNo: r.regNo.trim(), fullName: r.fullName.trim(), dateOfBirth: new Date(r.dateOfBirth), semester: r.semester, batchYear: r.batchYear, importedBy: u.id })) });
     await this.audit.log({ actor: u, action: 'roster.import', entity: 'institution', entityId: institutionId, institutionId, meta: { count: rows.length }, ip });
     return { imported: rows.length };
   }
