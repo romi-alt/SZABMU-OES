@@ -41,7 +41,9 @@ test.describe.serial('student onboarding', () => {
     await page.getByRole('button', { name: 'Save and continue' }).click(); await expect(page.getByText('Enter your full name.')).toBeVisible(); await expect(page.getByText('Select your college.')).toBeVisible();
     await expect(page.getByLabel(/Degree programme/)).toBeDisabled(); await expect(page.getByLabel(/^Semester/)).toBeDisabled();
     await page.getByLabel(/College/).selectOption({ label: 'Demo Medical College A (synthetic)' });
-    const progs = await page.getByLabel(/Degree programme/).locator('option').allInnerTexts(); expect(progs.join('|')).toContain('Bachelor of Medicine'); expect(progs.join('|')).not.toContain('Nursing');   // only programmes offered at that college
+    const cat = await (await page.request.get('/api/onboarding/catalog')).json(); const inst = cat.institutions.find((i: any) => i.code === 'DMC-A').id;
+    const offered = cat.programs.filter((p: any) => !cat.programsByInstitution[inst]?.length || cat.programsByInstitution[inst].includes(p.id)).map((p: any) => p.name).sort();
+    const progs = (await page.getByLabel(/Degree programme/).locator('option').allInnerTexts()).filter((t) => !/^Select/.test(t)).sort(); expect(progs).toEqual(offered); expect(progs.join('|')).toContain('Bachelor of Medicine');   // exactly what the database offers at that college
     await page.getByLabel(/Degree programme/).selectOption({ index: 1 }); const sems = await page.getByLabel(/^Semester/).locator('option').allInnerTexts(); expect(sems.join('|')).toContain('Semester 4');
     await page.getByLabel(/^Full name/).fill('Amna Onboarding'); await page.getByLabel(/Mobile number/).fill('abc'); await page.getByRole('button', { name: 'Save and continue' }).click(); await expect(page.getByText(/Use digits only/)).toBeVisible();
     await expect(page.getByLabel(/^Full name/)).toHaveValue('Amna Onboarding');                                                 // nothing lost
@@ -68,7 +70,7 @@ test.describe.serial('student onboarding', () => {
 });
 
 test('existing students are unaffected: they land on the dashboard, see My Examinations in sections, and can still reach the live exam', async ({ page }) => {
-  await login(page, 'student.a006'); await expect(page).toHaveURL(/\/dashboard/); await expect(page.getByRole('link', { name: 'My Examinations' }).first()).toBeVisible();
+  await login(page, 'student.b005'); await expect(page).toHaveURL(/\/dashboard/); await expect(page.getByRole('link', { name: 'My Examinations' }).first()).toBeVisible();
   await page.goto('/schedule'); await expect(page.getByTestId('exams-available')).toContainText('MBBS-PATH-MT');
   const row = page.getByTestId('exams-available').locator('tbody tr').first(); await expect(row).toContainText('Pathology'); await expect(row).toContainText(/\d+ min/);
   await row.getByRole('link', { name: /Start/ }).click(); await expect(page.getByRole('button', { name: /Begin examination/ })).toBeVisible();
