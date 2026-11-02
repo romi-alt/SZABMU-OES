@@ -22,7 +22,7 @@ export class TeacherAdminService {
 
   /** The teacher exists and at least one of their requests/assignments is inside the administrator's scope; otherwise "not found" (no existence oracle). */
   private async load(u: AuthUser, userId: string) {
-    const prof = await this.prisma.teacherProfile.findUnique({ where: { userId }, include: { user: { select: { id: true, fullName: true, email: true, phone: true, active: true, createdAt: true, lastLoginAt: true } } } });
+    const prof = await this.prisma.teacherProfile.findUnique({ where: { userId }, omit: { photo: false }, include: { user: { select: { id: true, fullName: true, email: true, phone: true, active: true, createdAt: true, lastLoginAt: true } } } });
     if (!prof) throw notFound('Teacher');
     if (u.institutionIds !== null && !(await this.prisma.courseAssignment.count({ where: { userId, ...this.aWhere(u) } }))) throw notFound('Teacher');
     return prof;

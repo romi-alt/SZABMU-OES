@@ -14,7 +14,7 @@ async function apiAs(playwright: { request: { newContext: (o: object) => Promise
 }
 const ok = async (p: Promise<{ ok(): boolean; status(): number; text(): Promise<string> }>, what: string) => { const r = await p; expect(r.ok(), `${what}: ${r.status()} ${await r.text()}`).toBe(true); return r; };
 const row = (page: Page, title: string) => page.locator('tbody tr', { hasText: title });
-const sched = async (page: Page) => { await page.goto('/schedule'); await expect(page.getByRole('heading', { name: 'Exam schedule' })).toBeVisible(); };
+const sched = async (page: Page) => { await page.goto('/schedule'); await expect(page.getByRole('heading', { name: 'My Examinations' })).toBeVisible(); };
 
 test.describe.serial('examination status is consistent across screens (lifecycle)', () => {
   test.setTimeout(240_000);

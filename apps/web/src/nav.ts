@@ -1,7 +1,7 @@
 import type { Role } from '@oes/shared';
 export interface NavItem { href: string; label: string; badge?: 'notifications' }
 export const NAV: Record<Role, { label: string; items: NavItem[] }> = {
-  STUDENT: { label: 'Student portal', items: [{ href: '/dashboard', label: 'Dashboard' }, { href: '/schedule', label: 'Exam schedule' }, { href: '/results', label: 'Results' }, { href: '/performance', label: 'Performance' }, { href: '/profile', label: 'My profile' }] },
+  STUDENT: { label: 'Student portal', items: [{ href: '/dashboard', label: 'Dashboard' }, { href: '/schedule', label: 'My Examinations' }, { href: '/results', label: 'Results' }, { href: '/performance', label: 'Performance' }, { href: '/profile', label: 'My profile' }] },
   TEACHER: { label: 'Teacher', items: [{ href: '/dashboard', label: 'Overview' }, { href: '/classes', label: 'My Classes & Subjects' }, { href: '/pools', label: 'MCQ Pool' }, { href: '/my-students', label: 'Students' }, { href: '/profile', label: 'My Profile' }] },
   LECTURER: { label: 'Lecturer portal', items: [{ href: '/dashboard', label: 'Dashboard' }, { href: '/questions', label: 'Question bank' }, { href: '/exams', label: 'Examinations' }, { href: '/students', label: 'Students' }, { href: '/profile', label: 'My profile' }] },
   EXAMINER: { label: 'Examiner department', items: [{ href: '/dashboard', label: 'Dashboard' }, { href: '/questions', label: 'Question bank' }, { href: '/exams', label: 'Examinations' }, { href: '/monitor', label: 'Live monitor' }, { href: '/incidents', label: 'Incidents' }, { href: '/profile', label: 'My profile' }] },
@@ -17,7 +17,7 @@ export const NAV: Record<Role, { label: string; items: NavItem[] }> = {
  * The API remains the authority; this is explanation, not security.
  */
 export const ROUTE_RULES: { prefix: string; perm: string; name: string }[] = [
-  { prefix: '/schedule', perm: 'exam.sit', name: 'Exam schedule' },
+  { prefix: '/schedule', perm: 'exam.sit', name: 'My Examinations' },
   { prefix: '/results', perm: 'result.read_own', name: 'Results' },
   { prefix: '/performance', perm: 'result.read_own', name: 'Performance' },
   { prefix: '/questions', perm: 'question.read', name: 'Question bank' },

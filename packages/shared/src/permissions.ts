@@ -17,6 +17,7 @@ export const PERMISSIONS = {
   // students
   'student.read': ['SUPER_ADMIN', 'CCE', 'EXAMINER', 'CAMPUS_ADMIN', 'LECTURER', 'INVIGILATOR'],
   'student.manage': ['SUPER_ADMIN', 'CAMPUS_ADMIN'],
+  'student.self': ['STUDENT'],   // one-time profile completion and own-record requests; needs no Student record yet
   'enrollment.manage': ['SUPER_ADMIN', 'CAMPUS_ADMIN'],
   'eligibility.override': ['SUPER_ADMIN', 'CCE'],
   // question bank & papers

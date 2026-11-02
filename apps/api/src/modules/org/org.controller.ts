@@ -24,7 +24,7 @@ const userDto = z.object({ email: z.string().email().max(254), fullName: z.strin
 const userPatch = z.object({ active: z.boolean().optional(), institutionIds: z.array(uuid).max(50).optional(), fullName: z.string().min(2).max(200).optional() });
 const studentDto = z.object({ email: z.string().email().max(254), fullName: z.string().min(2).max(200), institutionId: uuid, programId: uuid, regNo: z.string().min(3).max(40), semester: z.number().int().min(1).max(12), batchYear: z.number().int().min(1990).max(2100), dateOfBirth: z.string().date().optional() });
 const importDto = z.object({ institutionId: uuid, rows: z.array(studentDto.omit({ institutionId: true, dateOfBirth: true })).min(1).max(1000) });
-const studentPatch = z.object({ semester: z.number().int().min(1).max(12).optional(), status: z.enum(['ACTIVE', 'SUSPENDED', 'GRADUATED', 'WITHDRAWN']).optional(), address: z.string().max(300).optional(), guardianPhone: phoneField.optional() });
+const studentPatch = z.object({ semester: z.number().int().min(1).max(12).optional(), status: z.enum(['ACTIVE', 'SUSPENDED', 'GRADUATED', 'WITHDRAWN']).optional(), address: z.string().max(300).optional(), guardianPhone: phoneField.optional(), verify: z.literal(true).optional(), programId: uuid.optional(), batchYear: z.number().int().min(1990).max(2100).optional() });
 const enrolDto = z.object({ courseId: uuid, term: z.string().min(3).max(30), institutionId: uuid, studentIds: z.array(uuid).max(5000).optional() });
 
 @Controller()

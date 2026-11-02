@@ -19,7 +19,7 @@ const TILES: Record<string, { k: string; key: string; s?: string; href?: string 
 };
 
 const SHORTCUTS: Record<string, { label: string; desc: string; href: string }[]> = {
-  STUDENT: [{ label: 'Exam schedule', desc: 'See what is open and start or resume', href: '/schedule' }, { label: 'Results', desc: 'Your published results', href: '/results' }, { label: 'Performance', desc: 'How you are doing over time', href: '/performance' }, { label: 'My profile', desc: 'Contact details and password', href: '/profile' }],
+  STUDENT: [{ label: 'My Examinations', desc: 'See what is open and start or resume', href: '/schedule' }, { label: 'Results', desc: 'Your published results', href: '/results' }, { label: 'Performance', desc: 'How you are doing over time', href: '/performance' }, { label: 'My profile', desc: 'Contact details and password', href: '/profile' }],
   LECTURER: [{ label: 'Question bank', desc: 'Write and track your questions', href: '/questions' }, { label: 'Examinations', desc: 'Papers and results for your courses', href: '/exams' }, { label: 'Students', desc: 'Students at your campus', href: '/students' }],
   EXAMINER: [{ label: 'Review questions', desc: 'Approve or return submitted questions', href: '/questions' }, { label: 'Approve papers', desc: 'Papers waiting for your decision', href: '/exams' }, { label: 'Live monitor', desc: 'Watch examinations in progress', href: '/monitor' }, { label: 'Incidents', desc: 'Reports raised during examinations', href: '/incidents' }],
   CAMPUS_ADMIN: [{ label: 'Add or import students', desc: 'Create accounts for your campus', href: '/students' }, { label: 'Student register', desc: 'Let students register themselves', href: '/roster' }, { label: 'Enrolment & eligibility', desc: 'Attendance and condonation', href: '/enrolment' }, { label: 'Live monitor', desc: 'Your campus during an examination', href: '/monitor' }],
@@ -60,7 +60,7 @@ function MyExams() {
       <Async state={st} idle={<div className="card-b muted">Nothing to show yet.</div>}>{(d) => {
         const off = new Date(d.serverNow).getTime() - Date.now();
         const rows = [...d.items].map((r) => ({ r, p: presentExam(r, off) })).filter(({ p }) => p.key !== 'CLOSED_NOT_SAT' && p.key !== 'CANCELLED').sort((a, b) => examPriority(a.p) - examPriority(b.p)).slice(0, 3);
-        if (!rows.length) return <div className="card-b muted">No examinations are scheduled for you yet.</div>;
+        if (!rows.length) return <div className="card-b muted">No examinations are currently assigned to your account.</div>;
         return <div>{rows.map(({ r }) => <div key={r.examId} className="row between wrap" style={{ padding: '12px 16px', borderBottom: '1px solid var(--rose)', alignItems: 'flex-start' }}><div style={{ minWidth: 0 }}><b>{r.title}</b><div className="small faint">{r.course.title} · {r.durationMin} min</div><div style={{ marginTop: 6 }}><ExamStatusCell row={r} offset={off} /></div></div><ExamActionLink row={r} offset={off} size="md" /></div>)}</div>;
       }}</Async>
     </Card>
@@ -75,7 +75,7 @@ export default function Dashboard() {
   return (
     <>
       <PageHead title={`Welcome back, ${first}`} sub={me.student ? `${me.student.program} · Semester ${me.student.semester} · Reg. ${me.student.regNo}` : me.institutions.map((i) => i.name).join(', ') || 'University-wide access'}>
-        {me.role === 'STUDENT' && <Link className="btn btn-green" href="/schedule">View exam schedule</Link>}
+        {me.role === 'STUDENT' && <Link className="btn btn-green" href="/schedule">View my examinations</Link>}
       </PageHead>
       <Async state={st}>{(d) => (
         <div className="stack-lg">

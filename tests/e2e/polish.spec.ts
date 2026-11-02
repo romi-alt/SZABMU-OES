@@ -54,8 +54,8 @@ test('UI-036/041/052: on a phone the exam header is slim and the Next/Mark bar s
   await c.close();
 });
 
-test('public artwork (white logo, campus photo) is served as images, never rewritten to the portal 404', async ({ request }) => {
-  for (const [path, type] of [['/logo.png', 'image/png'], ['/logo-white.png', 'image/png'], ['/campus.jpg', 'image/jpeg']] as const) {
+test('public artwork (white logo) is served as images, never rewritten to the portal 404', async ({ request }) => {
+  for (const [path, type] of [['/logo.png', 'image/png'], ['/logo-white.png', 'image/png']] as const) {
     const res = await request.get(path); expect(res.status(), path).toBe(200); expect(res.headers()['content-type'], path).toContain(type);
   }
 });

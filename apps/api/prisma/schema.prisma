@@ -293,6 +293,7 @@ model User {
   courseAssignments CourseAssignment[]
   mfaRecoveryCodes  MfaRecoveryCode[]
   teacherProfile    TeacherProfile?
+  studentSignup     StudentSignup?
 
   @@index([role])
   @@map("users")
@@ -388,6 +389,14 @@ model Student {
   guardianPhone        String?
   address              String?
   status               String                @default("ACTIVE")
+  fatherName           String?
+  gender               String?
+  photo                Bytes?
+  photoMime            String?
+  /// Set when the student completed the one-time profile form. Null for every student created before the onboarding flow (treated as complete).
+  profileCompletedAt   DateTime?            @db.Timestamptz
+  /// TRUE for students who chose their own institution/programme/semester. They cannot be enrolled or admitted to an examination until an administrator verifies them (sets it false).
+  selfDeclared         Boolean               @default(false)
   user                 User                  @relation(fields: [userId], references: [id])
   institution          Institution           @relation(fields: [institutionId], references: [id])
   program              Program               @relation(fields: [programId], references: [id])
@@ -1102,4 +1111,15 @@ model QuestionPool {
   @@index([ownerId, archivedAt])
   @@index([courseId, institutionId])
   @@map("question_pools")
+}
+
+/// A student who signed up with a registration number and verified email but has not yet completed the one-time profile. The Student row is created only when the profile is saved.
+model StudentSignup {
+  userId      String    @id @db.Uuid
+  regNo       String    @unique
+  createdAt   DateTime  @default(now()) @db.Timestamptz
+  completedAt DateTime? @db.Timestamptz
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("student_signups")
 }
