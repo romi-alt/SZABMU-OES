@@ -84,7 +84,11 @@ export class AuthService {
       where: { id: user.id },
       include: { institutions: { include: { institution: { select: { id: true, code: true, name: true } } } }, student: { include: { program: true, institution: { select: { id: true, name: true, code: true } } } } },
     });
-    return { ...this.profile(u), mfa: { enabled: !!u.totpEnabledAt, state: user.mfa, required: this.cfg.MFA_ENFORCE === 'true' && MFA_ROLES.includes(u.role) }, phone: u.phone, lastLoginAt: u.lastLoginAt, institutions: u.institutions.map((i) => i.institution), student: u.student && { id: u.student.id, regNo: u.student.regNo, semester: u.student.semester, program: u.student.program.code, programName: u.student.program.name, institution: u.student.institution, address: u.student.address, dateOfBirth: u.student.dateOfBirth, guardianPhone: u.student.guardianPhone } };
+    const teacher = u.role === 'TEACHER' ? await this.prisma.teacherProfile.findUnique({ where: { userId: u.id }, select: { status: true, reviewNote: true } }) : null;
+    const base = this.profile(u);
+    // A teacher whose registration is not APPROVED holds only the permission to see their own approval status (the server re-checks on every teacher route as well).
+    const permissions = teacher && teacher.status !== 'APPROVED' ? base.permissions.filter((p) => p === 'teacher.self' || p === 'program.read') : base.permissions;
+    return { ...base, permissions, teacher: teacher && { status: teacher.status, reviewNote: teacher.reviewNote }, mfa: { enabled: !!u.totpEnabledAt, state: user.mfa, required: this.cfg.MFA_ENFORCE === 'true' && MFA_ROLES.includes(u.role) }, phone: u.phone, lastLoginAt: u.lastLoginAt, institutions: u.institutions.map((i) => i.institution), student: u.student && { id: u.student.id, regNo: u.student.regNo, semester: u.student.semester, program: u.student.program.code, programName: u.student.program.name, institution: u.student.institution, address: u.student.address, dateOfBirth: u.student.dateOfBirth, guardianPhone: u.student.guardianPhone } };
   }
 
   /** Self-service profile edit. Identity fields (name, email, DOB, registration number) are institution-managed and not editable here. */
