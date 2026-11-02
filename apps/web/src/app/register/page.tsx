@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { checkPassword } from '@oes/shared';
 import { useRouter } from 'next/navigation';
-import { post } from '@/api';
+import { ApiError, post } from '@/api';
 import { useMe } from '@/session';
 import { errMsg } from '@/ui';
 import { AuthButton, AuthField, AuthFrame, AuthHeading } from '../AuthFrame';
@@ -30,7 +30,8 @@ export default function Register() {
   const show = (k: keyof Touched) => (touched[k] ? errors[k] : '');
   const blur = (k: keyof Touched) => () => setTouched((t) => ({ ...t, [k]: true }));
 
-  async function run(fn: () => Promise<void>) { setBusy(true); setErr(''); try { await fn(); } catch (e) { setErr(errMsg(e)); } finally { setBusy(false); } }
+  const [errCode, setErrCode] = useState('');
+  async function run(fn: () => Promise<void>) { setBusy(true); setErr(''); setErrCode(''); try { await fn(); } catch (e) { setErr(errMsg(e)); setErrCode(e instanceof ApiError ? e.code : ''); } finally { setBusy(false); } }
   const submit = () => { setTouched({ regNo: true, email: true, pw: true, pw2: true }); if (invalid) return Promise.resolve(); return run(async () => {
     const r = await post('/auth/register', { regNo: regNo.trim(), email: email.trim(), password: pw }); setInfo(r.message); setDevCode(r.devCode ?? ''); setDigits(['', '', '', '', '', '']); setStep('code'); }); };
   const verify = () => run(async () => { await post('/auth/register/verify', { email: email.trim(), code }); await refresh(); router.replace('/complete-profile'); });
@@ -48,7 +49,9 @@ export default function Register() {
           <div className="meter" aria-hidden>{[1, 2, 3, 4].map((n) => <i key={n} className={strength.score >= n ? (strength.score <= 2 ? 'weak' : 'on') : ''} />)}</div>
           <span className="small" style={{ color: strength.ok ? 'var(--green)' : 'var(--ink-3)', minHeight: 20 }}>{pw ? (strength.ok ? 'Strong password' : strength.problems[0]) : 'At least 10 characters, three of four character types.'}</span>
           <AuthField label="Confirm password" icon="lock" type="password" value={pw2} onChange={setPw2} onBlur={blur('pw2')} required autoComplete="new-password" placeholder="Re-enter your password" error={show('pw2')} />
-          {err && <div className="notice bad" role="alert">{err}</div>}
+          {err && <div className="notice bad" role="alert">{err}
+            {errCode === 'ALREADY_REGISTERED' && <div style={{ marginTop: 8 }}><Link href="/login" className="auth-link">Sign in</Link> · <Link href="/forgot" className="auth-link">Forgot password</Link></div>}
+            {errCode === 'EMAIL_IN_USE' && <div style={{ marginTop: 8 }}><Link href="/login" className="auth-link">Sign in with this email</Link></div>}</div>}
           <AuthButton busy={busy}>Create Account</AuthButton>
         </form>
         <p className="auth-alt">Already registered? <Link href="/login" className="auth-link">Sign in</Link></p>

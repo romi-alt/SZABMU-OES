@@ -106,6 +106,7 @@ Live check: student on oes 200, CCE on dashboard 200, cross-portal 401 both ways
 | Runtime logs | `hosting_nodejs_runtime-logs` (only `console.*` output is captured — raw child-process stdio is not) |
 | New migration | run `npm run db:migrate` from a workstation with the Neon `DATABASE_URL`, **before** pushing code that needs it |
 | Reset demo data | `NODE_ENV=development node apps/api/dist/seed/seed.js --reset` against Neon (wipes everything) |
+| Try student self-registration | the seed puts 10 unclaimed register entries in: reg no `DEMO-A-2025-0001`…`0005` (DMC-A) and `DEMO-B-2025-0001`…`0005` (DMC-B), date of birth `2005-01-0N` for entry N (e.g. `DEMO-A-2025-0003` → `2005-01-03`). Register on the student site with one of them and a real email; each entry can be claimed once. More: dashboard → Student register → Add student / Import |
 | Build logs / failure analysis | `hosting_get-deployment` with the domain |
 | Rotate a secret | change it in Neon/Upstash or generate a new one → replace the full env set → restart (rebuild if build-time) |
 
@@ -118,7 +119,7 @@ Live check: student on oes 200, CCE on dashboard 200, cross-portal 401 both ways
 | `MFA_ENFORCE=true` | off | seeded staff sign in with password only |
 | Separate always-on worker host | workers inside the API child (`RUN_WORKERS=true`) | if Hostinger idles/restarts the process, timers pause until the next request wakes it |
 | PITR backups, monitoring | Neon free-tier history only; no alerting | not suitable for real candidates |
-| Real mail | `SMTP_HOST` unset → mail stays in the DB outbox | password-reset codes are not delivered |
+| Real mail | Hostinger mailbox `no-reply@szabmu.site` via authenticated SMTP (`SMTP_HOST=smtp.hostinger.com`, `SMTP_PORT=465`, `SMTP_SECURE=true`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`); while `SMTP_HOST` is unset mail stays in the DB outbox | seeded `@demo.szabmu.invalid` accounts still receive nothing — only accounts with a real address get codes. Add `SMTP_PASS` in the hPanel form, never via the env-var API (it is a full replace and values read back masked) |
 
 Free-tier limits to watch: Upstash 500k commands/month (BullMQ polling consumes some continuously); Neon free compute auto-suspends when idle,
 so the first request after a quiet period is slower.
@@ -136,6 +137,12 @@ the resets were transient (the Upstash database is in Singapore, the web server 
 | live monitor (falls back to polling) | live push (SSE) via Redis pub/sub |
 
 Done 2026-11-01: Redis now lives in `us-east-1` next to the Boston web server (health `ok`, ~0.9 s round trip from Pakistan).
+
+**Correction (2026-11-02):** the steady stream of `Error: read ECONNRESET` in the runtime log was *not* transient. The BullMQ connection
+(`apps/api/src/infra/queues.service.ts`) was built from host/port/password only and dropped TLS, so every queue connection to Upstash
+(`rediss://`, TLS-only) was reset, `queue.add()` waited forever, and any request that enqueued work (password-reset / registration
+mail) hung with no response. The health check uses a different client that keeps TLS, so it stayed `ok`. Fixed by `bullConnection()`
+(keeps TLS, username, password, db) plus a 3 s cap on enqueueing mail; the outbox row is always written first.
 Removing the dependency entirely is still PR #3 (after porting the exam-control services).
 
 ## Lessons (things that cost time)
