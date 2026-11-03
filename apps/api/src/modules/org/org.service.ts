@@ -195,11 +195,13 @@ export class OrgService {
     return { created, note: 'Accounts are created with a random password; issue credentials via "Reset password" or the forgot-password flow.' };
   }
 
-  async updateStudent(u: AuthUser, id: string, d: { semester?: number; status?: string; address?: string; guardianPhone?: string }, ip?: string) {
+  async updateStudent(u: AuthUser, id: string, d: { semester?: number; status?: string; address?: string; guardianPhone?: string; verify?: boolean; programId?: string; batchYear?: number }, ip?: string) {
     const s = await this.prisma.student.findUnique({ where: { id } });
     if (!s || !scope.allows(u, s.institutionId)) throw notFound('Student');
-    await this.prisma.student.update({ where: { id }, data: d });
-    await this.audit.log({ actor: u, action: 'student.update', entity: 'student', entityId: id, institutionId: s.institutionId, meta: d as never, ip });
+    if (d.programId && !(await this.prisma.program.findUnique({ where: { id: d.programId }, select: { id: true } }))) throw badRequest('Unknown programme');
+    const { verify, ...rest } = d;
+    await this.prisma.student.update({ where: { id }, data: { ...rest, ...(verify ? { selfDeclared: false } : {}) } });
+    await this.audit.log({ actor: u, action: verify ? 'student.verified' : 'student.update', entity: 'student', entityId: id, institutionId: s.institutionId, meta: { ...d, from: { programId: s.programId, semester: s.semester, batchYear: s.batchYear, selfDeclared: s.selfDeclared } } as never, ip });
     return { ok: true };
   }
 
@@ -209,7 +211,7 @@ export class OrgService {
     const course = await this.prisma.course.findUnique({ where: { id: d.courseId } });
     if (!course) throw notFound('Course');
     const students = await this.prisma.student.findMany({
-      where: { institutionId: d.institutionId, programId: course.programId, semester: course.semester, ...(d.studentIds ? { id: { in: d.studentIds } } : {}), status: 'ACTIVE' },
+      where: { institutionId: d.institutionId, programId: course.programId, semester: course.semester, ...(d.studentIds ? { id: { in: d.studentIds } } : {}), status: 'ACTIVE', selfDeclared: false },   // students who chose their own placement are enrolled only after an administrator verifies them
       select: { id: true },
     });
     const r = await this.prisma.enrollment.createMany({ data: students.map((s) => ({ studentId: s.id, courseId: d.courseId, term: d.term })), skipDuplicates: true });

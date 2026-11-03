@@ -58,7 +58,7 @@ export class DeliveryService {
     const now = await this.prisma.dbNow();
     const cands = await this.prisma.examCandidate.findMany({
       where: { studentId, exam: { status: { in: ['SCHEDULED', 'ADMISSION_OPEN', 'LIVE', 'SUSPENDED', 'CLOSING', 'CLOSED', 'SCORING', 'RESULT_PENDING', 'PUBLISHED'] } } },
-      include: { exam: { include: { course: { select: { code: true, title: true, semester: true } }, _count: { select: { questions: true } } } } },
+      include: { exam: { include: { course: { select: { code: true, title: true, semester: true, program: { select: { code: true } } } }, _count: { select: { questions: true } } } } },
       orderBy: { exam: { opensAt: 'asc' } },
     });
     const attempts = await this.prisma.attempt.findMany({ where: { studentId, examId: { in: cands.map((c) => c.examId) } }, select: { id: true, examId: true, status: true, receiptCode: true, submittedAt: true, deadlineAt: true, suspendedAt: true } });
@@ -99,12 +99,13 @@ export class DeliveryService {
   private async admit(u: AuthUser, cand: { studentId: string; institutionId: string; status: string; decisionSource: string; rosterVersion: number }, exam: { id: string; courseId: string; term: string }, now: Date) {
     if (cand.status !== 'ADMITTED') throw new AppError(403, 'ADMISSION_REVOKED', 'Your admission to this examination has been withdrawn. Please contact your campus examinations office.');
     const [student, enr, parts] = await Promise.all([
-      this.prisma.student.findUnique({ where: { id: cand.studentId }, select: { userId: true, status: true, institutionId: true, user: { select: { active: true } } } }),
+      this.prisma.student.findUnique({ where: { id: cand.studentId }, select: { userId: true, status: true, institutionId: true, selfDeclared: true, user: { select: { active: true } } } }),
       this.prisma.enrollment.findUnique({ where: { studentId_courseId_term: { studentId: cand.studentId, courseId: exam.courseId, term: exam.term } }, select: { id: true, status: true, eligibility: true } }),
       this.prisma.examInstitution.findMany({ where: { examId: exam.id }, select: { institutionId: true } }),
     ]);
     if (!student || student.userId !== u.id) throw forbidden('This candidate record does not belong to your account');
     if (!student.user.active || student.status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', 'Your account is currently restricted. Please contact your campus examinations office.');
+    if (student.selfDeclared) throw new AppError(403, 'ACADEMIC_UNVERIFIED', 'Your academic details are waiting for verification by your campus examination office. You cannot sit examinations until they are verified.');
     if (student.institutionId !== cand.institutionId || !parts.some((p) => p.institutionId === student.institutionId)) throw forbidden('You are not assigned to sit this examination at your institution');
     if (cand.decisionSource !== 'OVERRIDE' && (!enr || enr.status !== 'ENROLLED' || enr.eligibility === 'INELIGIBLE')) throw new AppError(403, 'NOT_ELIGIBLE', 'You are not currently eligible for this examination. Please contact your campus examinations office.');
     return { decision: 'ADMITTED', source: cand.decisionSource, rosterVersion: cand.rosterVersion, enrollmentId: enr?.id ?? null, enrolmentEligibility: enr?.eligibility ?? null, at: now.toISOString() };

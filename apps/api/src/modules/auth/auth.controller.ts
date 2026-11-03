@@ -38,7 +38,7 @@ export class AuthController {
   me(@CurrentUser() u: AuthUser) { return this.auth.me(u); }
 
   @Perm('program.read') @Patch('profile')
-  profile(@CurrentUser() u: AuthUser, @Body() b: unknown, @Req() req: FastifyRequest) { return this.auth.updateProfile(u, parse(z.object({ phone: z.string().max(30).refine(isValidPhone, PHONE_HINT).optional(), address: z.string().max(300).optional(), guardianPhone: z.string().max(30).refine(isValidPhone, PHONE_HINT).optional() }), b), req.ip); }
+  profile(@CurrentUser() u: AuthUser, @Body() b: unknown, @Req() req: FastifyRequest) { return this.auth.updateProfile(u, parse(z.object({ phone: z.string().max(30).refine(isValidPhone, PHONE_HINT).optional(), address: z.string().max(300).optional(), fatherName: z.string().trim().min(3).max(120).optional(), gender: z.enum(['MALE', 'FEMALE', 'OTHER']).optional(), photo: z.string().max(300_000).nullable().optional(), guardianPhone: z.string().max(30).refine(isValidPhone, PHONE_HINT).optional() }), b), req.ip); }
 
   @Public() @Post('forgot') @HttpCode(200)
   forgot(@Body() body: unknown, @Req() req: FastifyRequest) { return this.auth.forgot(parse(forgotDto, body).email, req.ip); }

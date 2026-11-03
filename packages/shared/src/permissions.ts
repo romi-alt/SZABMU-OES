@@ -12,11 +12,12 @@ export const PERMISSIONS = {
   'institution.read': ['SUPER_ADMIN', 'CCE', 'EXAMINER', 'CAMPUS_ADMIN', 'LECTURER', 'INVIGILATOR'],
   'institution.manage': ['SUPER_ADMIN'],
   'department.manage': ['SUPER_ADMIN', 'CAMPUS_ADMIN'],
-  'program.read': ['SUPER_ADMIN', 'CCE', 'EXAMINER', 'CAMPUS_ADMIN', 'LECTURER', 'INVIGILATOR', 'STUDENT'],
+  'program.read': ['SUPER_ADMIN', 'CCE', 'EXAMINER', 'CAMPUS_ADMIN', 'LECTURER', 'TEACHER', 'INVIGILATOR', 'STUDENT'],   // also the baseline "signed-in user" permission (me, notifications, own profile)
   'program.manage': ['SUPER_ADMIN', 'CCE'],
   // students
   'student.read': ['SUPER_ADMIN', 'CCE', 'EXAMINER', 'CAMPUS_ADMIN', 'LECTURER', 'INVIGILATOR'],
   'student.manage': ['SUPER_ADMIN', 'CAMPUS_ADMIN'],
+  'student.self': ['STUDENT'],   // one-time profile completion and own-record requests; needs no Student record yet
   'enrollment.manage': ['SUPER_ADMIN', 'CAMPUS_ADMIN'],
   'eligibility.override': ['SUPER_ADMIN', 'CCE'],
   // question bank & papers
@@ -48,6 +49,10 @@ export const PERMISSIONS = {
   'result.publish': ['CCE', 'SUPER_ADMIN'],
   'result.read_own': ['STUDENT'],
   'certificate.issue': ['CCE', 'SUPER_ADMIN'],
+  // teachers (self-registered; every route also requires an APPROVED profile and an APPROVED class-subject assignment, checked server-side per request)
+  'teacher.self': ['TEACHER'],
+  'teacher.work': ['TEACHER'],
+  'teacher.manage': ['SUPER_ADMIN', 'CAMPUS_ADMIN'],
   // cross-cutting
   'report.read': ['SUPER_ADMIN', 'CCE', 'EXAMINER', 'CAMPUS_ADMIN'],
   'audit.read': ['SUPER_ADMIN', 'CCE', 'CAMPUS_ADMIN'],

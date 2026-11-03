@@ -51,7 +51,7 @@ test.describe('error and recovery states', () => {
     await page.unroute('**/api/me/exams');
     await page.getByRole('button', { name: 'Try again' }).click();
     await expect(page.getByTestId('error-network')).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: 'Exam schedule' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'My Examinations' })).toBeVisible();
   });
 
   test('API temporarily unavailable (503, and a gateway 500 that is not our JSON): unavailable panel with retry', async ({ page }) => {
@@ -77,7 +77,7 @@ test.describe('error and recovery states', () => {
     await noInternals(page);
     await page.unroute('**/api/me/exams');
     await page.getByRole('button', { name: 'Try again' }).click();
-    await expect(page.getByRole('heading', { name: 'Exam schedule' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'My Examinations' })).toBeVisible();
     await expect(page.getByTestId('error-boundary')).toHaveCount(0);
   });
 });

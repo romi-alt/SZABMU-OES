@@ -58,6 +58,8 @@ const fmtTz = 'Asia/Karachi';
 export const fmtDate = (d?: string | Date | null) => d ? new Intl.DateTimeFormat('en-GB', { timeZone: fmtTz, day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d)) : '—';
 export const fmtTime = (d?: string | Date | null) => d ? new Intl.DateTimeFormat('en-GB', { timeZone: fmtTz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(d)) : '—';
 export const fmtDT = (d?: string | Date | null) => d ? `${fmtDate(d)} ${fmtTime(d)}` : '—';
+/** Server-built text (notifications) may carry raw ISO timestamps such as "2026-11-02T13:05:31.173Z"; show them in the same format and zone as every other time in the app. */
+export const humanizeTimes = (text?: string | null) => (text ?? '').replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, (m) => fmtDT(m));
 export const toLocalInput = (d: Date) => { const p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 
 /** Live event names the server pushes (outbox type names plus the stream's own `stats`, `state`, `resync`). */

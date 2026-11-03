@@ -12,6 +12,7 @@ datasource db {
 }
 
 enum Role {
+  TEACHER
   STUDENT
   LECTURER
   EXAMINER
@@ -291,6 +292,8 @@ model User {
   notifications     Notification[]
   courseAssignments CourseAssignment[]
   mfaRecoveryCodes  MfaRecoveryCode[]
+  teacherProfile    TeacherProfile?
+  studentSignup     StudentSignup?
 
   @@index([role])
   @@map("users")
@@ -386,6 +389,14 @@ model Student {
   guardianPhone        String?
   address              String?
   status               String                @default("ACTIVE")
+  fatherName           String?
+  gender               String?
+  photo                Bytes?
+  photoMime            String?
+  /// Set when the student completed the one-time profile form. Null for every student created before the onboarding flow (treated as complete).
+  profileCompletedAt   DateTime?            @db.Timestamptz
+  /// TRUE for students who chose their own institution/programme/semester. They cannot be enrolled or admitted to an examination until an administrator verifies them (sets it false).
+  selfDeclared         Boolean               @default(false)
   user                 User                  @relation(fields: [userId], references: [id])
   institution          Institution           @relation(fields: [institutionId], references: [id])
   program              Program               @relation(fields: [programId], references: [id])
@@ -439,9 +450,13 @@ model Question {
   reviewNote    String?
   reviewedBy    String?        @db.Uuid
   reviewedAt    DateTime?      @db.Timestamptz
+  poolId        String?        @db.Uuid
+  topic         String?
+  defaultMarks  Float          @default(1)
   createdAt     DateTime       @default(now()) @db.Timestamptz
   updatedAt     DateTime       @updatedAt @db.Timestamptz
 
+  pool        QuestionPool?    @relation(fields: [poolId], references: [id], onDelete: SetNull)
   course      Course           @relation(fields: [courseId], references: [id])
   institution Institution      @relation(fields: [institutionId], references: [id])
   options     QuestionOption[]
@@ -449,6 +464,7 @@ model Question {
 
   @@index([courseId, status])
   @@index([institutionId, status])
+  @@index([poolId])
   @@map("questions")
 }
 
@@ -900,12 +916,21 @@ model CourseAssignment {
   createdAt     DateTime    @default(now()) @db.Timestamptz
   revokedAt     DateTime?   @db.Timestamptz
   revokedById   String?     @db.Uuid
+  /// Existing (admin-made) rows are APPROVED. Self-registered teachers request PENDING rows that an administrator decides one by one.
+  status        AssignmentStatus @default(APPROVED)
+  /// Academic session the assignment applies to (teachers); null for legacy lecturer assignments.
+  term          String?
+  requestedAt   DateTime?   @db.Timestamptz
+  decidedById   String?     @db.Uuid
+  decidedAt     DateTime?   @db.Timestamptz
+  decisionNote  String?
   user          User        @relation(fields: [userId], references: [id])
   course        Course      @relation(fields: [courseId], references: [id])
   institution   Institution @relation(fields: [institutionId], references: [id])
 
   @@index([userId, revokedAt])
   @@index([courseId, institutionId])
+  @@index([status, institutionId])
   @@map("course_assignments")
 }
 
@@ -1027,4 +1052,74 @@ model LifecycleRun {
 
   @@index([startedAt])
   @@map("lifecycle_runs")
+}
+
+/// Teacher self-registration: identity approval state (assignments are approved separately, one by one).
+enum TeacherStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum AssignmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVOKED
+}
+
+/// Extra profile of a self-registered teacher (role TEACHER). No access follows from this row alone: access needs status APPROVED
+/// here AND an APPROVED course assignment.
+model TeacherProfile {
+  userId       String        @id @db.Uuid
+  employeeId   String        @unique
+  department   String
+  designation  String
+  /// Optional photo, downscaled client-side and capped server-side (kept in the database: hosted file systems are not durable across deploys).
+  photo        Bytes?
+  photoMime    String?
+  status       TeacherStatus @default(PENDING)
+  submittedAt  DateTime      @default(now()) @db.Timestamptz
+  reviewedById String?       @db.Uuid
+  reviewedAt   DateTime?     @db.Timestamptz
+  reviewNote   String?
+  suspendedAt  DateTime?     @db.Timestamptz
+  createdAt    DateTime      @default(now()) @db.Timestamptz
+  updatedAt    DateTime      @updatedAt @db.Timestamptz
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("teacher_profiles")
+}
+
+/// A teacher's named group of questions for one approved (course, institution, term) assignment.
+model QuestionPool {
+  id            String     @id @default(uuid()) @db.Uuid
+  ownerId       String     @db.Uuid
+  courseId      String     @db.Uuid
+  institutionId String     @db.Uuid
+  term          String?
+  name          String
+  description   String?
+  archivedAt    DateTime?  @db.Timestamptz
+  submittedAt   DateTime?  @db.Timestamptz
+  createdAt     DateTime   @default(now()) @db.Timestamptz
+  updatedAt     DateTime   @updatedAt @db.Timestamptz
+  questions     Question[]
+
+  @@index([ownerId, archivedAt])
+  @@index([courseId, institutionId])
+  @@map("question_pools")
+}
+
+/// A student who signed up with a registration number and verified email but has not yet completed the one-time profile. The Student row is created only when the profile is saved.
+model StudentSignup {
+  userId      String    @id @db.Uuid
+  regNo       String    @unique
+  createdAt   DateTime  @default(now()) @db.Timestamptz
+  completedAt DateTime? @db.Timestamptz
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("student_signups")
 }
