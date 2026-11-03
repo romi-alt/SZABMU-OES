@@ -1,0 +1,100 @@
+{
+  "voice": "af_heart",
+  "speed": 0.96,
+  "note": "Spoken text and on-screen subtitle for each step of the student guide. 'say' is what the voice reads (spelling helps pronunciation); 'sub' is the subtitle when it differs.",
+  "lines": {
+    "intro": {
+      "say": "Welcome to the S. Z. A. B. M. U. Online Examination Center. In the next few minutes, you'll see how to create your student account, complete your profile, and attempt your examination, from start to finish.",
+      "sub": "Welcome to the SZABMU Online Examination Center. In the next few minutes, you'll see how to create your student account, complete your profile, and attempt your examination, from start to finish."
+    },
+    "need": {
+      "say": "Before you begin, keep your registration number ready, along with an email address you can open right now. A laptop or desktop with a stable internet connection works best."
+    },
+    "open": {
+      "say": "Open the student portal at S. Z. A. B. M. U. dot site, and select Create Account.",
+      "sub": "Open the student portal at szabmu.site, and select Create Account."
+    },
+    "regno": {
+      "say": "First, type your registration number, exactly as it's printed on your student card."
+    },
+    "email": {
+      "say": "Next, enter your email address. Your verification code will be sent here."
+    },
+    "password": {
+      "say": "Now choose a strong password of at least ten characters, one you haven't used anywhere else, and type it again to confirm."
+    },
+    "create": {
+      "say": "When everything looks right, select Create Account."
+    },
+    "code": {
+      "say": "Now check your email inbox for a six-digit verification code, and type it into the boxes. The code expires in fifteen minutes. If it doesn't arrive, look in your spam or junk folder."
+    },
+    "confirm": {
+      "say": "Then select Create Account once more to confirm."
+    },
+    "profile": {
+      "say": "You're now signed in. The first time, you'll be asked to complete your profile. You only need to do this once."
+    },
+    "personal": {
+      "say": "Enter your full name and your father's name, exactly as they appear in university records. Then select your gender, and type your mobile number."
+    },
+    "college": {
+      "say": "Now choose your college. The programme list then shows only the programmes that college offers. Pick your degree programme, your current semester, and your academic year."
+    },
+    "save": {
+      "say": "Check everything carefully, then select Save and continue."
+    },
+    "empty": {
+      "say": "This is My Examinations, your home for every paper. Right now it's empty, and that's expected."
+    },
+    "verify": {
+      "say": "Your campus examination office first verifies your details, and then assigns your examinations to you. Filling in the form doesn't give access to any exam by itself."
+    },
+    "later": {
+      "say": "A little later, once you've been verified and your paper has been assigned, sign in again with your email and password."
+    },
+    "menu": {
+      "say": "From your dashboard, open My Examinations."
+    },
+    "available": {
+      "say": "Your paper is now listed under Available. Papers that haven't opened yet appear under Upcoming, and open at their scheduled time. Select Start."
+    },
+    "instructions": {
+      "say": "Read the instructions carefully, including the duration and the total marks. The timer is kept by the server, so it keeps running even if you close the page. When you're ready, select Begin examination."
+    },
+    "answer": {
+      "say": "Each question shows its options. Click the one you choose. The small Saved label confirms that the server has recorded your answer. On a keyboard, you can also press the letter keys: A, B, C, D, or E.",
+      "sub": "Each question shows its options. Click the one you choose. The small Saved label confirms that the server has recorded your answer. On a keyboard, you can also press the letter keys A to E."
+    },
+    "next": {
+      "say": "Select Next to move on to the following question."
+    },
+    "mark": {
+      "say": "Not sure about an answer? Select Mark for review. The question is flagged, so you can come back to it later."
+    },
+    "palette": {
+      "say": "The question palette on the right shows your progress at a glance: answered, not answered, and marked for review. Click any number to jump straight to that question."
+    },
+    "autosave": {
+      "say": "Your answers are saved as you go. If your connection drops, keep the page open. It reconnects, and your work is kept."
+    },
+    "last": {
+      "say": "On the final question, select Review answers."
+    },
+    "review": {
+      "say": "The review screen shows how many questions you've answered, left unanswered, or marked. Go back to anything you'd like to change before you submit."
+    },
+    "submit": {
+      "say": "When you're satisfied, select Submit examination."
+    },
+    "tick": {
+      "say": "Tick the box to confirm. Remember, once you submit, your answers can't be changed. Then confirm your submission."
+    },
+    "receipt": {
+      "say": "Your examination has been submitted. Note down or print your receipt code. It's your proof of submission. Results are published later by the examination office."
+    },
+    "outro": {
+      "say": "That's everything. You're ready for your examination. If anything doesn't look right, contact your campus examination office. Best of luck!"
+    }
+  }
+}

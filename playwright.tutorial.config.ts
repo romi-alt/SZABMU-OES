@@ -7,5 +7,5 @@ export default defineConfig({
   testDir: 'tests/tutorial',
   timeout: 600_000,
   outputDir: process.env.TUTORIAL_OUT ?? 'test-results-tutorial',
-  use: { ...base.use, viewport: { width: 1280, height: 720 }, bypassCSP: true, video: { mode: 'on', size: { width: 1280, height: 720 } }, screenshot: 'off', trace: 'off' },
+  use: { ...base.use, viewport: { width: 1280, height: 720 }, bypassCSP: true, actionTimeout: 20_000, video: { mode: 'on', size: { width: 1280, height: 720 } }, screenshot: 'off', trace: 'off' },
 });
