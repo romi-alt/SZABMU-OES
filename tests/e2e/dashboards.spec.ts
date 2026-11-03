@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { login } from './helpers';
 
 /** Richer dashboards: every role gets icon tiles, quick actions that go to pages the role can open, and a recent-activity list. */
-const ROLES: [string, RegExp][] = [['student.a001', /Exam schedule/], ['lecturer.a', /Question bank/], ['examiner', /Review questions/], ['cce', /Papers & results/], ['admin.a', /Student register/], ['invigilator.a', /Live monitor/], ['super.admin', /Institutions/]];
+const ROLES: [string, RegExp][] = [['student.a001', /My Examinations/], ['lecturer.a', /Question bank/], ['examiner', /Review questions/], ['cce', /Papers & results/], ['admin.a', /Student register/], ['invigilator.a', /Live monitor/], ['super.admin', /Institutions/]];
 for (const [who, first] of ROLES) {
   test(`${who}: quick actions open pages the role may use; recent activity is shown`, async ({ page }) => {
     await login(page, who); await expect(page.getByTestId('quick-actions')).toBeVisible();

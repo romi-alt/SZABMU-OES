@@ -5,7 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import { scope, type AuthUser } from '../../common/auth';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 
-export interface CoursePair { courseId: string; institutionId: string }
+export interface CoursePair { courseId: string; institutionId: string; term?: string | null }
 
 /**
  * Lecturer ↔ course authorization. A LECTURER may author/manage questions, build papers and review grading only for
@@ -17,9 +17,16 @@ export class CourseAccessService {
 
   /** null ⇒ the user is not course-restricted. */
   async pairs(u: AuthUser): Promise<CoursePair[] | null> {
+    if (u.role === 'TEACHER') {
+      // Deny by default, checked against the database on EVERY call (never the cached session): the teacher's identity must be APPROVED, the
+      // account active, and the assignment APPROVED and not revoked. Suspending a teacher or revoking an assignment therefore takes effect at once.
+      const p = await this.prisma.teacherProfile.findUnique({ where: { userId: u.id }, select: { status: true, user: { select: { active: true } } } });
+      if (!p || p.status !== 'APPROVED' || !p.user.active) return [];
+      return this.prisma.courseAssignment.findMany({ where: { userId: u.id, revokedAt: null, status: 'APPROVED' }, select: { courseId: true, institutionId: true, term: true } });
+    }
     if (u.role !== 'LECTURER') return null;
     return this.prisma.courseAssignment.findMany({
-      where: { userId: u.id, revokedAt: null, institutionId: scope.filter(u) },
+      where: { userId: u.id, revokedAt: null, status: 'APPROVED', institutionId: scope.filter(u) },
       select: { courseId: true, institutionId: true },
     });
   }
@@ -88,7 +95,7 @@ export class CourseAccessService {
   list(u: AuthUser, f: { userId?: string; courseId?: string; institutionId?: string; includeRevoked?: boolean }) {
     if (f.institutionId) scope.assert(u, f.institutionId);
     return this.prisma.courseAssignment.findMany({
-      where: { institutionId: f.institutionId ?? scope.filter(u), userId: f.userId, courseId: f.courseId, ...(f.includeRevoked ? {} : { revokedAt: null }) },
+      where: { institutionId: f.institutionId ?? scope.filter(u), userId: f.userId, courseId: f.courseId, user: { role: 'LECTURER' }, ...(f.includeRevoked ? {} : { revokedAt: null, status: 'APPROVED' }) },
       include: { user: { select: { fullName: true, email: true } }, course: { select: { code: true, title: true } }, institution: { select: { code: true } } },
       orderBy: { createdAt: 'desc' }, take: 500,
     });
@@ -96,7 +103,7 @@ export class CourseAccessService {
 
   mine(u: AuthUser) {
     return this.prisma.courseAssignment.findMany({
-      where: { userId: u.id, revokedAt: null, institutionId: scope.filter(u) },
+      where: { userId: u.id, revokedAt: null, status: 'APPROVED', institutionId: scope.filter(u) },
       include: { course: { select: { id: true, code: true, title: true, semester: true } }, institution: { select: { id: true, code: true } } },
     });
   }

@@ -10,6 +10,8 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
     // interactive-transaction timeout is too tight for multi-statement transactions. Explicit per-call options still win.
     super({
       adapter: new PrismaPg({ connectionString: cfg.DATABASE_URL, max: cfg.DB_POOL_MAX }),
+      // Photos are binary and personal: never selected unless a query asks for them with `omit: { photo: false }`.
+      omit: { student: { photo: true }, teacherProfile: { photo: true } },
       transactionOptions: { maxWait: cfg.DB_TX_MAX_WAIT_MS, timeout: cfg.DB_TX_TIMEOUT_MS },
     });
   }

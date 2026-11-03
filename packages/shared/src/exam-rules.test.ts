@@ -68,9 +68,9 @@ describe('seededOrder', () => {
 });
 
 describe('permission matrix', () => {
-  it('students can only sit exams and read own results', () => {
+  it('students can only sit exams, read own results and complete their own one-time profile', () => {
     const studentPerms = (Object.keys(PERMISSIONS) as (keyof typeof PERMISSIONS)[]).filter((p) => can('STUDENT', p));
-    expect(studentPerms.sort()).toEqual(['exam.sit', 'program.read', 'result.read_own']);
+    expect(studentPerms.sort()).toEqual(['exam.sit', 'program.read', 'result.read_own', 'student.self']);
   });
   it('only CCE/SUPER_ADMIN publish results', () => {
     expect(ROLES.filter((r) => can(r, 'result.publish')).sort()).toEqual(['CCE', 'SUPER_ADMIN']);

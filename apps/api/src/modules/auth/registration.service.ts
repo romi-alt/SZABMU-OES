@@ -13,60 +13,54 @@ import { CONFIG, type Config } from '../../config';
 
 const TTL_SEC = 15 * 60;
 const MAX_ATTEMPTS = 5;
-/**
- * Visitor-facing outcomes. A student must be told why nothing arrives, so failures are explicit — but disclosure stays narrow:
- * a wrong registration number and a wrong date of birth give the SAME message (neither half can be probed alone), and
- * "already registered" / "email in use" are only revealed to someone who already knows a matching number + date of birth.
- * Probing is further capped by the per-IP and per-number rate limits above.
- */
-const NO_MATCH = "We couldn't find a student with this registration number and date of birth on your college's register. Check both against your admission letter. If they are correct, your college may not have added you yet — contact your campus examination office.";
 const ALREADY = 'An account already exists for this registration number. Sign in, or use "Forgot password" if you cannot remember it.';
 const EMAIL_IN_USE = 'This email address is already used by another account. Use a different email address, or sign in.';
 
-/** "A, B, C and 4 more" — keeps error messages readable for large files. */
-const list = (xs: string[], max = 10) => xs.slice(0, max).join(', ') + (xs.length > max ? ` and ${xs.length - max} more` : '');
-
-interface Pending { rosterId: string; passwordHash: string; codeHash: string; attempts: number }
+interface Pending { regNo: string; passwordHash: string; codeHash: string; attempts: number }
+const REG_NO = /^[A-Za-z0-9][A-Za-z0-9._/-]{2,39}$/;
 
 /**
- * Student self-registration against the official register (roster).
- *  1. start(): registration no. + date of birth must match an UNCLAIMED roster entry, and the email must be free. Failures are explicit
- *     (see NO_MATCH / ALREADY / EMAIL_IN_USE for what is and is not disclosed), so a student never waits for a code that was not sent.
- *  2. verify(): the 6-digit code mailed to that address proves control of it; only then is the account created (role STUDENT, the roster's
- *     institution/programme/semester), and the roster entry is claimed exactly once.
- * No exam access follows from registering: enrolment, eligibility and admission rules are unchanged.
+ * Student sign-up: registration number + email + password, then an emailed 6-digit code. No matching against the official register.
+ *  1. start(): failures are explicit (registration number or email already in use) so a student never waits for a code that was not sent; rate limits cap probing.
+ *  2. verify(): the code proves control of the email; the account (role STUDENT) and a registration-number reservation are created in one transaction and the caller
+ *     is signed in. The Student record, with its institution/programme/semester, is created later by the one-time profile form (OnboardingService) and is flagged
+ *     `selfDeclared` until an administrator verifies it, so signing up grants no enrolment, admission or examination access.
+ * The official register (roster) and its import remain available to administrators; sign-up no longer consumes it.
  */
 @Injectable()
 export class RegistrationService {
   constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly mail: MailService, private readonly audit: AuditService, @Inject(CONFIG) private readonly cfg: Config) {}
 
-  async start(d: { regNo: string; dateOfBirth: string; email: string; password: string }, ip: string) {
+  async start(d: { regNo: string; email: string; password: string }, ip: string) {
     const email = d.email.trim().toLowerCase(); const regNo = d.regNo.trim();
-    if ((await this.redis.hit(`rl:reg:ip:${ip}`, 3600)) > 10 || (await this.redis.hit(`rl:reg:no:${regNo.toLowerCase()}`, 3600)) > 5) throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again later.');
+    if ((await this.redis.hit(`rl:reg:ip:${ip}`, 3600)) > 20 || (await this.redis.hit(`rl:reg:no:${regNo.toLowerCase()}`, 3600)) > 5 || (await this.redis.hit(`rl:reg:em:${email}`, 3600)) > 5) throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again later.');
+    if (!REG_NO.test(regNo)) throw badRequest('Enter your registration number using letters, digits and . _ / - only (3 to 40 characters).');
     const policy = checkPassword(d.password, [email.split('@')[0] ?? '']);
     if (!policy.ok) throw badRequest(policy.problems[0] ?? 'Choose a stronger password.');
-    const passwordHash = await argon2.hash(d.password, { type: argon2.argon2id });     // always computed: response time must not reveal a match
-    const entry = await this.prisma.rosterEntry.findFirst({ where: { regNo: { equals: regNo, mode: 'insensitive' } } });
+    const passwordHash = await argon2.hash(d.password, { type: argon2.argon2id });     // always computed: response time must not reveal whether the email or number is taken
     const emailTaken = !!(await this.prisma.user.findUnique({ where: { email }, select: { id: true } }));
-    const dobOk = !!entry && entry.dateOfBirth.toISOString().slice(0, 10) === d.dateOfBirth;
-    let devCode: string | undefined;
-    if (entry && dobOk && !entry.claimedAt && !emailTaken) {
-      const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-      const pending: Pending = { rosterId: entry.id, passwordHash, codeHash: sha256(`${email}:${code}`), attempts: 0 };
-      await this.redis.client.set(`reg:${email}`, JSON.stringify(pending), 'EX', TTL_SEC);
-      await this.mail.enqueue(email, 'SZABMU Examinations — confirm your registration', `Your 6-digit registration code is ${code}. It expires in ${TTL_SEC / 60} minutes.\nIf you did not try to register, ignore this message.`, 'REGISTRATION');
-      if (this.cfg.DEV_EXPOSE_CODES === 'true') devCode = code;
-      await this.audit.log({ actor: null, action: 'auth.register_requested', entity: 'roster', entityId: entry.id, institutionId: entry.institutionId, meta: { email }, ip });
-    } else {
-      const reason = !entry ? 'unknown' : !dobOk ? 'dob' : entry.claimedAt ? 'claimed' : 'email_taken';   // order matters: see NO_MATCH
-      await this.audit.log({ actor: null, action: 'auth.register_unmatched', entity: 'roster', meta: { regNo, reason }, ip });
-      if (reason === 'unknown' || reason === 'dob') throw new AppError(422, 'REGISTER_NO_MATCH', NO_MATCH);
-      if (reason === 'claimed') throw conflict('ALREADY_REGISTERED', ALREADY);
+    const regTaken = !!(await this.prisma.student.findFirst({ where: { regNo: { equals: regNo, mode: 'insensitive' } }, select: { id: true } })) || !!(await this.prisma.studentSignup.findFirst({ where: { regNo: { equals: regNo, mode: 'insensitive' } }, select: { userId: true } }));
+    // A student must be told why no code arrives, so these two outcomes are explicit (the per-IP, per-number and per-email rate limits cap probing).
+    if (regTaken || emailTaken) {
+      await this.audit.log({ actor: null, action: 'auth.register_unavailable', entity: 'student_signup', meta: { regNo, reason: regTaken ? 'reg_no_taken' : 'email_taken' }, ip });
+      if (regTaken) throw conflict('ALREADY_REGISTERED', ALREADY);
       throw conflict('EMAIL_IN_USE', EMAIL_IN_USE);
+    }
+    let devCode: string | undefined;
+    {
+      const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+      const pending: Pending = { regNo, passwordHash, codeHash: sha256(`${email}:${code}`), attempts: 0 };
+      await this.redis.client.set(`reg:${email}`, JSON.stringify(pending), 'EX', TTL_SEC);
+      const m = await this.mail.enqueue(email, 'SZABMU Examinations — confirm your registration', `Your 6-digit registration code is ${code}. It expires in ${TTL_SEC / 60} minutes.\nIf you did not try to register, ignore this message.`, 'student_registration');
+      // The first delivery attempt is made here (time-limited) so registration does not depend on a queue worker staying alive; the outbox row remains the retry path.
+      await Promise.race([this.mail.deliver(m.id), new Promise((r) => setTimeout(r, 8000))]).catch(() => undefined);
+      if (this.cfg.DEV_EXPOSE_CODES === 'true') devCode = code;
+      await this.audit.log({ actor: null, action: 'auth.register_requested', entity: 'student_signup', meta: { email, regNo }, ip });
     }
     return { ok: true, message: `We sent a 6-digit code to ${email}. It expires in ${TTL_SEC / 60} minutes. Not in your inbox? Check Spam or Junk.`, ...(devCode ? { devCode } : {}) };
   }
 
+  /** Verifies the emailed code and creates the account. Returns the new user's id so the caller can sign them in. */
   async verify(emailRaw: string, code: string, ip: string) {
     const email = emailRaw.trim().toLowerCase(); const bad = new AppError(400, 'INVALID_CODE', 'The code is incorrect or has expired. Start again to get a new one.');
     if ((await this.redis.hit(`rl:reg:verify:${ip}`, 3600)) > 30) throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again later.');
@@ -74,39 +68,34 @@ export class RegistrationService {
     const p = JSON.parse(raw) as Pending;
     if (p.attempts >= MAX_ATTEMPTS) { await this.redis.client.del(`reg:${email}`); throw bad; }
     if (p.codeHash !== sha256(`${email}:${code}`)) { p.attempts++; const ttl = await this.redis.client.ttl(`reg:${email}`); if (ttl > 0) await this.redis.client.set(`reg:${email}`, JSON.stringify(p), 'EX', ttl); throw bad; }
-    const entry = await this.prisma.rosterEntry.findUnique({ where: { id: p.rosterId } });
-    if (!entry || entry.claimedAt) { await this.redis.client.del(`reg:${email}`); throw bad; }
-    const userId = await this.prisma.$transaction(async (tx) => {
-      const claimed = await tx.rosterEntry.updateMany({ where: { id: entry.id, claimedAt: null }, data: { claimedAt: new Date() } });
-      if (claimed.count !== 1) throw bad;                                                // someone else claimed it first
-      if (await tx.user.findUnique({ where: { email }, select: { id: true } })) throw conflict('EMAIL_TAKEN', 'This email already has an account');
-      const user = await tx.user.create({ data: { email, fullName: entry.fullName, role: 'STUDENT', passwordHash: p.passwordHash, mustChangePw: false, institutions: { create: [{ institutionId: entry.institutionId }] } } });
-      await tx.student.create({ data: { userId: user.id, institutionId: entry.institutionId, programId: entry.programId, regNo: entry.regNo, semester: entry.semester, batchYear: entry.batchYear, dateOfBirth: entry.dateOfBirth } });
-      await tx.rosterEntry.update({ where: { id: entry.id }, data: { claimedByUserId: user.id } });
-      return user.id;
-    });
+    let userId: string;
+    try {
+      userId = await this.prisma.$transaction(async (tx) => {
+        if (await tx.user.findUnique({ where: { email }, select: { id: true } })) throw conflict('EMAIL_TAKEN', 'This email already has an account');
+        if (await tx.student.findFirst({ where: { regNo: { equals: p.regNo, mode: 'insensitive' } }, select: { id: true } })) throw conflict('REG_NO_TAKEN', 'This registration number is already in use. Contact your campus examination office.');
+        // The name is a placeholder until the student completes the profile (the Student record is created only then).
+        const user = await tx.user.create({ data: { email, fullName: email.split('@')[0]!, role: 'STUDENT', passwordHash: p.passwordHash, mustChangePw: false } });
+        await tx.studentSignup.create({ data: { userId: user.id, regNo: p.regNo } });
+        await this.audit.append(tx, { actor: { id: user.id, role: 'STUDENT' }, action: 'student.signed_up', entity: 'student_signup', entityId: user.id, meta: { regNo: p.regNo }, ip });
+        return user.id;
+      });
+    } catch (e) { if ((e as { code?: string }).code === 'P2002') throw conflict('REG_NO_TAKEN', 'This registration number is already in use. Contact your campus examination office.'); throw e; }
     await this.redis.client.del(`reg:${email}`);
-    await this.audit.log({ actor: { id: userId, role: 'STUDENT' }, action: 'student.self_registered', entity: 'student', entityId: userId, institutionId: entry.institutionId, meta: { regNo: entry.regNo }, ip });
-    return { ok: true };
+    return { ok: true, userId };
   }
 
   /** Registrar / campus admin supplies the official register. All-or-nothing; duplicates are reported, never skipped silently. */
   async importRoster(u: AuthUser, institutionId: string, rows: { regNo: string; fullName: string; dateOfBirth: string; programCode: string; semester: number; batchYear: number }[], ip?: string) {
     scope.assert(u, institutionId);
     const regs = rows.map((r) => r.regNo.trim().toLowerCase());
-    const dupes = [...new Set(regs.filter((r, i) => regs.indexOf(r) !== i))];
-    if (dupes.length) throw badRequest(`The same registration number appears more than once: ${list(dupes)}`, { regNos: dupes });
-    // Programme codes are matched case-insensitively ("mbbs" = "MBBS"); the canonical code is stored.
-    const codes = [...new Set(rows.map((r) => r.programCode.trim().toUpperCase()))];
-    const programs = await this.prisma.program.findMany({ where: { code: { in: codes, mode: 'insensitive' } }, select: { id: true, code: true } });
-    const byCode = new Map(programs.map((p) => [p.code.toUpperCase(), p.id])); const unknown = codes.filter((c) => !byCode.has(c));
-    if (unknown.length) {
-      const valid = (await this.prisma.program.findMany({ select: { code: true }, orderBy: { code: 'asc' } })).map((p) => p.code);
-      throw badRequest(`Unknown programme code(s): ${list(unknown)}. Valid codes: ${list(valid, 20)}.`);
-    }
+    if (new Set(regs).size !== regs.length) throw badRequest('Duplicate registration number within the file');
+    const codes = [...new Set(rows.map((r) => r.programCode.trim()))];
+    const programs = await this.prisma.program.findMany({ where: { code: { in: codes } }, select: { id: true, code: true } });
+    const byCode = new Map(programs.map((p) => [p.code, p.id])); const unknown = codes.filter((c) => !byCode.has(c));
+    if (unknown.length) throw badRequest(`Unknown programme code(s): ${unknown.join(', ')}`);
     const existing = await this.prisma.$queryRaw<{ regNo: string }[]>`SELECT "regNo" FROM roster_entries WHERE lower("regNo") = ANY(${regs}) UNION SELECT "regNo" FROM students WHERE lower("regNo") = ANY(${regs})`;
-    if (existing.length) throw conflict('ROSTER_DUPLICATES', `Already on the register (nothing was imported): ${list(existing.map((e) => e.regNo))}. Remove ${existing.length === 1 ? 'it' : 'them'} and import again.`, { regNos: existing.map((e) => e.regNo) });
-    await this.prisma.rosterEntry.createMany({ data: rows.map((r) => ({ institutionId, programId: byCode.get(r.programCode.trim().toUpperCase())!, regNo: r.regNo.trim(), fullName: r.fullName.trim(), dateOfBirth: new Date(r.dateOfBirth), semester: r.semester, batchYear: r.batchYear, importedBy: u.id })) });
+    if (existing.length) throw conflict('ROSTER_DUPLICATES', 'Some registration numbers are already registered', { regNos: existing.map((e) => e.regNo) });
+    await this.prisma.rosterEntry.createMany({ data: rows.map((r) => ({ institutionId, programId: byCode.get(r.programCode.trim())!, regNo: r.regNo.trim(), fullName: r.fullName.trim(), dateOfBirth: new Date(r.dateOfBirth), semester: r.semester, batchYear: r.batchYear, importedBy: u.id })) });
     await this.audit.log({ actor: u, action: 'roster.import', entity: 'institution', entityId: institutionId, institutionId, meta: { count: rows.length }, ip });
     return { imported: rows.length };
   }

@@ -160,7 +160,7 @@ export class ExamsService {
   async refreshRoster(examId: string, actorId: string) {
     const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: examId }, include: { institutions: true } });
     const enr = await this.prisma.enrollment.findMany({
-      where: { courseId: exam.courseId, term: exam.term, status: 'ENROLLED', student: { institutionId: { in: exam.institutions.map((i) => i.institutionId) }, status: 'ACTIVE' } },
+      where: { courseId: exam.courseId, term: exam.term, status: 'ENROLLED', student: { institutionId: { in: exam.institutions.map((i) => i.institutionId) }, status: 'ACTIVE', selfDeclared: false } },
       select: { eligibility: true, student: { select: { id: true, institutionId: true } } },
     });
     const eligible = new Map(enr.filter((e) => e.eligibility !== 'INELIGIBLE').map((e) => [e.student.id, e.student.institutionId]));
