@@ -95,7 +95,7 @@ test('student guide video', async ({ page, browser, baseURL }) => {
   // ── Part 1: create the account ─────────────────────────────────────────────────────────
   await page.goto('/login'); await wait(600);
   await say('open', 'Step 1 · Open the portal');
-  await wait(3600); await tap(page, page.getByRole('link', { name: /create account|sign up|register/i }).first(), 900);
+  await wait(3600); await tap(page, page.getByRole('link', { name: 'Create your account' }), 900);
   await page.getByLabel(/Registration number/).waitFor(); await done();
   await say('regno', 'Step 2 · Your details'); await type(page, page.getByLabel(/Registration number/), reg);
   await say('email', 'Step 2 · Your details'); await type(page, page.getByLabel(/Email address/), mail);
