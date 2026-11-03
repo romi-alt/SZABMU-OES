@@ -1,124 +1,175 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 
 /**
- * Records a captioned screen video of the student journey: sign up, complete the profile, sign in, attempt a paper, submit.
- * Uses synthetic data on the disposable local stack. The sign-up code is read from the dev response (the live site emails it).
+ * Records the narrated student guide: one student signs up, completes the profile, is verified and assigned by the examination office
+ * (done through the real staff API between scenes), signs in, sits the live paper and submits.
+ * Synthetic data on the disposable local stack only. Voice clips come from tts.py (TUTORIAL_VOICE = its output dir);
+ * the recording waits for each clip so the actions follow the narration. build-video.mjs mixes the voice and burns subtitles.
  */
+const OUT = process.env.TUTORIAL_OUT ?? 'test-results-tutorial';
+const VOICE = JSON.parse(fs.readFileSync(path.join(process.env.TUTORIAL_VOICE ?? OUT, 'voice', 'manifest.json'), 'utf8')) as Record<string, { file: string; duration: number; sub: string }>;
 const PW = 'Sturdy-Pass-2026!x';
+const STAFF_PW = 'Demo-Passw0rd-2026!';
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const letters = (n: number) => Array.from({ length: n }, () => String.fromCharCode(97 + Math.floor(Math.random() * 26))).join('');
+const digits = () => String(Math.floor(1000 + Math.random() * 8999));
 
 const OVERLAY = `(() => { try {
-  const CSS = '#tut-cap{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);max-width:880px;z-index:2147483647;background:rgba(20,20,24,.92);color:#fff;font:600 21px/1.35 system-ui,sans-serif;padding:12px 22px;border-radius:12px;text-align:center;pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,.35)}#tut-cap small{display:block;font:500 14px system-ui;opacity:.75;margin-bottom:2px;letter-spacing:.06em;text-transform:uppercase}#tut-cur{position:fixed;width:22px;height:22px;margin:-4px 0 0 -4px;border-radius:50%;background:rgba(214,40,40,.55);border:2px solid #fff;z-index:2147483647;pointer-events:none}#tut-cur.dn{transform:scale(.7);background:rgba(214,40,40,.9)}[data-testid=dev-code]{display:none!important}';
-  let x = -50, y = -50, down = false;
+  const CSS = '#tut-cur{position:fixed;width:24px;height:24px;margin:-5px 0 0 -5px;border-radius:50%;background:rgba(214,40,40,.5);border:2px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.35);z-index:2147483647;pointer-events:none;transition:transform .1s}#tut-cur.dn{transform:scale(.72);background:rgba(214,40,40,.9)}#tut-ring{position:fixed;border:3px solid #e0a526;border-radius:10px;box-shadow:0 0 0 6px rgba(224,165,38,.22);z-index:2147483646;pointer-events:none;opacity:0;transition:opacity .25s}[data-testid=dev-code]{display:none!important}';
+  let x = -60, y = -60, down = false, ring = null;
   const ensure = () => {
     const root = document.documentElement; if (!root) return;
-    let st = document.getElementById('tut-style'); if (!st) { st = document.createElement('style'); st.id = 'tut-style'; st.textContent = CSS; root.appendChild(st); }
+    if (!document.getElementById('tut-style')) { const st = document.createElement('style'); st.id = 'tut-style'; st.textContent = CSS; root.appendChild(st); }
     let k = document.getElementById('tut-cur'); if (!k) { k = document.createElement('div'); k.id = 'tut-cur'; root.appendChild(k); }
+    let r = document.getElementById('tut-ring'); if (!r) { r = document.createElement('div'); r.id = 'tut-ring'; root.appendChild(r); }
     k.style.left = x + 'px'; k.style.top = y + 'px'; k.className = down ? 'dn' : '';
+    if (ring) { r.style.left = (ring[0] - 6) + 'px'; r.style.top = (ring[1] - 6) + 'px'; r.style.width = (ring[2] + 12) + 'px'; r.style.height = (ring[3] + 12) + 'px'; r.style.opacity = '1'; } else r.style.opacity = '0';
   };
+  window.__tutRing = (b) => { ring = b; ensure(); };
   document.addEventListener('mousemove', (e) => { x = e.clientX; y = e.clientY; ensure(); }, true);
   document.addEventListener('mousedown', () => { down = true; ensure(); }, true); document.addEventListener('mouseup', () => { down = false; ensure(); }, true);
-  setInterval(ensure, 120); ensure();
+  setInterval(ensure, 100); ensure();
 } catch (e) {} })();`;
 
-// Captions are not drawn in the page (they would cover the exam controls): their timings are saved and burned into a strip below the video by build-video.mjs.
-const caps: { t: number; step: string; text: string }[] = []; let t0 = 0;
-async function say(_page: Page, step: string, text: string, hold = 0) { caps.push({ t: (Date.now() - t0) / 1000, step, text }); if (hold) await wait(hold); }
+// ── narration timeline ───────────────────────────────────────────────────────────────────
+type Cue = { t: number; key: string; step: string; file: string; dur: number; sub: string };
+const cues: Cue[] = []; let t0 = 0; let busyUntil = 0;
+const now = () => (Date.now() - t0) / 1000;
+/** Starts the next narration line once the previous one has finished; actions that follow run while it is spoken. */
+async function say(key: string, step: string) {
+  const v = VOICE[key]; if (!v) throw new Error('no voice clip for ' + key);
+  const gap = busyUntil - Date.now(); if (gap > 0) await wait(gap);
+  cues.push({ t: now(), key, step, file: v.file, dur: v.duration, sub: v.sub });
+  busyUntil = Date.now() + v.duration * 1000 + 450;
+}
+/** Waits until the current line has been spoken (before a scene change). */
+async function done(extra = 0) { const gap = busyUntil - Date.now(); if (gap > 0) await wait(gap); if (extra) await wait(extra); }
+
+// ── on-screen helpers ────────────────────────────────────────────────────────────────────
+async function ring(page: Page, b: { x: number; y: number; width: number; height: number } | null) { await page.evaluate((r) => (window as any).__tutRing?.(r ? [r.x, r.y, r.width, r.height] : null), b).catch(() => {}); }
 async function glide(page: Page, loc: Locator) {
   await loc.scrollIntoViewIfNeeded(); const b = await loc.boundingBox(); if (!b) return;
-  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 28 }); await wait(250);
+  await ring(page, b); await page.mouse.move(b.x + Math.min(b.width / 2, 160), b.y + b.height / 2, { steps: 30 }); await wait(300);
 }
-async function tap(page: Page, loc: Locator, pause = 700) { await glide(page, loc); await loc.click(); await wait(pause); }
-async function type(page: Page, loc: Locator, text: string) { await glide(page, loc); await loc.click(); await loc.pressSequentially(text, { delay: 70 }); await wait(350); }
-async function card(page: Page, title: string, sub: string, ms: number) {
-  await say(page, '', '');
+async function tap(page: Page, loc: Locator, pause = 700) { await glide(page, loc); await loc.click(); await ring(page, null); await wait(pause); }
+async function type(page: Page, loc: Locator, text: string) { await glide(page, loc); await loc.click(); await loc.pressSequentially(text, { delay: 55 }); await ring(page, null); await wait(300); }
+async function choose(page: Page, loc: Locator, value: string | { label: string }) { await glide(page, loc); await loc.selectOption(value); await ring(page, null); await wait(700); }
+async function card(page: Page, kicker: string, title: string, sub: string) {
   await page.goto('about:blank');
-  await page.setContent(`<body style="margin:0;height:100vh;display:grid;place-items:center;background:#7a1f2b;color:#fff;font-family:system-ui,sans-serif;text-align:center"><div><div style="font-size:54px;font-weight:700;letter-spacing:.01em">${title}</div><div style="font-size:26px;margin-top:18px;opacity:.9">${sub}</div></div></body>`);
-  await wait(ms);
+  await page.setContent(`<body style="margin:0;height:100vh;display:grid;place-items:center;background:radial-gradient(120% 90% at 30% 20%,#8f2433 0%,#5e1420 60%,#3f0c15 100%);color:#fff;font-family:'Segoe UI',system-ui,sans-serif;text-align:center">
+    <div style="max-width:980px;padding:0 40px"><img src="http://localhost:3000/logo-white.png" alt="" style="height:86px;margin-bottom:34px;opacity:.96">
+    <div style="font-size:16px;letter-spacing:.22em;text-transform:uppercase;color:#f0c25a;font-weight:700">${kicker}</div>
+    <div style="font-size:50px;font-weight:700;margin-top:12px;line-height:1.15">${title}</div>
+    <div style="width:64px;height:4px;background:#e0a526;border-radius:2px;margin:26px auto"></div>
+    <div style="font-size:24px;opacity:.9;line-height:1.45">${sub}</div></div></body>`);
+  await wait(400);
 }
 
-test('student guide video', async ({ page }) => {
-  await page.addInitScript(OVERLAY);
-  const reg = `DMC-A-2026-${String(Math.floor(1000 + Math.random() * 8999))}`; const mail = `${letters(7)}@example.test`;
+/** What the campus examination office does after the student registers: verify, enrol in the course, admit to the paper (real staff API). */
+async function officeVerifiesAndAssigns(browser: Browser, baseURL: string, regNo: string) {
+  const asStaff = async (local: string) => { const ctx = await browser.newContext({ baseURL }); const r = await ctx.request.post('/api/auth/login', { data: { email: `${local}@demo.szabmu.invalid`, password: STAFF_PW } }); expect(r.ok(), `${local} login`).toBeTruthy(); return ctx; };
+  const admin = await asStaff('admin.a');
+  const stud = (await (await admin.request.get(`/api/students?search=${encodeURIComponent(regNo)}`)).json()).items[0];
+  expect((await admin.request.patch(`/api/students/${stud.id}`, { data: { verify: true } })).ok(), 'verify').toBeTruthy();
+  const course = ((await (await admin.request.get('/api/courses')).json()) as any[]).find((c) => c.code === 'MBBS-PATH-4');
+  const enr = await admin.request.post('/api/enrollments/bulk', { data: { courseId: course.id, term: '2026-SPRING', institutionId: stud.institutionId, studentIds: [stud.id] } });
+  expect((await enr.json()).newlyEnrolled, 'enrolled').toBe(1); await admin.close();
+  const cce = await asStaff('cce');
+  const list = await (await cce.request.get('/api/exams?pageSize=50')).json(); const exam = (list.items ?? list).find((e: any) => e.code === 'MBBS-PATH-MT');
+  const grant = await cce.request.post(`/api/exams/${exam.id}/candidates/${stud.id}/override`, { data: { decision: 'GRANT', reason: 'Admitted after verification of enrolment (tutorial recording)' } });
+  expect(grant.ok(), 'admit ' + (await grant.text())).toBeTruthy(); await cce.close();
+}
 
-  t0 = Date.now(); await say(page, '', '');
-  await card(page, 'SZABMU Online Examination Center', 'Student guide: sign up and attempt your paper', 4500);
+test('student guide video', async ({ page, browser, baseURL }) => {
+  await page.addInitScript(OVERLAY);
+  const reg = `DMC-A-2024-${digits()}`; const mail = `ayesha.khan${digits()}@example.test`;
+  t0 = Date.now(); busyUntil = Date.now();
+
+  // ── Intro ──────────────────────────────────────────────────────────────────────────────
+  await card(page, 'Student guide', 'SZABMU Online Examination Center', 'Create your account and attempt your examination');
+  await say('intro', ''); await done();
+  await card(page, 'Before you begin', 'What you need', 'Your registration number &nbsp;·&nbsp; an email you can open now<br>A laptop or desktop with a stable connection');
+  await say('need', 'Before you begin'); await done(300);
 
   // ── Part 1: create the account ─────────────────────────────────────────────────────────
-  await page.goto('/register'); await wait(1200);
-  await say(page, 'Step 1 · Open the portal', 'Go to szabmu.site and choose Create Account', 3500);
-  await say(page, 'Step 2 · Your details', 'Type your registration number exactly as printed on your card', 0);
-  await type(page, page.getByLabel(/Registration number/), reg);
-  await say(page, 'Step 2 · Your details', 'Enter an email address you can open right now: the code is sent there', 0);
-  await type(page, page.getByLabel(/Email address/), mail);
-  await say(page, 'Step 2 · Your details', 'Choose a strong password and type it again to confirm', 0);
-  await type(page, page.getByLabel(/^Password\b/), PW); await type(page, page.getByLabel(/Confirm password/), PW);
-  await say(page, 'Step 2 · Your details', 'Press Create Account', 0);
-  await tap(page, page.getByRole('button', { name: 'Create Account' }), 1500);
-  await say(page, 'Step 3 · Verify your email', 'Open the email, find the 6-digit code and type it in', 2500);
+  await page.goto('/login'); await wait(600);
+  await say('open', 'Step 1 · Open the portal');
+  await wait(3600); await tap(page, page.getByRole('link', { name: /create account|sign up|register/i }).first(), 900);
+  await page.getByLabel(/Registration number/).waitFor(); await done();
+  await say('regno', 'Step 2 · Your details'); await type(page, page.getByLabel(/Registration number/), reg);
+  await say('email', 'Step 2 · Your details'); await type(page, page.getByLabel(/Email address/), mail);
+  await say('password', 'Step 2 · Your details'); await type(page, page.getByLabel(/^Password\b/), PW); await type(page, page.getByLabel(/Confirm password/), PW);
+  await say('create', 'Step 2 · Your details'); await tap(page, page.getByRole('button', { name: 'Create Account' }), 900);
+  await page.getByLabel('Digit 1').waitFor(); await done();
+  await say('code', 'Step 3 · Verify your email'); await wait(4500);
   const code = ((await page.getByTestId('dev-code').locator('b').textContent()) ?? '').trim();
-  for (let i = 0; i < 6; i++) { const d = page.getByLabel(`Digit ${i + 1}`); await glide(page, d); await d.fill(code[i]!); await wait(450); }
-  await say(page, 'Step 3 · Verify your email', 'Press Create Account again to confirm', 0);
-  await tap(page, page.getByRole('button', { name: 'Create Account' }), 2200);
+  for (let i = 0; i < 6; i++) { const d = page.getByLabel(`Digit ${i + 1}`); await glide(page, d); await d.fill(code[i]!); await wait(380); }
+  await ring(page, null); await done();
+  await say('confirm', 'Step 3 · Verify your email'); await tap(page, page.getByRole('button', { name: 'Create Account' }), 600);
 
-  // ── Complete your profile (one time) ──────────────────────────────────────────────────
-  await page.getByRole('heading', { name: 'Complete your profile' }).waitFor();
-  await say(page, 'Step 4 · Complete your profile', 'You are signed in. This form appears once: fill in your personal details', 3500);
+  // ── Complete your profile ──────────────────────────────────────────────────────────────
+  await page.getByRole('heading', { name: 'Complete your profile' }).waitFor(); await done();
+  await say('profile', 'Step 4 · Complete your profile'); await done();
+  await say('personal', 'Step 4 · Complete your profile');
   await type(page, page.getByLabel(/^Full name/), 'Ayesha Khan'); await type(page, page.getByLabel(/Father's name/), 'Imran Khan');
-  await glide(page, page.getByLabel(/^Gender/)); await page.getByLabel(/^Gender/).selectOption('FEMALE'); await wait(600);
-  await type(page, page.getByLabel(/Mobile number/), '+92 300 1234567');
-  await say(page, 'Step 4 · Complete your profile', 'Pick your college first: the programme list then shows only what that college offers', 0);
-  await glide(page, page.getByLabel(/College/)); await page.getByLabel(/College/).selectOption({ label: 'Demo Medical College A (synthetic)' }); await wait(1400);
-  await glide(page, page.getByLabel(/Degree programme/)); await page.getByLabel(/Degree programme/).selectOption({ index: 1 }); await wait(1000);
-  await glide(page, page.getByLabel(/^Semester/)); await page.getByLabel(/^Semester/).selectOption('4'); await wait(800);
-  await glide(page, page.getByLabel(/Academic year/)); await page.getByLabel(/Academic year/).selectOption('2024'); await wait(800);
-  await say(page, 'Step 4 · Complete your profile', 'Check everything, then press Save and continue', 0);
-  await tap(page, page.getByRole('button', { name: 'Save and continue' }), 2500);
+  await choose(page, page.getByLabel(/^Gender/), 'FEMALE'); await type(page, page.getByLabel(/Mobile number/), '+92 300 1234567'); await done();
+  await say('college', 'Step 4 · Complete your profile');
+  await choose(page, page.getByLabel(/College/), { label: 'Demo Medical College A (synthetic)' }); await wait(1600);
+  const mbbs = ((await page.getByLabel(/Degree programme/).locator('option', { hasText: 'Bachelor of Medicine' }).first().textContent()) ?? '').trim();
+  await choose(page, page.getByLabel(/Degree programme/), { label: mbbs }); await wait(500);
+  await choose(page, page.getByLabel(/^Semester/), '4'); await choose(page, page.getByLabel(/Academic year/), '2024'); await done();
+  await say('save', 'Step 4 · Complete your profile'); await tap(page, page.getByRole('button', { name: 'Save and continue' }), 600);
+  await page.getByRole('heading', { name: 'My Examinations' }).waitFor(); await done();
+  await say('empty', 'Step 5 · My Examinations'); await glide(page, page.getByTestId('no-exams')); await done();
+  await say('verify', 'Step 5 · My Examinations'); await ring(page, null); await done(400);
 
-  await page.getByRole('heading', { name: 'My Examinations' }).waitFor();
-  await say(page, 'Step 5 · My Examinations', 'This is your home page. Exams appear here once your campus examination office has verified your details and assigned them to you.', 6500);
-  await say(page, 'Tip', 'Signing up or completing the form never gives exam access by itself. Contact your examination office if nothing appears.', 6000);
+  // ── Between the scenes: the examination office verifies and assigns (real staff API) ───
+  await card(page, 'A little later', 'Verified and assigned', 'Your examination office has checked your details<br>and assigned your paper');
+  await say('later', 'Step 6 · Sign in');
+  await officeVerifiesAndAssigns(browser, baseURL!, reg);
+  await page.context().clearCookies(); await done(200);
 
-  // ── Part 2: attempt a paper (an already-verified student with a paper assigned) ───────
-  await card(page, 'Attempting your paper', 'Signing in as a student whose exam has been assigned', 3500);
-  await page.context().clearCookies(); await page.goto('/login'); await wait(1000);
-  await say(page, 'Step 6 · Sign in', 'Use your university email and password', 0);
-  await type(page, page.getByLabel('University email'), 'student.a004@demo.szabmu.invalid'); await type(page, page.getByLabel('Password'), 'Demo-Passw0rd-2026!');
-  await tap(page, page.getByRole('button', { name: /sign in/i }), 2500);
-  await say(page, 'Step 7 · Find your exam', 'Open My Examinations. Available exams can be started now; Upcoming ones open at their start time', 0);
-  await tap(page, page.getByRole('link', { name: 'My Examinations' }).first(), 2500);
-  await say(page, 'Step 7 · Find your exam', 'Press Start on the available paper', 0);
-  await tap(page, page.getByRole('link', { name: /Start/ }), 2500);
-  await say(page, 'Step 8 · Read the instructions', 'Read the rules, duration and marks. The timer runs on the server, so it cannot be paused', 6000);
-  await tap(page, page.getByRole('button', { name: /begin examination/i }), 2500);
+  // ── Part 2: attempt the paper ──────────────────────────────────────────────────────────
+  await page.goto('/login'); await wait(500);
+  await type(page, page.getByLabel('University email'), mail); await type(page, page.getByLabel('Password'), PW);
+  await tap(page, page.getByRole('button', { name: /sign in/i }), 600); await page.waitForURL(/\/(dashboard|schedule)/); await wait(800);
+  await say('menu', 'Step 7 · Find your paper'); await tap(page, page.getByRole('link', { name: 'My Examinations' }).first(), 600);
+  await page.getByRole('heading', { name: 'My Examinations' }).waitFor(); await done();
+  await say('available', 'Step 7 · Find your paper'); await glide(page, page.getByTestId('exams-available')); await wait(5200);
+  await tap(page, page.getByTestId('exams-available').getByRole('link', { name: /Start/ }), 600);
+  await page.getByRole('button', { name: /begin examination/i }).waitFor(); await done();
+  await say('instructions', 'Step 8 · Read the instructions'); await wait(8500);
+  await tap(page, page.getByRole('button', { name: /begin examination/i }), 600);
+  await page.getByRole('timer').waitFor(); await done();
 
-  await say(page, 'Step 9 · Answer the questions', 'Click an option to answer. It says Saved once the server has your answer. You can also press A, B, C or D', 5500);
   const picks = ['B', 'A', 'C', 'D', 'B', 'A', 'C', 'B', 'D', 'A', 'C', 'B'];
   for (let i = 0; i < 12; i++) {
-    if (i === 2) await say(page, 'Step 10 · Mark for review', 'Not sure? Mark the question for review. You can come back to it from the palette on the right', 0);
-    if (i === 4) await say(page, 'Step 11 · The palette', 'The palette shows answered, unanswered and marked questions. Click any number to jump there', 0);
-    if (i === 7) await say(page, 'Step 12 · Keep going', 'Your answers are saved as you go. If your connection drops, the page recovers and keeps your work', 0);
-    await tap(page, page.getByTestId(`opt-${picks[i]}`), 900);
-    if (i === 2) { await tap(page, page.getByRole('button', { name: 'Mark for review' }), 1200); }
-    if (i === 4) { const pal = page.locator('.pal button').nth(1); await tap(page, pal, 1200); await tap(page, page.locator('.pal button').nth(4), 900); }
-    if (i < 11) await tap(page, page.getByTestId('next-or-review'), 600);
+    if (i === 0) { await say('answer', 'Step 9 · Answer the questions'); await wait(3800); }
+    if (i === 2) { await say('mark', 'Step 10 · Mark for review'); }
+    if (i === 4) { await say('palette', 'Step 11 · The question palette'); }
+    if (i === 7) { await say('autosave', 'Step 12 · Automatic saving'); }
+    await tap(page, page.getByTestId(`opt-${picks[i]}`), 700);
+    if (i === 0) await done();
+    if (i === 2) { await wait(1800); await tap(page, page.getByRole('button', { name: 'Mark for review' }), 900); await done(); }
+    if (i === 4) { await wait(2500); await tap(page, page.locator('.pal button').nth(1), 1100); await tap(page, page.locator('.pal button').nth(4), 700); await done(); }
+    if (i === 0) { await say('next', 'Step 9 · Answer the questions'); await wait(1200); }
+    if (i < 11) await tap(page, page.getByTestId('next-or-review'), 500);
   }
-  await say(page, 'Step 13 · Finish', 'On the last question, press Review answers', 0);
-  await tap(page, page.getByTestId('next-or-review'), 1200).catch(() => {});
-  await tap(page, page.getByRole('button', { name: /review & submit/i }), 1500).catch(() => {});
-  await page.getByRole('heading', { name: 'Review your answers' }).waitFor();
-  await say(page, 'Step 13 · Review', 'Check the summary. Go back to any question that is unanswered or marked, then press Submit examination', 6500);
-  await tap(page, page.getByRole('button', { name: /submit examination/i }), 1500);
-  await say(page, 'Step 14 · Confirm', 'Tick the box to confirm. Once submitted you cannot change your answers', 0);
-  await tap(page, page.getByRole('checkbox'), 1000);
-  await tap(page, page.getByTestId('confirm-submit'), 2500);
-  await page.getByTestId('receipt').waitFor();
-  await say(page, 'Step 15 · Your receipt', 'Done. Keep your receipt code: it proves your submission. Results are published later by the examination office.', 8000);
+  await done();
+  await say('last', 'Step 13 · Review and submit'); await wait(1200);
+  await tap(page, page.getByTestId('next-or-review'), 900);
+  if (!(await page.getByRole('heading', { name: 'Review your answers' }).isVisible())) await tap(page, page.getByRole('button', { name: /review & submit/i }), 900);
+  await page.getByRole('heading', { name: 'Review your answers' }).waitFor(); await done();
+  await say('review', 'Step 13 · Review and submit'); await wait(1500); await glide(page, page.getByText(/marked for review/).first()); await done();
+  await say('submit', 'Step 13 · Review and submit'); await tap(page, page.getByRole('button', { name: /submit examination/i }), 600); await done();
+  await say('tick', 'Step 14 · Confirm'); await wait(1600); await tap(page, page.getByRole('checkbox'), 3400);
+  await tap(page, page.getByTestId('confirm-submit'), 600);
+  await page.getByTestId('receipt').waitFor(); await done();
+  await say('receipt', 'Step 15 · Your receipt'); await wait(3500); await glide(page, page.getByTestId('receipt-code')); await done(600); await ring(page, null);
 
-  await card(page, 'Good luck!', 'Questions? Contact your campus examination office', 3500);
-  caps.push({ t: (Date.now() - t0) / 1000, step: '', text: '' });
-  fs.writeFileSync(path.join(process.env.TUTORIAL_OUT ?? 'test-results-tutorial', 'captions.json'), JSON.stringify(caps, null, 1));
+  await card(page, 'You are ready', 'Best of luck!', 'Questions? Contact your campus examination office');
+  await say('outro', ''); await done(800);
+
+  fs.writeFileSync(path.join(OUT, 'timeline.json'), JSON.stringify({ end: now(), cues }, null, 1));
 });
