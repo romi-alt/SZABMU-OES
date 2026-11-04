@@ -29,5 +29,5 @@ af.push(`${cues.map((_, i) => `[a${i}]`).join('')}amix=inputs=${cues.length}:nor
 fs.writeFileSync(path.join(tmp, 'vf.txt'), vf.join(',')); fs.writeFileSync(path.join(tmp, 'af.txt'), af.join(';'));
 const out = path.join(dir, 'SZABMU-student-guide.mp4');
 execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...inputs, '-filter_complex_script', path.join(tmp, 'af.txt'), '-filter_script:v', path.join(tmp, 'vf.txt'),
-  '-map', '0:v', '-map', '[aout]', '-shortest', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '21', '-preset', 'medium', '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-movflags', '+faststart', out], { stdio: 'inherit' });
+  '-map', '0:v', '-map', '[aout]', '-shortest', '-c:v', 'libx264', '-profile:v', 'main', '-level', '4.0', '-pix_fmt', 'yuv420p', '-crf', '21', '-preset', 'medium', '-c:a', 'aac', '-b:a', '192k', '-ac', '2', '-ar', '44100', '-movflags', '+faststart', out], { stdio: 'inherit' });
 fs.rmSync(tmp, { recursive: true }); console.log('wrote', out);
