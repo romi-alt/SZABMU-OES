@@ -7,7 +7,7 @@ import { CONFIG, type Config } from '../config';
 
 /**
  * BullMQ consumers (grading, mail delivery) — Redis ACCELERATORS only. The exam lifecycle (auto-submit, open/close, scoring, absentees)
- * is NOT here any more: it runs in LifecycleService on PostgreSQL state and survives Redis loss.
+ * is NOT here any more: it runs in LifecycleService on database state and survives Redis loss.
  */
 @Injectable()
 export class JobsService implements OnApplicationBootstrap {

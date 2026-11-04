@@ -68,9 +68,10 @@ export class InvigilationService {
   async extend(u: AuthUser, attemptId: string, minutes: number, reason: string, ip?: string) {
     const a = await this.loadAttempt(u, attemptId);
     if (a.status !== 'IN_PROGRESS') throw conflict('ATTEMPT_CLOSED', 'The attempt is no longer in progress');
-    const r = await this.prisma.$queryRaw<{ deadlineAt: Date }[]>`
-      UPDATE attempts SET "deadlineAt" = "deadlineAt" + make_interval(mins => ${minutes}::int), "extraTimeMin" = "extraTimeMin" + ${minutes}::int
-      WHERE id = ${attemptId}::uuid AND status = 'IN_PROGRESS' RETURNING "deadlineAt"`;
+    const n = await this.prisma.$executeRaw`
+      UPDATE attempts SET "deadlineAt" = TIMESTAMPADD(MINUTE, ${minutes}, "deadlineAt"), "extraTimeMin" = "extraTimeMin" + ${minutes}
+      WHERE id = ${attemptId} AND status = 'IN_PROGRESS'`;
+    const r = n ? await this.prisma.$queryRaw<{ deadlineAt: Date }[]>`SELECT "deadlineAt" FROM attempts WHERE id = ${attemptId}` : [];
     if (!r.length) throw conflict('ATTEMPT_CLOSED', 'The attempt is no longer in progress');
     await this.prisma.attemptEvent.create({ data: { attemptId, kind: 'TIME_EXTENDED', actorId: u.id, detail: { minutes, reason } } });
     await this.audit.log({ actor: u, action: 'attempt.extend_time', entity: 'attempt', entityId: attemptId, institutionId: a.student.institutionId, meta: { minutes, reason }, ip });

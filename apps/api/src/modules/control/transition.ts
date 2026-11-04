@@ -18,7 +18,8 @@ export interface FinishSpec {
  * Either all of it commits with the state change or none of it does.
  */
 export async function finishTransition(tx: Prisma.TransactionClient, deps: { events: ExamEventsService; audit: AuditService }, s: FinishSpec): Promise<number> {
-  const v = (await tx.$queryRaw<{ v: number }[]>`UPDATE exams SET "stateVersion" = "stateVersion" + 1 WHERE id = ${s.examId}::uuid RETURNING "stateVersion" AS v`)[0]!.v;
+  await tx.$executeRaw`UPDATE exams SET "stateVersion" = "stateVersion" + 1 WHERE id = ${s.examId}`;
+  const v = (await tx.$queryRaw<{ v: number }[]>`SELECT "stateVersion" AS v FROM exams WHERE id = ${s.examId}`)[0]!.v;
   for (const e of s.events) await deps.events.emit(tx, { examId: s.examId, version: v, type: e.type, institutionId: e.institutionId, studentId: e.studentId, payload: e.payload });
   await deps.audit.append(tx, { actor: s.actor, action: s.action, entity: 'exam', entityId: s.examId, meta: { ...s.meta, version: v }, ip: s.ip ?? null });
   return v;

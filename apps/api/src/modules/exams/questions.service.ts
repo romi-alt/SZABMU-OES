@@ -46,7 +46,7 @@ export class QuestionsService {
       AND: [await this.access.questionWhere(u)],
       institutionId: f.institutionId ?? scope.filter(u),
       courseId: f.courseId, status: f.status as never, difficulty: f.difficulty as never, type: f.type as never,
-      ...(f.search ? { OR: [{ stem: { contains: f.search, mode: 'insensitive' } }, { vignette: { contains: f.search, mode: 'insensitive' } }] } : {}),
+      ...(f.search ? { OR: [{ stem: { contains: f.search } }, { vignette: { contains: f.search } }] } : {}),
     };
     const [items, total] = await Promise.all([
       this.prisma.question.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (f.page - 1) * f.pageSize, take: f.pageSize, include: { course: { select: { code: true, title: true } }, options: { select: { label: true, isCorrect: true }, orderBy: { label: 'asc' } } } }),

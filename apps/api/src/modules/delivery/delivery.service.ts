@@ -4,6 +4,7 @@ import { SAVE_GRACE_SECONDS, computeDeadline, computeSyncDeadline, seededOrder }
 import { startableStates, type ExamState } from '../control/exam-state';
 import { answerDigest, receiptCode } from '@oes/shared/server';
 import { PrismaService } from '../../infra/prisma.service';
+import { int, stringList } from '../../infra/sql';
 import { RedisService } from '../../infra/redis.service';
 import { QUEUES, QueuesService } from '../../infra/queues.service';
 import { AuditService } from '../audit/audit.service';
@@ -129,7 +130,7 @@ export class DeliveryService {
       if (exam.status === 'SUSPENDED') throw conflict('EXAM_SUSPENDED', 'The examination is suspended. Wait for instructions from the examination office.', { status: exam.status, serverNow: now });
       if (!startableStates(exam.controlMode).includes(exam.status as ExamState) || exam.paperStatus !== 'APPROVED') throw conflict('NOT_AVAILABLE', 'This examination is not available', { status: exam.status, serverNow: now });
       if (exam.admissionClosedAt) throw conflict('ADMISSION_CLOSED', 'Admission to this examination has closed. Contact the examination office.', { status: exam.status, serverNow: now });
-      const hold = await this.prisma.examSuspension.findFirst({ where: { examId, resumedAt: null, OR: [{ scope: 'CAMPUS', institutionId: cand.institutionId }, { scope: 'CANDIDATES', studentIds: { has: studentId } }] }, select: { id: true } });
+      const hold = await this.prisma.examSuspension.findFirst({ where: { examId, resumedAt: null, OR: [{ scope: 'CAMPUS', institutionId: cand.institutionId }, { scope: 'CANDIDATES', studentIds: { path: '$', array_contains: [studentId] } }] }, select: { id: true } });
       if (hold) throw conflict('EXAM_SUSPENDED', 'Your examination is suspended. Wait for instructions from the examination office.', { status: exam.status, serverNow: now });
       if (exam.controlMode === 'AUTOMATIC' && !exam.officialStartAt && now < exam.opensAt) throw conflict('NOT_OPEN', 'The examination has not opened yet', { opensAt: exam.opensAt, serverNow: now });
       if (now >= exam.closesAt) throw conflict('CLOSED', 'The examination window has closed');
@@ -155,13 +156,14 @@ export class DeliveryService {
     // Claim the single active client slot; any older tab is now stale and will be rejected on save.
     let fresh = attempt;
     if (attempt.activeClientId !== clientId) {
-      const claimed = await this.prisma.$queryRaw<{ clientEpoch: number }[]>`UPDATE attempts SET "activeClientId" = ${clientId}, "clientEpoch" = "clientEpoch" + 1 WHERE id = ${attempt.id}::uuid AND "activeClientId" IS DISTINCT FROM ${clientId} RETURNING "clientEpoch"`;
+      const n = await this.prisma.$executeRaw`UPDATE attempts SET "activeClientId" = ${clientId}, "clientEpoch" = "clientEpoch" + 1 WHERE id = ${attempt.id} AND NOT ("activeClientId" <=> ${clientId})`;
+      const claimed = n ? await this.prisma.$queryRaw<{ clientEpoch: number }[]>`SELECT "clientEpoch" FROM attempts WHERE id = ${attempt.id}` : [];
       if (claimed.length) {
         fresh = { ...attempt, activeClientId: clientId, clientEpoch: claimed[0]!.clientEpoch };
         await this.prisma.attemptEvent.create({ data: { attemptId: attempt.id, kind: 'SESSION_CLAIMED', detail: { clientId, previous: attempt.activeClientId } } });
       }
     }
-    if (fresh.questionOrder.length === 0) throw new AppError(500, 'INTERNAL', 'Attempt has no question order');
+    if (stringList(fresh.questionOrder).length === 0) throw new AppError(500, 'INTERNAL', 'Attempt has no question order');
 
     const paper = await this.paperFor(examId);
     const byId = new Map(paper.map((q) => [q.id, q]));
@@ -171,7 +173,7 @@ export class DeliveryService {
       control: { examStatus: exam.status, suspended: !!fresh.suspendedAt, timingPolicy: exam.timingPolicy },
       serverNow: now,
       exam: { id: exam.id, code: exam.code, title: exam.title, durationMin: exam.durationMin, totalMarks: exam.totalMarks, instructions: exam.instructions, negativeMarking: exam.negativeMarking },
-      questions: fresh.questionOrder.map((id, i) => ({ ...byId.get(id)!, number: i + 1 })),
+      questions: stringList(fresh.questionOrder).map((id, i) => ({ ...byId.get(id)!, number: i + 1 })),
       answers: answers.map((a) => ({ examQuestionId: a.examQuestionId, selectedLabel: a.selectedLabel, state: a.state, markedForReview: a.markedForReview, visited: a.visited, revision: a.revision })),
     };
   }
@@ -188,48 +190,27 @@ export class DeliveryService {
 
   /** One shared clock for SYNCHRONIZED exams: official start + duration + accommodation + exam-wide extensions + completed exam-wide pauses, capped by the window. */
   private async syncDeadline(exam: { id: string; durationMin: number; closesAt: Date; opensAt: Date; officialStartAt: Date | null }, extraTimeMin: number): Promise<Date> {
-    const r = (await this.prisma.$queryRaw<{ ext: number; paused: number }[]>`
-      SELECT COALESCE((SELECT sum(minutes) FROM exam_extensions WHERE "examId" = ${exam.id}::uuid AND scope = 'EXAM'), 0)::int AS ext,
-             COALESCE((SELECT sum("pausedSeconds") FROM exam_suspensions WHERE "examId" = ${exam.id}::uuid AND scope = 'EXAM' AND "timePolicy" = 'FREEZE_CLOCK'), 0)::int AS paused`)[0]!;
-    return computeSyncDeadline({ officialStartAt: exam.officialStartAt ?? exam.opensAt, durationMin: exam.durationMin, extraTimeMin, examExtensionMin: r.ext, pausedSeconds: r.paused, windowEndsAt: exam.closesAt });
+    const r = (await this.prisma.$queryRaw<{ ext: string | number; paused: string | number }[]>`
+      SELECT COALESCE((SELECT SUM(minutes) FROM exam_extensions WHERE "examId" = ${exam.id} AND scope = 'EXAM'), 0) AS ext,
+             COALESCE((SELECT SUM("pausedSeconds") FROM exam_suspensions WHERE "examId" = ${exam.id} AND scope = 'EXAM' AND "timePolicy" = 'FREEZE_CLOCK'), 0) AS paused`)[0]!;
+    return computeSyncDeadline({ officialStartAt: exam.officialStartAt ?? exam.opensAt, durationMin: exam.durationMin, extraTimeMin, examExtensionMin: Number(r.ext), pausedSeconds: Number(r.paused), windowEndsAt: exam.closesAt });
   }
 
   // ───────────── answer saving ─────────────
   /**
-   * One atomic SQL statement = one durable transaction. The response is only `saved: true` if the row
-   * (and its journal entry) were committed. Locking: FOR KEY SHARE on the attempt row conflicts with the
-   * FOR UPDATE taken by submit, so a save can never slip in after the answer sheet has been sealed.
+   * One short transaction. The response is only `saved: true` if the row (and its journal entry) were committed.
+   * Locking: a SHARE lock on the attempt row conflicts with the FOR UPDATE taken by submit, so a save can never slip in
+   * after the answer sheet has been sealed; the answer row itself is locked so only a strictly newer revision replaces it.
    */
   async saveAnswer(u: AuthUser, attemptId: string, examQuestionId: string, d: SaveInput) {
     const studentId = this.studentIdOf(u);
     if ((d.state === 'ANSWERED') !== (d.selectedLabel !== null)) throw badRequest('state ANSWERED requires a selected option, and only then');
     const label = d.selectedLabel;
-    const rows = await this.prisma.$queryRaw<{ attempt_ok: number; q_ok: number; revision: number | null; saved_at: Date | null; now: Date }[]>`
-      WITH a AS (
-        SELECT id, "examId" FROM attempts
-        WHERE id = ${attemptId}::uuid AND "studentId" = ${studentId}::uuid AND status = 'IN_PROGRESS'
-          AND "activeClientId" = ${d.clientId} AND "suspendedAt" IS NULL
-          AND "deadlineAt" + make_interval(secs => ${SAVE_GRACE_SECONDS}::int) > clock_timestamp()
-        FOR KEY SHARE
-      ), q AS (
-        SELECT eq.id FROM exam_questions eq JOIN a ON a."examId" = eq."examId"
-        WHERE eq.id = ${examQuestionId}::uuid
-          AND (${label}::text IS NULL OR eq.snapshot->'options' @> jsonb_build_array(jsonb_build_object('label', ${label}::text)))
-      ), up AS (
-        INSERT INTO attempt_answers ("attemptId","examQuestionId","selectedLabel",state,"markedForReview",visited,revision,"savedAt")
-        SELECT ${attemptId}::uuid, q.id, ${label}::text, ${d.state}::"AnswerState", ${d.markedForReview}::boolean, ${d.visited}::boolean, ${d.revision}::int, clock_timestamp() FROM q
-        ON CONFLICT ("attemptId","examQuestionId") DO UPDATE SET
-          "selectedLabel" = EXCLUDED."selectedLabel", state = EXCLUDED.state, "markedForReview" = EXCLUDED."markedForReview",
-          visited = EXCLUDED.visited, revision = EXCLUDED.revision, "savedAt" = EXCLUDED."savedAt"
-        WHERE attempt_answers.revision < EXCLUDED.revision
-        RETURNING revision, "savedAt"
-      ), ev AS (
-        INSERT INTO answer_events ("attemptId","examQuestionId",revision,"selectedLabel",state,"markedForReview",at)
-        SELECT ${attemptId}::uuid, ${examQuestionId}::uuid, up.revision, ${label}::text, ${d.state}::"AnswerState", ${d.markedForReview}::boolean, up."savedAt" FROM up
-      )
-      SELECT (SELECT count(*) FROM a)::int AS attempt_ok, (SELECT count(*) FROM q)::int AS q_ok,
-             (SELECT revision FROM up) AS revision, (SELECT "savedAt" FROM up) AS saved_at, clock_timestamp() AS now`;
-    const r = rows[0]!;
+    const r = await this.writeAnswer(attemptId, studentId, examQuestionId, label, d).catch(async (e: unknown) => {
+      // Two first-writes of the same answer raced to INSERT: the loser re-runs and is judged against the winner's revision.
+      if (/Duplicate entry|P2002|1062/.test(String((e as Error)?.message ?? e))) return this.writeAnswer(attemptId, studentId, examQuestionId, label, d);
+      throw e;
+    });
     if (r.revision !== null && r.saved_at) {
       return { saved: true as const, revision: r.revision, savedAt: r.saved_at, serverNow: r.now };
     }
@@ -243,6 +224,32 @@ export class DeliveryService {
     throw conflict('STALE_REVISION', 'A newer version of this answer is already stored', {
       server: cur && { examQuestionId, selectedLabel: cur.selectedLabel, state: cur.state, markedForReview: cur.markedForReview, visited: cur.visited, revision: cur.revision },
     });
+  }
+
+  private writeAnswer(attemptId: string, studentId: string, examQuestionId: string, label: string | null, d: SaveInput) {
+    return this.prisma.$transaction(async (tx) => {
+      // The attempt must be live for THIS client on the database clock; the share lock holds off a concurrent seal until we commit.
+      const a = (await tx.$queryRaw<{ q: string | null; now: Date }[]>`
+        SELECT (SELECT eq.id FROM exam_questions eq WHERE eq.id = ${examQuestionId} AND eq."examId" = a."examId"
+                  AND (${label} IS NULL OR JSON_CONTAINS(JSON_EXTRACT(eq.snapshot, '$.options'), JSON_OBJECT('label', ${label})))) AS q,
+               NOW(3) AS now
+        FROM attempts a
+        WHERE a.id = ${attemptId} AND a."studentId" = ${studentId} AND a.status = 'IN_PROGRESS'
+          AND a."activeClientId" = ${d.clientId} AND a."suspendedAt" IS NULL
+          AND TIMESTAMPADD(SECOND, ${SAVE_GRACE_SECONDS}, a."deadlineAt") > NOW(3)
+        LOCK IN SHARE MODE`)[0];
+      if (!a) return { attempt_ok: 0, q_ok: 0, revision: null, saved_at: null, now: await this.prisma.dbNow() };
+      if (!a.q) return { attempt_ok: 1, q_ok: 0, revision: null, saved_at: null, now: a.now };
+      const cur = (await tx.$queryRaw<{ revision: number }[]>`SELECT revision FROM attempt_answers WHERE "attemptId" = ${attemptId} AND "examQuestionId" = ${examQuestionId} FOR UPDATE`)[0];
+      if (cur && cur.revision >= d.revision) return { attempt_ok: 1, q_ok: 1, revision: null, saved_at: null, now: a.now };   // replay or stale writer
+      if (cur) await tx.$executeRaw`UPDATE attempt_answers SET "selectedLabel" = ${label}, state = ${d.state}, "markedForReview" = ${d.markedForReview}, visited = ${d.visited}, revision = ${d.revision}, "savedAt" = ${a.now}
+        WHERE "attemptId" = ${attemptId} AND "examQuestionId" = ${examQuestionId}`;
+      else await tx.$executeRaw`INSERT INTO attempt_answers ("attemptId","examQuestionId","selectedLabel",state,"markedForReview",visited,revision,"savedAt")
+        VALUES (${attemptId}, ${examQuestionId}, ${label}, ${d.state}, ${d.markedForReview}, ${d.visited}, ${d.revision}, ${a.now})`;
+      await tx.$executeRaw`INSERT INTO answer_events ("attemptId","examQuestionId",revision,"selectedLabel",state,"markedForReview",at)
+        VALUES (${attemptId}, ${examQuestionId}, ${d.revision}, ${label}, ${d.state}, ${d.markedForReview}, ${a.now})`;
+      return { attempt_ok: 1, q_ok: 1, revision: d.revision, saved_at: a.now, now: a.now };
+    }, { maxWait: 10_000, timeout: 15_000 });
   }
 
   private async diagnoseRejectedSave(attemptId: string, studentId: string, clientId: string): Promise<AppError> {
@@ -259,16 +266,16 @@ export class DeliveryService {
 
   /**
    * The candidate's authoritative clock/state check (the client also calls it whenever an SSE event arrives). One read, database clock:
-   * deadline, suspension, exam state and expiry are all computed by PostgreSQL.
+   * deadline, suspension, exam state and expiry are all computed by the database.
    */
   async heartbeat(u: AuthUser, attemptId: string, clientId: string, online = true) {
     const studentId = this.studentIdOf(u);
     const rows = await this.prisma.$queryRaw<{ id: string; examId: string; studentId: string; status: string; deadlineAt: Date; activeClientId: string | null; suspendedAt: Date | null; suspensionPolicy: string | null; examStatus: string; stateVersion: number; inst: string; expired: boolean; now: Date }[]>`
-      SELECT a.id, a."examId", a."studentId", a.status, a."deadlineAt", a."activeClientId", a."suspendedAt", sp."timePolicy"::text AS "suspensionPolicy", e.status::text AS "examStatus", e."stateVersion", s."institutionId" AS inst,
-             (a."deadlineAt" + make_interval(secs => ${SAVE_GRACE_SECONDS}::int)
-               + CASE WHEN a."suspendedAt" IS NOT NULL AND sp."timePolicy" = 'FREEZE_CLOCK' THEN clock_timestamp() - a."suspendedAt" ELSE interval '0' END < clock_timestamp()) AS expired,
-             clock_timestamp() AS now
-      FROM attempts a JOIN exams e ON e.id = a."examId" JOIN students s ON s.id = a."studentId" LEFT JOIN exam_suspensions sp ON sp.id = a."suspensionId" WHERE a.id = ${attemptId}::uuid`;
+      SELECT a.id, a."examId", a."studentId", a.status, a."deadlineAt", a."activeClientId", a."suspendedAt", sp."timePolicy" AS "suspensionPolicy", e.status AS "examStatus", e."stateVersion", s."institutionId" AS inst,
+             (TIMESTAMPADD(MICROSECOND, CASE WHEN a."suspendedAt" IS NOT NULL AND sp."timePolicy" = 'FREEZE_CLOCK' THEN TIMESTAMPDIFF(MICROSECOND, a."suspendedAt", NOW(3)) ELSE 0 END,
+                 TIMESTAMPADD(SECOND, ${SAVE_GRACE_SECONDS}, a."deadlineAt")) < NOW(3)) AS expired,
+             NOW(3) AS now
+      FROM attempts a JOIN exams e ON e.id = a."examId" JOIN students s ON s.id = a."studentId" LEFT JOIN exam_suspensions sp ON sp.id = a."suspensionId" WHERE a.id = ${attemptId}`;
     const a = rows[0];
     if (!a || a.studentId !== studentId) throw notFound('Attempt');
     const now = a.now;
@@ -322,14 +329,14 @@ export class DeliveryService {
   ) {
     // 1. Cheap reads OUTSIDE any transaction: no pooled connection is held while these (or anything else) queue.
     const pre = (await this.prisma.$queryRaw<{ id: string; examId: string; studentId: string; status: string; receiptCode: string | null; submittedAt: Date | null; answerDigest: string | null }[]>`
-      SELECT id, "examId", "studentId", status, "receiptCode", "submittedAt", "answerDigest" FROM attempts WHERE id = ${attemptId}::uuid`)[0];
+      SELECT id, "examId", "studentId", status, "receiptCode", "submittedAt", "answerDigest" FROM attempts WHERE id = ${attemptId}`)[0];
     if (!pre) throw notFound('Attempt');
     // The approved paper is immutable, so its question ids come from the cache (no DB round trip inside the seal).
     const eqIds = (await this.paperFor(pre.examId)).map((q) => q.id);
     const total = eqIds.length;
     const replay = async (r: { examId: string; studentId: string; status: string; receiptCode: string | null; submittedAt: Date | null; answerDigest: string | null }, count: (q: string) => Promise<number>) =>
       ({ receiptCode: r.receiptCode!, submittedAt: r.submittedAt!, answered: await count(attemptId), total, digest: r.answerDigest!, status: r.status, replayed: true as const, examId: r.examId, studentId: r.studentId, fresh: false as const });
-    const answeredCount = async (id: string) => (await this.prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM attempt_answers WHERE "attemptId" = ${id}::uuid AND state = 'ANSWERED'`)[0]!.n;
+    const answeredCount = async (id: string) => int((await this.prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*) AS n FROM attempt_answers WHERE "attemptId" = ${id} AND state = 'ANSWERED'`)[0]!.n);
     if (pre.status !== 'IN_PROGRESS') { const r = await replay(pre, answeredCount); const { fresh: _f, examId: _e, studentId: _s, ...pub } = r; return pub; } // sealed = immutable: replays need no transaction at all
 
     // 2. The seal itself: as few round trips as possible while the connection is held.
@@ -337,14 +344,14 @@ export class DeliveryService {
     //    Waiting for a free connection is bounded generously instead of failing after Prisma's 2 s default.
     const out = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ id: string; examId: string; studentId: string; status: string; deadlineAt: Date; activeClientId: string | null; suspendedAt: Date | null; expired: boolean; receiptCode: string | null; submittedAt: Date | null; answerDigest: string | null; now: Date }[]>`
-        SELECT a.id, a."examId", a."studentId", a.status, a."deadlineAt", a."activeClientId", a."suspendedAt", a."receiptCode", a."submittedAt", a."answerDigest", clock_timestamp() AS now,
-               (a."deadlineAt" + make_interval(secs => ${SAVE_GRACE_SECONDS}::int)
-                 + CASE WHEN a."suspendedAt" IS NOT NULL AND sp."timePolicy" = 'FREEZE_CLOCK' THEN clock_timestamp() - a."suspendedAt" ELSE interval '0' END < clock_timestamp()) AS expired
-        FROM attempts a LEFT JOIN exam_suspensions sp ON sp.id = a."suspensionId" WHERE a.id = ${attemptId}::uuid FOR UPDATE OF a`;
+        SELECT a.id, a."examId", a."studentId", a.status, a."deadlineAt", a."activeClientId", a."suspendedAt", a."receiptCode", a."submittedAt", a."answerDigest", NOW(3) AS now,
+               (TIMESTAMPADD(MICROSECOND, CASE WHEN a."suspendedAt" IS NOT NULL AND (SELECT sp."timePolicy" FROM exam_suspensions sp WHERE sp.id = a."suspensionId") = 'FREEZE_CLOCK' THEN TIMESTAMPDIFF(MICROSECOND, a."suspendedAt", NOW(3)) ELSE 0 END,
+                   TIMESTAMPADD(SECOND, ${SAVE_GRACE_SECONDS}, a."deadlineAt")) < NOW(3)) AS expired
+        FROM attempts a WHERE a.id = ${attemptId} FOR UPDATE`;   // locks only the attempt row (the suspension policy is a non-locking subquery)
       const a = rows[0];
       if (!a) throw notFound('Attempt');
       if (a.status !== 'IN_PROGRESS') { // sealed by a concurrent request between our pre-read and the lock
-        const n = (await tx.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM attempt_answers WHERE "attemptId" = ${attemptId}::uuid AND state = 'ANSWERED'`)[0]!.n;
+        const n = int((await tx.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*) AS n FROM attempt_answers WHERE "attemptId" = ${attemptId} AND state = 'ANSWERED'`)[0]!.n);
         return replay(a, async () => n);
       }
       // The expiry decision is re-made HERE, under the row lock, on the database clock: an extension/resume that landed after the caller chose this attempt wins.
@@ -371,10 +378,9 @@ export class DeliveryService {
       const status = o.mode === 'MANUAL' && !late ? 'SUBMITTED' : 'AUTO_SUBMITTED';
       const kind = o.mode === 'FORCED' ? 'FORCE_SUBMITTED' : o.mode === 'AUTO' ? 'AUTO_SUBMITTED' : 'SUBMITTED';
       const detail = JSON.stringify({ reason: o.reason ?? (o.mode === 'AUTO' ? 'deadline' : undefined) });
-      // one statement: seal the attempt AND journal the event atomically
-      await tx.$executeRaw`
-        WITH u AS (UPDATE attempts SET status = ${status}::"AttemptStatus", "submittedAt" = ${submittedAt}, "submitKey" = ${o.submitKey ?? null}, "receiptCode" = ${code}, "answerDigest" = ${digest} WHERE id = ${attemptId}::uuid RETURNING id)
-        INSERT INTO attempt_events ("attemptId", kind, "actorId", detail) SELECT id, ${kind}, ${o.actor?.id ?? null}::uuid, ${detail}::jsonb FROM u`;
+      // seal the attempt AND journal the event in the same transaction, under the row lock taken above
+      await tx.$executeRaw`UPDATE attempts SET status = ${status}, "submittedAt" = ${submittedAt}, "submitKey" = ${o.submitKey ?? null}, "receiptCode" = ${code}, "answerDigest" = ${digest} WHERE id = ${attemptId}`;
+      await tx.$executeRaw`INSERT INTO attempt_events ("attemptId", kind, "actorId", detail) VALUES (${attemptId}, ${kind}, ${o.actor?.id ?? null}, ${detail})`;
       return { receiptCode: code, submittedAt, answered: answers.filter((x) => x.state === 'ANSWERED').length, total, digest, status, replayed: false as const, late, examId: a.examId, studentId: a.studentId, fresh: true as const };
     }, { maxWait: 15_000, timeout: 20_000 });
     if ('skipped' in out) return out;
