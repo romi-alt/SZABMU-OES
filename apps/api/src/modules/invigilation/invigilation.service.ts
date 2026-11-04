@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { LINKS } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
-import { RedisService } from '../../infra/redis.service';
+import { KvService } from '../../infra/kv.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DeliveryService } from '../delivery/delivery.service';
@@ -13,7 +13,7 @@ import type { Prisma } from '../../generated/prisma/client';
 @Injectable()
 export class InvigilationService {
   constructor(
-    private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly audit: AuditService,
+    private readonly prisma: PrismaService, private readonly kv: KvService, private readonly audit: AuditService,
     private readonly notifications: NotificationsService, private readonly delivery: DeliveryService, private readonly monitorView: MonitorService,
   ) {}
 

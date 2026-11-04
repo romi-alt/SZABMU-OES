@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { CONFIG, loadConfig } from './config';
 import { PrismaService } from './infra/prisma.service';
-import { RedisService } from './infra/redis.service';
+import { KvService } from './infra/kv.service';
 import { QueuesService } from './infra/queues.service';
 import { MailService } from './infra/mail.service';
 import { MetricsService } from './infra/metrics.service';
@@ -49,7 +49,7 @@ import { ExamControlController } from './modules/control/control.controller';
   controllers: [AuthController, RegistrationController, OnboardingController, TeacherRegistrationController, TeacherController, TeacherAdminController, OrgController, CourseAssignmentsController, ExamsController, DeliveryController, ResultsController, InvigilationController, ReportsController, ExamControlController, HealthController, MetricsController],
   providers: [
     { provide: CONFIG, useFactory: () => loadConfig() },
-    PrismaService, RedisService, QueuesService, MailService, MetricsService, AuditService, NotificationsService,
+    PrismaService, KvService, QueuesService, MailService, MetricsService, AuditService, NotificationsService,
     AuthService, RegistrationService, OnboardingService, TeacherRegistrationService, TeacherService, TeacherAdminService, MfaService, OrgService, CourseAccessService, QuestionsService, ExamsService, DeliveryService, ResultsService, InvigilationService, ReportsService, ExamEventsService, MonitorService, LifecycleService, ExamControlService, JobsService,
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

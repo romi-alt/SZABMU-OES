@@ -52,7 +52,12 @@ describe('exam-path metrics', () => {
 
   it('a database failure during a save is a counted server error, a counted DB error, and is never reported as saved', async () => {
     const s = await as(ctx, 'student.a003'); const t = await startExam(ctx, s); const errs = m.saves.value({ result: 'error' }); const dbe = m.dbErrors.value({ kind: 'connection' });
-    const spy = vi.spyOn(ctx.prisma, '$queryRaw').mockRejectedValueOnce(new Error('Connection terminated unexpectedly'));
+    // Fail the first query of the SAVE itself. Without Redis the session cache is read from kv_entries first (and fails soft), so skip that one.
+    const orig = ctx.prisma.$queryRaw.bind(ctx.prisma); let failed = false;
+    const spy = vi.spyOn(ctx.prisma, '$queryRaw').mockImplementation(((q: TemplateStringsArray, ...v: unknown[]) => {
+      if (!failed && !q.join('').includes('kv_entries')) { failed = true; return Promise.reject(new Error('Connection terminated unexpectedly')); }
+      return orig(q, ...v);
+    }) as never);
     const r = await save(s, t.attemptId, t.questions[0]!.id, t.clientId, 1, 'A');
     spy.mockRestore();
     expect(r.status).toBe(500); expect(r.body).not.toHaveProperty('saved');
@@ -98,12 +103,16 @@ describe('security and availability signals', () => {
     const sa = new Client(ctx.app, 'student.a003'); await sa.login(); const sb = new Client(ctx.app, 'student.b004'); await sb.login();
     const ta = await ctx.prisma.attempt.findFirstOrThrow({ where: { student: { user: { email: `student.a003@${DOMAIN}` } } } });
     const tb = await startExam(ctx, sb); const clientA = ta.activeClientId!;
+    const beat = async (attemptId: string, t: number, online: boolean) => {   // overwrite the stored heartbeat (same store the API writes)
+      const a = await ctx.prisma.attempt.findUniqueOrThrow({ where: { id: attemptId }, select: { student: { select: { institutionId: true } } } });
+      await ctx.kv.recordHeartbeat(examId, a.student.institutionId, attemptId, t, online);
+    };
     expect((await sa.post(`/attempts/${ta.id}/heartbeat`, { clientId: clientA, online: true })).status).toBe(200);
     expect((await sb.post(`/attempts/${tb.attemptId}/heartbeat`, { clientId: tb.clientId, online: true })).status).toBe(200);
     let text = await m.render({ forceCampus: true });
     expect(series(text, 'oes_campus_candidates', { institution: 'DMC-B', state: 'disconnected' })).toBe(0);
     // campus A's candidate stops heart-beating (network outage): backdate heartbeat and start time
-    await ctx.redis.client.hset(`hb:${examId}`, ta.id, JSON.stringify({ t: Date.now() - 120_000, online: true }));
+    await beat(ta.id, Date.now() - 120_000, true);
     await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = NOW(3) - INTERVAL 5 MINUTE WHERE id = ${ta.id}`;
     text = await m.render({ forceCampus: true });
     expect(series(text, 'oes_campus_candidates', { institution: 'DMC-A', state: 'disconnected' })).toBeGreaterThanOrEqual(1);
@@ -111,7 +120,7 @@ describe('security and availability signals', () => {
     expect(series(text, 'oes_campus_candidates', { institution: 'DMC-B', state: 'connected' })).toBeGreaterThanOrEqual(1);
     expect(series(text, 'oes_active_attempts')).toBeGreaterThanOrEqual(2);
     // client reports itself offline ⇒ disconnected even with a fresh heartbeat
-    await ctx.redis.client.hset(`hb:${examId}`, tb.attemptId, JSON.stringify({ t: Date.now(), online: false }));
+    await beat(tb.attemptId, Date.now(), false);
     await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = NOW(3) - INTERVAL 5 MINUTE WHERE id = ${tb.attemptId}`;
     text = await m.render({ forceCampus: true });
     expect(series(text, 'oes_campus_candidates', { institution: 'DMC-B', state: 'disconnected' })).toBeGreaterThanOrEqual(1);

@@ -3,7 +3,7 @@ import argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
 import { MetricsService } from '../../infra/metrics.service';
 import { PrismaService } from '../../infra/prisma.service';
-import { RedisService } from '../../infra/redis.service';
+import { KvService } from '../../infra/kv.service';
 import { AuditService } from '../audit/audit.service';
 import { MFA_ROLES, dropUserSessions, sha256, type AuthUser } from '../../common/auth';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../../common/errors';
@@ -17,10 +17,10 @@ const normRecovery = (c: string) => c.replace(/[\s-]/g, '').toUpperCase();
 /** TOTP second factor for privileged staff. Secrets encrypted at rest; recovery codes hashed and single-use; codes cannot be replayed. */
 @Injectable()
 export class MfaService {
-  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly audit: AuditService, private readonly metrics: MetricsService, @Inject(CONFIG) private readonly cfg: Config) {}
+  constructor(private readonly prisma: PrismaService, private readonly kv: KvService, private readonly audit: AuditService, private readonly metrics: MetricsService, @Inject(CONFIG) private readonly cfg: Config) {}
   private get material() { return this.cfg.MFA_KEY ?? this.cfg.COOKIE_SECRET; }
   required(role: AuthUser['role']) { return this.cfg.MFA_ENFORCE === 'true' && MFA_ROLES.includes(role); }
-  private async refresh(userSessionHash?: string) { if (userSessionHash) await this.redis.del(`sess:${userSessionHash}`); }
+  private async refresh(userSessionHash?: string) { if (userSessionHash) await this.kv.del(`sess:${userSessionHash}`); }
 
   /** Step 1: generate a pending secret. Not active until a valid code proves the authenticator works (`enable`). */
   async setup(u: AuthUser, ip?: string) {
@@ -61,7 +61,7 @@ export class MfaService {
       this.prisma.session.updateMany({ where: { userId: u.id, tokenHash: { not: u.sessionHash }, revokedAt: null }, data: { revokedAt: new Date() } }),
       this.prisma.session.updateMany({ where: { tokenHash: u.sessionHash }, data: { mfaVerifiedAt: new Date() } }),
     ]);
-    await dropUserSessions(this.redis, u.id);
+    await dropUserSessions(this.kv, u.id);
     await this.audit.log({ actor: u, action: 'mfa.enabled', entity: 'user', entityId: u.id, ip });
     return { enabled: true, recoveryCodes: codes, note: 'Store these recovery codes offline. Each works once; they are not shown again.' };
   }
@@ -112,7 +112,7 @@ export class MfaService {
     if (!t) throw notFound('User');
     await this.clear(userId);
     await this.prisma.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
-    await dropUserSessions(this.redis, userId);
+    await dropUserSessions(this.kv, userId);
     await this.audit.log({ actor, action: 'mfa.reset', entity: 'user', entityId: userId, ip });
     return { ok: true };
   }
