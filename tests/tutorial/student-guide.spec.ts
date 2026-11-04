@@ -11,6 +11,8 @@ import { expect, test, type Browser, type Locator, type Page } from '@playwright
 const OUT = process.env.TUTORIAL_OUT ?? 'test-results-tutorial';
 const VOICE = JSON.parse(fs.readFileSync(path.join(process.env.TUTORIAL_VOICE ?? OUT, 'voice', 'manifest.json'), 'utf8')) as Record<string, { file: string; duration: number; sub: string }>;
 const PW = 'Sturdy-Pass-2026!x';
+// the university seal, embedded so the title cards do not depend on the app serving it
+const SEAL = 'data:image/jpeg;base64,' + fs.readFileSync(path.join(__dirname, 'szabmu-seal.jpg')).toString('base64');
 const STAFF_PW = 'Demo-Passw0rd-2026!';
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const digits = () => String(Math.floor(1000 + Math.random() * 8999));
@@ -58,7 +60,7 @@ async function choose(page: Page, loc: Locator, value: string | { label: string 
 async function card(page: Page, kicker: string, title: string, sub: string) {
   await page.goto('about:blank');
   await page.setContent(`<body style="margin:0;height:100vh;display:grid;place-items:center;background:radial-gradient(120% 90% at 30% 20%,#8f2433 0%,#5e1420 60%,#3f0c15 100%);color:#fff;font-family:'Segoe UI',system-ui,sans-serif;text-align:center">
-    <div style="max-width:980px;padding:0 40px"><img src="http://localhost:3000/logo-white.png" alt="" style="height:86px;margin-bottom:34px;opacity:.96">
+    <div style="max-width:980px;padding:0 40px"><div style="width:132px;height:132px;margin:0 auto 30px;border-radius:50%;background:#fff;display:grid;place-items:center;box-shadow:0 8px 30px rgba(0,0,0,.35)"><img src="${SEAL}" alt="SZABMU seal" style="width:118px;height:118px;border-radius:50%;object-fit:contain"></div>
     <div style="font-size:16px;letter-spacing:.22em;text-transform:uppercase;color:#f0c25a;font-weight:700">${kicker}</div>
     <div style="font-size:50px;font-weight:700;margin-top:12px;line-height:1.15">${title}</div>
     <div style="width:64px;height:4px;background:#e0a526;border-radius:2px;margin:26px auto"></div>
