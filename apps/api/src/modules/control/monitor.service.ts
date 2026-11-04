@@ -6,14 +6,13 @@ import { notFound } from '../../common/errors';
 import { MetricsService } from '../../infra/metrics.service';
 import { PrismaService } from '../../infra/prisma.service';
 import { idList, int } from '../../infra/sql';
-import { RedisService } from '../../infra/redis.service';
+import { KvService } from '../../infra/kv.service';
 import { ExamEventsService, type Subscriber, type Viewer } from './events.service';
 
 export interface CampusStat { institutionId: string; code: string; name: string; allocated: number; eligible: number; entered: number; inProgress: number; suspended: number; submitted: number; autoSubmitted: number; incidents: number; online: number | null; disconnected: number | null; attendancePct: number | null; warning: string | null }
 interface Raw { at: number; status: string; stateVersion: number; campuses: Omit<CampusStat, 'online' | 'disconnected' | 'warning' | 'attendancePct'>[]; online: Map<string, number> | null; cursor: number }
 
 interface Row { studentId: string; regNo: string; fullName: string; institution: string; institutionId: string; rosterStatus: string; attemptId: string | null; status: string | null; suspendedAt: Date | null; deadlineAt: Date | null; startedAt: Date | null; integrityFlags: number | null; extraTimeMin: number; answered: number | null; lastSavedAt: Date | null }
-const hbzKey = (examId: string, inst?: string) => (inst ? `hbz:${examId}:${inst}` : `hbz:${examId}`);
 const TTL_MS = 1500;
 export const CANDIDATE_STATUS = ['NOT_STARTED', 'IN_PROGRESS', 'SUSPENDED', 'SUBMITTED', 'AUTO_SUBMITTED'] as const;
 export type CandidateFilter = (typeof CANDIDATE_STATUS)[number];
@@ -30,7 +29,7 @@ export class MonitorService implements OnModuleInit {
   private readonly cache = new Map<string, { at: number; p: Promise<Raw> }>();
   /** How long the last aggregate took per exam: the cache window stretches to 4× that, so a slow aggregate can never recompute back-to-back. */
   private readonly lastMs = new Map<string, number>();
-  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly events: ExamEventsService, private readonly metrics: MetricsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly kv: KvService, private readonly events: ExamEventsService, private readonly metrics: MetricsService) {}
   onModuleInit() { this.events.onTick = (examId, subs) => this.pushStats(examId, subs); }
 
   // ───────────── who may look at what ─────────────
@@ -85,15 +84,7 @@ export class MonitorService implements OnModuleInit {
     // MySQL counts are BIGINT; the snapshot does arithmetic on them.
     const campuses: Raw['campuses'] = counted.map((c) => ({ ...c, allocated: int(c.allocated), eligible: int(c.eligible), entered: int(c.entered), inProgress: int(c.inProgress),
       suspended: int(c.suspended), submitted: int(c.submitted), autoSubmitted: int(c.autoSubmitted), incidents: int(c.incidents) }));
-    let online: Map<string, number> | null = null;
-    if (this.redis.available) {
-      try {
-        const min = Date.now() - HEARTBEAT_STALE_SECONDS * 1000; const p = this.redis.client.pipeline();
-        for (const c of campuses) p.zcount(hbzKey(examId, c.institutionId), min, '+inf');
-        const res = await p.exec();
-        if (res && res.every(([e]) => !e)) online = new Map(campuses.map((c, i) => [c.institutionId, Number(res[i]![1])]));
-      } catch { online = null; }
-    }
+    const online = await this.kv.onlineByCampus(examId, campuses.map((c) => c.institutionId), Date.now() - HEARTBEAT_STALE_SECONDS * 1000);
     return { at: Date.now(), status: ex.status, stateVersion: ex.v, campuses, online, cursor: await this.events.latestId(examId) };
   }
 
@@ -112,8 +103,8 @@ export class MonitorService implements OnModuleInit {
       allocated: sum((c) => c.allocated)!, eligible: sum((c) => c.eligible)!, admitted: sum((c) => c.entered)!, inProgress: sum((c) => c.inProgress)!, suspended: sum((c) => c.suspended)!,
       online: sum((c) => c.online), disconnected: sum((c) => c.disconnected), submitted: sum((c) => c.submitted)!, autoSubmitted: sum((c) => c.autoSubmitted)!, activeIncidents: sum((c) => c.incidents)!,
     };
-    const reasons: string[] = []; if (raw.online === null) reasons.push('Connection state unavailable (Redis heartbeat store not reachable)');
-    if (!this.events.redisSubscriberUp) reasons.push('Live event channel degraded: updates are delivered from the database with a short delay');
+    const reasons: string[] = []; if (raw.online === null) reasons.push('Connection state unavailable (heartbeat store not reachable)');
+    if (!this.events.liveChannelUp) reasons.push('Live event channel degraded: updates are delivered from the database with a short delay');
     return {
       examId, serverNow: new Date().toISOString(), status: raw.status, stateVersion: raw.stateVersion, cursor: raw.cursor,
       freshness: { computedAt: new Date(raw.at).toISOString(), ageMs: Date.now() - raw.at, degraded: reasons.length > 0, reasons },
@@ -148,13 +139,10 @@ export class MonitorService implements OnModuleInit {
     return { total, page, pageSize, serverNow: new Date().toISOString(), rows: await this.withConnection(examId, rows) };
   }
 
-  /** Connection state for the rows on screen only (one pipelined ZSCORE per attempt on the page). Unknown without Redis — never guessed. */
+  /** Connection state for the rows on screen only (one pipelined ZSCORE per attempt on the page). Unknown when the heartbeat store is down — never guessed. */
   private async withConnection(examId: string, rows: Row[]) {
-    let beats: (number | null)[] | null = null;
     const live = rows.filter((r) => r.attemptId && r.status === 'IN_PROGRESS');
-    if (live.length && this.redis.available) {
-      try { const p = this.redis.client.pipeline(); for (const r of live) p.zscore(hbzKey(examId), r.attemptId!); const res = await p.exec(); if (res?.every(([e]) => !e)) beats = res.map(([, v]) => (v == null ? null : Number(v))); } catch { beats = null; }
-    }
+    const beats = live.length ? await this.kv.lastBeats(examId, live.map((r) => r.attemptId!)) : null;
     const idx = new Map(live.map((r, i) => [r.attemptId!, i])); const now = Date.now();
     return rows.map((r) => {
       let connection: 'NOT_STARTED' | 'FINISHED' | 'SUSPENDED' | 'ONLINE' | 'DISCONNECTED' | 'UNKNOWN';

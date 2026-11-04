@@ -3,7 +3,7 @@ import argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
 import type { Role } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
-import { RedisService } from '../../infra/redis.service';
+import { KvService } from '../../infra/kv.service';
 import { AuditService } from '../audit/audit.service';
 import { dropUserSessions, scope, type AuthUser } from '../../common/auth';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
@@ -17,7 +17,7 @@ export const tempPassword = () => `Tmp-${randomBytes(9).toString('base64url')}-9
 
 @Injectable()
 export class OrgService {
-  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly audit: AuditService) {}
+  constructor(private readonly prisma: PrismaService, private readonly kv: KvService, private readonly audit: AuditService) {}
 
   // ── institutions ──
   listInstitutions(u: AuthUser) {
@@ -126,7 +126,7 @@ export class OrgService {
       }
       if (d.active === false) await tx.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
     });
-    await dropUserSessions(this.redis, id);
+    await dropUserSessions(this.kv, id);
     await this.audit.log({ actor: u, action: 'user.update', entity: 'user', entityId: id, meta: d as never, ip });
     return { ok: true };
   }
@@ -140,7 +140,7 @@ export class OrgService {
       this.prisma.user.update({ where: { id }, data: { passwordHash: await argon2.hash(pw, { type: argon2.argon2id }), mustChangePw: true, failedLogins: 0, lockedUntil: null } }),
       this.prisma.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } }),
     ]);
-    await dropUserSessions(this.redis, id);
+    await dropUserSessions(this.kv, id);
     await this.audit.log({ actor: u, action: 'user.password_reset_by_admin', entity: 'user', entityId: id, ip });
     return { temporaryPassword: pw };
   }

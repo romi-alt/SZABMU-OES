@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 import { PORTAL_HEADER, can, isCampusScoped, portalOf, roleAllowedOnPortal, type Permission, type Role } from '@oes/shared';
 import { PrismaService } from '../infra/prisma.service';
-import { RedisService } from '../infra/redis.service';
+import { KvService } from '../infra/kv.service';
 import { AppError, forbidden } from './errors';
 import { CONFIG, type Config } from '../config';
 
@@ -43,9 +43,9 @@ declare module 'fastify' {
   }
 }
 
-export async function loadSession(prisma: PrismaService, redis: RedisService, token: string, mfaEnforce = false): Promise<AuthUser | null> {
+export async function loadSession(prisma: PrismaService, kv: KvService, token: string, mfaEnforce = false): Promise<AuthUser | null> {
   const hash = sha256(token);
-  const cached = await redis.getJson<AuthUser>(`sess:${hash}`);
+  const cached = await kv.getJson<AuthUser>(`sess:${hash}`);
   if (cached) return cached;
   const s = await prisma.session.findUnique({
     where: { tokenHash: hash },
@@ -64,15 +64,15 @@ export async function loadSession(prisma: PrismaService, redis: RedisService, to
     mustChangePw: u.mustChangePw,
     mfa: u.totpEnabledAt ? (s.mfaVerifiedAt ? 'ok' : 'pending') : mfaEnforce && MFA_ROLES.includes(u.role) ? 'enroll' : 'ok',
   };
-  await redis.setJson(`sess:${hash}`, user, 120); // invalidated explicitly on logout, deactivation, password reset and scope changes
-  await redis.client.sadd(`usess:${u.id}`, hash).catch(() => undefined);
+  await kv.setJson(`sess:${hash}`, user, 120); // invalidated explicitly on logout, deactivation, password reset and scope changes
+  await kv.addToSet(`usess:${u.id}`, hash);
   return user;
 }
 
-export async function dropUserSessions(redis: RedisService, userId: string) {
+export async function dropUserSessions(kv: KvService, userId: string) {
   try {
-    const hashes = await redis.client.smembers(`usess:${userId}`);
-    await redis.del(...hashes.map((h) => `sess:${h}`), `usess:${userId}`);
+    const hashes = await kv.members(`usess:${userId}`);
+    await kv.del(...hashes.map((h) => `sess:${h}`)); await kv.dropSet(`usess:${userId}`);
   } catch {
     /* cache only */
   }
@@ -80,7 +80,7 @@ export async function dropUserSessions(redis: RedisService, userId: string) {
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector, private readonly prisma: PrismaService, private readonly redis: RedisService, @Inject(CONFIG) private readonly cfg: Config) {}
+  constructor(private readonly reflector: Reflector, private readonly prisma: PrismaService, private readonly kv: KvService, @Inject(CONFIG) private readonly cfg: Config) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const handler = ctx.getHandler();
@@ -92,7 +92,7 @@ export class AuthGuard implements CanActivate {
 
     const token = (req.cookies as Record<string, string | undefined> | undefined)?.[SESSION_COOKIE];
     if (!token) throw new AppError(401, 'UNAUTHENTICATED', 'Sign in required');
-    const user = await loadSession(this.prisma, this.redis, token, this.cfg.MFA_ENFORCE === 'true');
+    const user = await loadSession(this.prisma, this.kv, token, this.cfg.MFA_ENFORCE === 'true');
     if (!user) throw new AppError(401, 'UNAUTHENTICATED', 'Session expired or invalid');
     req.user = user;
     // Two-portal deployment: a session is only honoured on the portal its role belongs to (fail closed when the proxy header is missing).

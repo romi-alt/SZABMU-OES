@@ -5,7 +5,7 @@ import { startableStates, type ExamState } from '../control/exam-state';
 import { answerDigest, receiptCode } from '@oes/shared/server';
 import { PrismaService } from '../../infra/prisma.service';
 import { int, retryOnDeadlock, stringList } from '../../infra/sql';
-import { RedisService } from '../../infra/redis.service';
+import { KvService } from '../../infra/kv.service';
 import { QUEUES, QueuesService } from '../../infra/queues.service';
 import { AuditService } from '../audit/audit.service';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../../common/errors';
@@ -28,7 +28,7 @@ export class DeliveryService {
   private readonly log = new Logger('Delivery');
   constructor(
     private readonly prisma: PrismaService,
-    private readonly redis: RedisService,
+    private readonly kv: KvService,
     private readonly queues: QueuesService,
     private readonly audit: AuditService,
     @Inject(CONFIG) private readonly cfg: Config,
@@ -42,14 +42,14 @@ export class DeliveryService {
   /** The approved paper is immutable, so the candidate-facing view is safe to cache. Never contains the key. */
   async paperFor(examId: string): Promise<PaperQuestion[]> {
     const key = `paper:${examId}`;
-    const hit = await this.redis.getJson<PaperQuestion[]>(key);
+    const hit = await this.kv.getJson<PaperQuestion[]>(key);
     if (hit) return hit;
     const rows = await this.prisma.examQuestion.findMany({ where: { examId }, orderBy: { position: 'asc' } });
     const paper = rows.map((r) => {
       const s = r.snapshot as { type: string; vignette: string | null; stem: string; options: { label: string; text: string }[] };
       return { id: r.id, position: r.position, marks: r.marks, type: s.type, vignette: s.vignette, stem: s.stem, options: s.options };
     });
-    await this.redis.setJson(key, paper, 3600);
+    await this.kv.setJson(key, paper, 3600);
     return paper;
   }
 
@@ -286,8 +286,7 @@ export class DeliveryService {
     }
     if (a.activeClientId === clientId && a.status === 'IN_PROGRESS') {
       const t = now.getTime();
-      try { await this.redis.client.pipeline().hset(`hb:${a.examId}`, a.id, JSON.stringify({ t, online })).expire(`hb:${a.examId}`, 86400)
-        .zadd(`hbz:${a.examId}`, t, a.id).expire(`hbz:${a.examId}`, 86400).zadd(`hbz:${a.examId}:${a.inst}`, t, a.id).expire(`hbz:${a.examId}:${a.inst}`, 86400).exec(); } catch { /* coordination only */ }
+      try { await this.kv.recordHeartbeat(a.examId, a.inst, a.id, t, online); } catch { /* coordination only */ }
     }
     return { status: a.status, serverNow: now, deadlineAt: a.deadlineAt, superseded: a.activeClientId !== clientId, suspended: !!a.suspendedAt, suspensionPolicy: a.suspensionPolicy, examStatus: a.examStatus, stateVersion: a.stateVersion };
   }
@@ -392,7 +391,7 @@ export class DeliveryService {
       // Best effort and time-boxed: BullMQ waits indefinitely while Redis is down, which must never delay the receipt.
       // The lifecycle sweeper grades any sealed attempt that was not enqueued.
       // `bulk` (reconciler) seals thousands of attempts and grades them from the database itself: no per-attempt Redis job.
-      if (this.redis.available && !o.bulk) await Promise.race([
+      if (this.kv.available && !o.bulk) await Promise.race([
         this.queues.add(QUEUES.grade, 'grade', { attemptId }, { jobId: `grade-${attemptId}` }).catch((e) => this.log.warn(`grade enqueue failed (sweeper will recover): ${e.message}`)),
         new Promise<void>((resolve) => setTimeout(() => { this.log.warn('grade enqueue timed out (sweeper will recover)'); resolve(); }, 1500).unref()),
       ]);

@@ -6,7 +6,7 @@ import { AppError, badRequest, conflict, notFound } from '../../common/errors';
 import { MetricsService } from '../../infra/metrics.service';
 import { PrismaService } from '../../infra/prisma.service';
 import { idList, int, retryOnDeadlock, stringList } from '../../infra/sql';
-import { RedisService } from '../../infra/redis.service';
+import { KvService } from '../../infra/kv.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ExamEventsService } from './events.service';
@@ -35,7 +35,7 @@ export class ExamControlService {
   private readonly log = new Logger('ExamControl');
   constructor(
     private readonly prisma: PrismaService, readonly audit: AuditService, readonly events: ExamEventsService, private readonly lifecycle: LifecycleService,
-    private readonly monitor: MonitorService, private readonly notifications: NotificationsService, private readonly metrics: MetricsService, private readonly redis: RedisService,
+    private readonly monitor: MonitorService, private readonly notifications: NotificationsService, private readonly metrics: MetricsService, private readonly kv: KvService,
   ) {}
 
   // ───────────── command runner ─────────────
@@ -364,7 +364,7 @@ export class ExamControlService {
       recentEvents: recent.map((e) => ({ id: Number(e.id), type: e.type, version: e.aggregateVersion, at: e.createdAt, delivery: e.deliveryStatus, institutionId: e.institutionId })),
       health: {
         monitoringUpdatedAt: snapshot.freshness.computedAt,
-        redis: { available: this.redis.available, eventChannel: this.events.redisSubscriberUp },
+        redis: { backend: this.kv.backend, available: this.kv.available, eventChannel: this.events.liveChannelUp },
         lifecycle, outbox,
         sseSubscribersThisInstance: this.events.subscriberCount,
         saves: { scope: 'this API instance, since process start', total: saves, ok: saveOk, errors: saveErr, successRate: saves ? Math.round((saveOk / saves) * 10000) / 100 : null, p95Seconds: m.saveDuration.quantile(0.95) },

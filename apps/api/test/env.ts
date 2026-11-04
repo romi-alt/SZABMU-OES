@@ -7,7 +7,9 @@ if (fs.existsSync(envFile)) for (const line of fs.readFileSync(envFile, 'utf8').
 }
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'mysql://oes:oes_dev_password@localhost:3307/szabmu_oes_test';
-process.env.REDIS_URL = (process.env.REDIS_URL ?? 'redis://localhost:6390').replace(/\/\d+$/, '') + '/1';
+// OES_TEST_KV=database runs the whole suite without Redis (coordination state in the database, jobs in process), as on Hostinger.
+if (process.env.OES_TEST_KV === 'database') delete process.env.REDIS_URL;
+else process.env.REDIS_URL = (process.env.REDIS_URL ?? 'redis://localhost:6390').replace(/\/\d+$/, '') + '/1';
 process.env.RUN_WORKERS = 'false';
 process.env.DEV_EXPOSE_CODES = 'true';
 process.env.WEB_ORIGIN = 'http://localhost:3000';

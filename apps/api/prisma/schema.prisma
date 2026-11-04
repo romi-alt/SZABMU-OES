@@ -1132,3 +1132,32 @@ model StudentSignup {
 
   @@map("student_signups")
 }
+
+/// Short-lived coordination state when the deployment runs without Redis (rate-limit windows, e-mail codes, reset tokens, caches).
+/// Never the system of record: expiry is checked on every read and expired rows are swept. `grp` groups the members of a set.
+model KvEntry {
+  k         String   @id @db.VarChar(191)
+  grp       String?  @db.VarChar(191)
+  v         String?  @db.LongText
+  n         Int      @default(0)
+  expiresAt DateTime @db.DateTime(3)
+
+  @@index([grp])
+  @@index([expiresAt])
+  @@map("kv_entries")
+}
+
+/// Latest candidate heartbeat per attempt when the deployment runs without Redis (connection state for the control room).
+/// No foreign keys on purpose: a heartbeat must never take locks on the attempt rows that answer saves and submits use.
+model AttemptHeartbeat {
+  attemptId     String  @id
+  examId        String
+  institutionId String
+  /// Server time of the last heartbeat, epoch milliseconds.
+  t             BigInt
+  online        Boolean
+
+  @@index([examId, institutionId, t])
+  @@index([t])
+  @@map("attempt_heartbeats")
+}

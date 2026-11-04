@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { isValidPhone, PHONE_HINT, LINKS } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
-import { RedisService } from '../../infra/redis.service';
+import { KvService } from '../../infra/kv.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { dropUserSessions, type AuthUser } from '../../common/auth';
@@ -17,7 +17,7 @@ export interface ProfileInput { fullName: string; fatherName: string; gender: 'M
  */
 @Injectable()
 export class OnboardingService {
-  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly audit: AuditService, private readonly notifications: NotificationsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly kv: KvService, private readonly audit: AuditService, private readonly notifications: NotificationsService) {}
 
   /** Options for the dependent dropdowns, taken from existing records. Programmes per institution come from students and the official register; an institution with no record yet offers every programme. */
   async catalog() {
@@ -59,7 +59,7 @@ export class OnboardingService {
       await tx.studentSignup.update({ where: { userId: u.id }, data: { completedAt: now } });
       await this.audit.append(tx, { actor: u, action: 'student.profile_completed', entity: 'student', entityId: u.id, institutionId: d.institutionId, meta: { regNo: signup.regNo, programId: d.programId, semester: d.semester, selfDeclared: true }, ip });
     });
-    await dropUserSessions(this.redis, u.id);                       // the cached session must pick up the new student id and campus scope
+    await dropUserSessions(this.kv, u.id);                       // the cached session must pick up the new student id and campus scope
     const admins = await this.prisma.user.findMany({ where: { active: true, OR: [{ role: 'SUPER_ADMIN' }, { role: 'CAMPUS_ADMIN', institutions: { some: { institutionId: d.institutionId } } }] }, select: { id: true } });
     await this.notifications.notify(admins.map((a) => a.id), 'New student awaiting verification', `${d.fullName.trim()}  completed the student profile. Verify the academic details before enrolment.`, LINKS.students).catch(() => undefined);
     return { ok: true };
@@ -69,7 +69,7 @@ export class OnboardingService {
   async requestChange(u: AuthUser, note: string, ip?: string) {
     const s = await this.prisma.student.findUnique({ where: { userId: u.id }, select: { id: true, institutionId: true, regNo: true } });
     if (!s) throw new AppError(403, 'PROFILE_INCOMPLETE', 'Complete your profile first.');
-    if ((await this.redis.hit(`rl:chg:${u.id}`, 3600)) > 5) throw new AppError(429, 'RATE_LIMITED', 'Too many requests. Try again later.');
+    if ((await this.kv.hit(`rl:chg:${u.id}`, 3600)) > 5) throw new AppError(429, 'RATE_LIMITED', 'Too many requests. Try again later.');
     const admins = await this.prisma.user.findMany({ where: { active: true, OR: [{ role: 'SUPER_ADMIN' }, { role: 'CAMPUS_ADMIN', institutions: { some: { institutionId: s.institutionId } } }] }, select: { id: true } });
     await this.notifications.notify(admins.map((a) => a.id), 'Student requests an academic change', `${s.regNo}: ${note.trim().slice(0, 400)}`, LINKS.students);
     await this.audit.log({ actor: u, action: 'student.change_requested', entity: 'student', entityId: s.id, institutionId: s.institutionId, meta: { note: note.trim().slice(0, 400) }, ip });

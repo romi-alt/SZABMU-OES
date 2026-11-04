@@ -42,6 +42,7 @@ jobs:
 
   # Hostinger managed Node.js hosting offers Node 18 / 20 / 22 / 24 only; the repo declares engines >=26. This job is the evidence for
   # whether the application builds and passes its tests on the version it will actually run on (24). No e2e here: that runs on `verify`.
+  # It also runs WITHOUT Redis (like Hostinger), so both coordination backends are tested on every push: Redis on `verify`, database here.
   node24:
     runs-on: ubuntu-latest
     services:
@@ -51,13 +52,10 @@ jobs:
         env: { MARIADB_USER: oes, MARIADB_PASSWORD: oes_dev_password, MARIADB_DATABASE: szabmu_oes_test, MARIADB_ROOT_PASSWORD: ci_root_password }
         ports: ["3307:3306"]
         options: --health-cmd "healthcheck.sh --connect --innodb_initialized" --health-interval 5s --health-timeout 3s --health-retries 30
-      redis:
-        image: redis:7-alpine
-        ports: ["6390:6379"]
     env:
       TEST_DATABASE_URL: mysql://oes:oes_dev_password@127.0.0.1:3307/szabmu_oes_test
       DATABASE_URL: mysql://oes:oes_dev_password@127.0.0.1:3307/szabmu_oes_test
-      REDIS_URL: redis://localhost:6390
+      OES_TEST_KV: database   # no Redis at all, exactly like the Hostinger deployment: coordination state in MariaDB, jobs in process
       COOKIE_SECRET: ci-only-cookie-secret-0123456789abcdef0123
       RECEIPT_SECRET: ci-only-receipt-secret-0123456789abcdef0123
     steps:
