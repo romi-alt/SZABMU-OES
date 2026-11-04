@@ -17,7 +17,7 @@ export function smtpTransportOptions(cfg: Pick<Config, 'SMTP_HOST' | 'SMTP_PORT'
   return { host: cfg.SMTP_HOST, port: cfg.SMTP_PORT, secure, auth, requireTLS: !secure && strict, tls: { rejectUnauthorized: strict } };
 }
 
-/** Outbox pattern: every message is persisted first, then delivered by a BullMQ worker. */
+/** Outbox pattern: every message is persisted first, then delivered by a queue consumer (BullMQ, or in process without Redis). */
 @Injectable()
 export class MailService {
   private readonly log = new Logger('Mail');
@@ -39,7 +39,15 @@ export class MailService {
     return m;
   }
 
-  async deliver(id: string) {
+  /** Deliveries in flight in this process, by message id. The registration flows call `deliver` directly right after `enqueue`, and the
+   *  in-process queue (no Redis) starts the same job at once: both callers share one attempt instead of sending the code twice. */
+  private readonly inflight = new Map<string, Promise<void>>();
+  deliver(id: string): Promise<void> {
+    let p = this.inflight.get(id);
+    if (!p) { p = this.deliverOnce(id).finally(() => this.inflight.delete(id)); this.inflight.set(id, p); }
+    return p;
+  }
+  private async deliverOnce(id: string) {
     const m = await this.prisma.outboundMessage.findUnique({ where: { id } });
     if (!m || m.status === 'SENT') return;
     if (!this.cfg.SMTP_HOST) {
@@ -59,11 +67,13 @@ export class MailService {
 
   /**
    * Database-driven backstop for the outbox: delivers messages that were persisted but never sent (queue consumer down, Redis down) or
-   * that failed. Used by the finite reconcile command (cron). No-op without an SMTP host (outbox-only mode), bounded per call and per message.
+   * that failed. Used by the finite reconcile command (cron), and by the worker's own loop when there is no Redis (`minAgeSec` skips messages
+   * whose in-process delivery may still be running). No-op without an SMTP host (outbox-only mode), bounded per call and per message.
    */
-  async retryUndelivered(limit = 25): Promise<{ attempted: number; sent: number }> {
+  async retryUndelivered(limit = 25, minAgeSec = 0): Promise<{ attempted: number; sent: number }> {
     if (!this.cfg.SMTP_HOST) return { attempted: 0, sent: 0 };
-    const due = await this.prisma.outboundMessage.findMany({ where: { status: { in: ['PENDING', 'FAILED'] }, attempts: { lt: 5 }, createdAt: { gt: new Date(Date.now() - 24 * 3600_000) } }, orderBy: { createdAt: 'asc' }, take: limit, select: { id: true } });
+    const now = Date.now();
+    const due = await this.prisma.outboundMessage.findMany({ where: { status: { in: ['PENDING', 'FAILED'] }, attempts: { lt: 5 }, createdAt: { gt: new Date(now - 24 * 3600_000), lte: new Date(now - minAgeSec * 1000) } }, orderBy: { createdAt: 'asc' }, take: limit, select: { id: true } });
     let sent = 0;
     for (const m of due) { try { await this.deliver(m.id); sent++; } catch { /* recorded on the row; retried on the next pass until attempts = 5 */ } }
     return { attempted: due.length, sent };
