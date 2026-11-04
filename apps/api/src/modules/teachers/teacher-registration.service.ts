@@ -3,7 +3,7 @@ import argon2 from 'argon2';
 import { randomInt } from 'node:crypto';
 import { checkPassword, isValidPhone, PHONE_HINT, LINKS } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
-import { RedisService } from '../../infra/redis.service';
+import { KvService } from '../../infra/kv.service';
 import { MailService } from '../../infra/mail.service';
 import { AppError, badRequest, conflict } from '../../common/errors';
 import { AuditService } from '../audit/audit.service';
@@ -44,7 +44,7 @@ export function decodePhoto(dataUrl: string): { mime: string; b64: string } {
  */
 @Injectable()
 export class TeacherRegistrationService {
-  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly mail: MailService, private readonly audit: AuditService,
+  constructor(private readonly prisma: PrismaService, private readonly kv: KvService, private readonly mail: MailService, private readonly audit: AuditService,
     private readonly notifications: NotificationsService, @Inject(CONFIG) private readonly cfg: Config) {}
 
   /** Public, read-only options for step 2. Names and codes of academic structure only — no people, no counts. */
@@ -64,7 +64,7 @@ export class TeacherRegistrationService {
 
   /** Public catalog, rate-limited per address (it is unauthenticated). */
   async catalogFor(ip: string) {
-    if ((await this.redis.hit(`rl:treg:cat:${ip}`, 600)) > 60) throw new AppError(429, 'RATE_LIMITED', 'Too many requests. Try again in a few minutes.');
+    if ((await this.kv.hit(`rl:treg:cat:${ip}`, 600)) > 60) throw new AppError(429, 'RATE_LIMITED', 'Too many requests. Try again in a few minutes.');
     return this.catalog();
   }
 
@@ -90,7 +90,7 @@ export class TeacherRegistrationService {
 
   async start(d: TeacherRegistration, ip: string) {
     const email = d.email.trim().toLowerCase();
-    if ((await this.redis.hit(`rl:treg:ip:${ip}`, 3600)) > 30 || (await this.redis.hit(`rl:treg:em:${email}`, 3600)) > 5) throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again later.');
+    if ((await this.kv.hit(`rl:treg:ip:${ip}`, 3600)) > 30 || (await this.kv.hit(`rl:treg:em:${email}`, 3600)) > 5) throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again later.');
     const policy = checkPassword(d.password, [email.split('@')[0] ?? '', d.fullName]);
     if (!policy.ok) throw badRequest(policy.problems[0] ?? 'Choose a stronger password.');
     if (!isValidPhone(d.phone)) throw badRequest(PHONE_HINT);
@@ -104,7 +104,7 @@ export class TeacherRegistrationService {
     if (!taken) {
       const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
       const pending: Pending = { fullName: d.fullName.trim(), passwordHash, employeeId, department: d.department.trim(), designation: d.designation.trim(), phone: d.phone.trim(), photo, assignments: d.assignments, codeHash: sha256(`${email}:${code}`), attempts: 0 };
-      await this.redis.client.set(`treg:${email}`, JSON.stringify(pending), 'EX', TTL_SEC);
+      await this.kv.setText(`treg:${email}`, JSON.stringify(pending), TTL_SEC);
       const msg = await this.mail.enqueue(email, 'SZABMU Examinations — confirm your teacher registration', `Your 6-digit registration code is ${code}. It expires in ${TTL_SEC / 60} minutes.\nAfter you enter it, your registration is sent to the university for approval. You cannot use the system until it is approved.\nIf you did not try to register, ignore this message.`, 'teacher_registration');
       // Managed Node.js hosting cannot be relied on to keep a queue worker alive, so the first delivery attempt is made here, within a time limit;
       // the outbox row and the queued job remain as the retry path (deliver() is idempotent once the message is SENT).
@@ -117,11 +117,11 @@ export class TeacherRegistrationService {
 
   async verify(emailRaw: string, code: string, ip: string) {
     const email = emailRaw.trim().toLowerCase(); const bad = new AppError(400, 'INVALID_CODE', 'The code is incorrect or has expired. Submit your registration again to get a new code.');
-    if ((await this.redis.hit(`rl:treg:verify:${ip}`, 3600)) > 30) throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again later.');
-    const raw = await this.redis.client.get(`treg:${email}`); if (!raw) throw bad;
+    if ((await this.kv.hit(`rl:treg:verify:${ip}`, 3600)) > 30) throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again later.');
+    const raw = await this.kv.getText(`treg:${email}`); if (!raw) throw bad;
     const p = JSON.parse(raw) as Pending;
-    if (p.attempts >= MAX_ATTEMPTS) { await this.redis.client.del(`treg:${email}`); throw bad; }
-    if (p.codeHash !== sha256(`${email}:${code}`)) { p.attempts++; const ttl = await this.redis.client.ttl(`treg:${email}`); if (ttl > 0) await this.redis.client.set(`treg:${email}`, JSON.stringify(p), 'EX', ttl); throw bad; }
+    if (p.attempts >= MAX_ATTEMPTS) { await this.kv.del(`treg:${email}`); throw bad; }
+    if (p.codeHash !== sha256(`${email}:${code}`)) { p.attempts++; const ttl = await this.kv.ttl(`treg:${email}`); if (ttl > 0) await this.kv.setText(`treg:${email}`, JSON.stringify(p), ttl); throw bad; }
     await this.validateAssignments(p.assignments);                                         // the academic data may have changed while the code was pending
     const userId = await this.prisma.$transaction(async (tx) => {
       if (await tx.user.findUnique({ where: { email }, select: { id: true } })) throw conflict('EMAIL_TAKEN', 'This email already has an account');
@@ -132,7 +132,7 @@ export class TeacherRegistrationService {
       await this.audit.append(tx, { actor: { id: user.id, role: 'TEACHER' }, action: 'teacher.registered', entity: 'teacher', entityId: user.id, meta: { employeeId: p.employeeId, requested: p.assignments.length }, ip });
       return user.id;
     });
-    await this.redis.client.del(`treg:${email}`);
+    await this.kv.del(`treg:${email}`);
     await this.notifyAdmins(userId, p.fullName, [...new Set(p.assignments.map((a) => a.institutionId))]);
     return { ok: true };
   }

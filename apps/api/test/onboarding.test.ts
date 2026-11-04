@@ -7,7 +7,7 @@ const PW = 'Sturdy-Pass-2026!x';
 beforeAll(async () => { ctx = await boot({ studentsPerCampus: 4 }); ({ a: { id: A } } = ctx.seeded.institutions as Record<'a' | 'b' | 'c', { id: string }>); PROG = ctx.seeded.programs.mbbs.id; BSN = ctx.seeded.programs.bsn.id; });
 afterAll(async () => { await ctx.app.close(); });
 
-const clear = async () => { const k = await ctx.redis.client.keys('rl:*'); if (k.length) await ctx.redis.client.del(...k); };
+const clear = () => ctx.kv.clearPrefix('rl:');
 async function signUp(extra: { regNo?: string; email?: string } = {}) {
   await clear(); const n = ++seq; const regNo = extra.regNo ?? `ONB-${n}`; const email = extra.email ?? `onb${n}@example.test`;
   const s = await new Client(ctx.app).post('/auth/register', { regNo, email, password: PW }); expect(s.status, s.raw).toBe(200);

@@ -11,6 +11,11 @@ const with_ = (o: NodeJS.ProcessEnv) => ({ ...GOOD, ...o });
 describe('production configuration validation', () => {
   it('accepts a strong configuration', () => { expect(() => loadConfig(GOOD)).not.toThrow(); });
 
+  it('Redis is optional: unset or empty REDIS_URL selects the database backend and is not a problem', () => {
+    expect(loadConfig(with_({ REDIS_URL: undefined })).REDIS_URL).toBeUndefined();
+    expect(loadConfig(with_({ REDIS_URL: '' })).REDIS_URL).toBeUndefined();   // hPanel may keep a key with an empty value
+  });
+
   it.each([
     ['DEV_EXPOSE_CODES=true', { DEV_EXPOSE_CODES: 'true' }, /DEV_EXPOSE_CODES/],
     ['development cookie secret', { COOKIE_SECRET: 'dev-only-cookie-secret-change-me-0123456789' }, /COOKIE_SECRET looks like/],

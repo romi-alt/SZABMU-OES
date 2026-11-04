@@ -72,7 +72,7 @@ export default function ControlCentre() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(140px,100%),1fr))', gap: 12 }} data-testid="stats">
             <Stat k="Allocated" v={t.allocated} /><Stat k="Eligible" v={t.eligible} /><Stat k="Admitted (entered)" v={t.admitted} s={t.eligible ? `${Math.round((t.admitted / t.eligible) * 100)}% of eligible` : undefined} />
-            <Stat k="In progress" v={t.inProgress} s={t.suspended ? `${t.suspended} suspended` : undefined} /><Stat k="Online / disconnected" v={`${n(t.online)} / ${n(t.disconnected)}`} s={t.online === null ? 'unknown — Redis unavailable' : undefined} />
+            <Stat k="In progress" v={t.inProgress} s={t.suspended ? `${t.suspended} suspended` : undefined} /><Stat k="Online / disconnected" v={`${n(t.online)} / ${n(t.disconnected)}`} s={t.online === null ? 'unknown — heartbeat store unavailable' : undefined} />
             <Stat k="Submitted" v={t.submitted} /><Stat k="Auto-submitted" v={t.autoSubmitted} /><Stat k="Remaining" v={t.remaining} s="eligible, not yet sealed" /><Stat k="Active incidents" v={t.activeIncidents} />
           </div>
 
@@ -152,7 +152,7 @@ function HealthCard({ h }: any) {
         {row('Lifecycle worker', `${h.lifecycle.status}${h.lifecycle.lastRunAgeSeconds != null ? ` · last run ${Math.round(h.lifecycle.lastRunAgeSeconds)} s ago` : ' · no run recorded'}`, h.lifecycle.status !== 'OK')}
         {row('Expired attempts awaiting seal', `${h.lifecycle.expiredBacklog}${h.lifecycle.poisonedAttempts ? ` · ${h.lifecycle.poisonedAttempts} failing repeatedly` : ''}`, h.lifecycle.expiredBacklog > 0 || h.lifecycle.poisonedAttempts > 0)}
         {row('Event outbox', `${h.outbox.pending} pending${h.outbox.oldestPendingSeconds ? ` (oldest ${Math.round(h.outbox.oldestPendingSeconds)} s)` : ''} · ${h.outbox.failed} failed`, h.outbox.failed > 0)}
-        {row('Redis', h.redis.available ? (h.redis.eventChannel ? 'available' : 'available, event channel connecting') : 'UNAVAILABLE — monitoring degraded, answers unaffected', !h.redis.available)}
+        {row(h.redis.backend === 'database' ? 'Coordination store' : 'Redis', h.redis.available ? (h.redis.backend === 'database' ? 'database (no Redis) · available' : h.redis.eventChannel ? 'available' : 'available, event channel connecting') : 'UNAVAILABLE — monitoring degraded, answers unaffected', !h.redis.available)}
         {row('Live connections (this instance)', h.sseSubscribersThisInstance)}
         {row('Answer writes (this API instance)', h.saves.total ? `${h.saves.successRate}% ok of ${h.saves.total} · p95 ≤ ${h.saves.p95Seconds === null ? '—' : Math.round(h.saves.p95Seconds * 1000)} ms` : 'no writes yet')}
         {row('API errors (this API instance)', `${h.apiErrors.http5xx} server errors · ${h.apiErrors.unhandled} unhandled`, h.apiErrors.http5xx > 0)}

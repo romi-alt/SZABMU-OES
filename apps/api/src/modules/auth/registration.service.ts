@@ -4,7 +4,7 @@ import { randomInt } from 'node:crypto';
 import { checkPassword } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
 import { idList } from '../../infra/sql';
-import { RedisService } from '../../infra/redis.service';
+import { KvService } from '../../infra/kv.service';
 import { MailService } from '../../infra/mail.service';
 import { AppError, badRequest, conflict } from '../../common/errors';
 import { AuditService } from '../audit/audit.service';
@@ -30,11 +30,11 @@ const REG_NO = /^[A-Za-z0-9][A-Za-z0-9._/-]{2,39}$/;
  */
 @Injectable()
 export class RegistrationService {
-  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly mail: MailService, private readonly audit: AuditService, @Inject(CONFIG) private readonly cfg: Config) {}
+  constructor(private readonly prisma: PrismaService, private readonly kv: KvService, private readonly mail: MailService, private readonly audit: AuditService, @Inject(CONFIG) private readonly cfg: Config) {}
 
   async start(d: { regNo: string; email: string; password: string }, ip: string) {
     const email = d.email.trim().toLowerCase(); const regNo = d.regNo.trim();
-    if ((await this.redis.hit(`rl:reg:ip:${ip}`, 3600)) > 20 || (await this.redis.hit(`rl:reg:no:${regNo.toLowerCase()}`, 3600)) > 5 || (await this.redis.hit(`rl:reg:em:${email}`, 3600)) > 5) throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again later.');
+    if ((await this.kv.hit(`rl:reg:ip:${ip}`, 3600)) > 20 || (await this.kv.hit(`rl:reg:no:${regNo.toLowerCase()}`, 3600)) > 5 || (await this.kv.hit(`rl:reg:em:${email}`, 3600)) > 5) throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again later.');
     if (!REG_NO.test(regNo)) throw badRequest('Enter your registration number using letters, digits and . _ / - only (3 to 40 characters).');
     const policy = checkPassword(d.password, [email.split('@')[0] ?? '']);
     if (!policy.ok) throw badRequest(policy.problems[0] ?? 'Choose a stronger password.');
@@ -51,7 +51,7 @@ export class RegistrationService {
     {
       const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
       const pending: Pending = { regNo, passwordHash, codeHash: sha256(`${email}:${code}`), attempts: 0 };
-      await this.redis.client.set(`reg:${email}`, JSON.stringify(pending), 'EX', TTL_SEC);
+      await this.kv.setText(`reg:${email}`, JSON.stringify(pending), TTL_SEC);
       const m = await this.mail.enqueue(email, 'SZABMU Examinations — confirm your registration', `Your 6-digit registration code is ${code}. It expires in ${TTL_SEC / 60} minutes.\nIf you did not try to register, ignore this message.`, 'student_registration');
       // The first delivery attempt is made here (time-limited) so registration does not depend on a queue worker staying alive; the outbox row remains the retry path.
       await Promise.race([this.mail.deliver(m.id), new Promise((r) => setTimeout(r, 8000))]).catch(() => undefined);
@@ -64,11 +64,11 @@ export class RegistrationService {
   /** Verifies the emailed code and creates the account. Returns the new user's id so the caller can sign them in. */
   async verify(emailRaw: string, code: string, ip: string) {
     const email = emailRaw.trim().toLowerCase(); const bad = new AppError(400, 'INVALID_CODE', 'The code is incorrect or has expired. Start again to get a new one.');
-    if ((await this.redis.hit(`rl:reg:verify:${ip}`, 3600)) > 30) throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again later.');
-    const raw = await this.redis.client.get(`reg:${email}`); if (!raw) throw bad;
+    if ((await this.kv.hit(`rl:reg:verify:${ip}`, 3600)) > 30) throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again later.');
+    const raw = await this.kv.getText(`reg:${email}`); if (!raw) throw bad;
     const p = JSON.parse(raw) as Pending;
-    if (p.attempts >= MAX_ATTEMPTS) { await this.redis.client.del(`reg:${email}`); throw bad; }
-    if (p.codeHash !== sha256(`${email}:${code}`)) { p.attempts++; const ttl = await this.redis.client.ttl(`reg:${email}`); if (ttl > 0) await this.redis.client.set(`reg:${email}`, JSON.stringify(p), 'EX', ttl); throw bad; }
+    if (p.attempts >= MAX_ATTEMPTS) { await this.kv.del(`reg:${email}`); throw bad; }
+    if (p.codeHash !== sha256(`${email}:${code}`)) { p.attempts++; const ttl = await this.kv.ttl(`reg:${email}`); if (ttl > 0) await this.kv.setText(`reg:${email}`, JSON.stringify(p), ttl); throw bad; }
     let userId: string;
     try {
       userId = await this.prisma.$transaction(async (tx) => {
@@ -81,7 +81,7 @@ export class RegistrationService {
         return user.id;
       });
     } catch (e) { if ((e as { code?: string }).code === 'P2002') throw conflict('REG_NO_TAKEN', 'This registration number is already in use. Contact your campus examination office.'); throw e; }
-    await this.redis.client.del(`reg:${email}`);
+    await this.kv.del(`reg:${email}`);
     return { ok: true, userId };
   }
 

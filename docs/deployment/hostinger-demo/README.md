@@ -11,17 +11,17 @@
 | Student portal | **https://szabmu.site** (also `www.` and `oes.szabmu.site`) — candidates sit exams |
 | Staff dashboard | https://dashboard.szabmu.site (college / university roles) |
 | Original free URL | https://yellowgreen-grasshopper-337716.hostingersite.com (mapped to the student portal) |
-| Health check | `GET /api/health` → `{"status":"ok","db":true,"redis":true}` |
+| Health check | `GET /api/health` → `{"status":"ok","db":true,"redis":null,"coordination":"database"}` without Redis (`"redis":true,"coordination":"redis"` with it) |
 | Hosting | Hostinger Cloud Enterprise (order `1009002313`, hPanel user `u943531942`), **one** managed Node.js website |
 | Node.js | 24 (highest Hostinger offers; CI job `node24` is green for build/typecheck/lint/tests) |
 | Source | GitHub `romi-alt/SZABMU-OES`, branch `main` — Hostinger Git auto-deploy rebuilds on every push |
 | Database | **Hostinger managed MariaDB 11.8** (since 2026-11-04): database/user `u943531942_szabmu` on `srv1774.hstgr.io:3306` (same server as the website), TLS with certificate verification (`sslaccept=strict`). Limits: 150 connections, **500 new connections per hour**, idle connections closed after 300 s, statements capped at 300 s. Before that: Neon PostgreSQL `szabmu-oes-us` (`muddy-tooth-28867630`) — kept read-only as the pre-migration copy |
-| Redis | **Upstash** free tier (one database allowed): `szabmu-oes-us`, AWS `us-east-1` (N. Virginia), TLS `rediss://…happy-parrot-199048.upstash.io:6379`, 500k commands/month. The Singapore database was deleted 2026-11-01 |
+| Redis | **Optional** (see "Running without Redis"). When used: **Upstash** free tier (one database allowed): `szabmu-oes-us`, AWS `us-east-1` (N. Virginia), TLS `rediss://…happy-parrot-199048.upstash.io:6379`, 500k commands/month. The Singapore database was deleted 2026-11-01 |
 | Entry point | `scripts/hostinger-single-site.mjs` (`npm run start:hostinger`) |
 
 ## Why it looks like this
 
-1. **Hostinger has no Redis**, so Redis is Upstash (free tier) over TLS. The database moved from Neon PostgreSQL to Hostinger's own MariaDB
+1. **Hostinger has no Redis**, so the app can run without it (`REDIS_URL` unset: coordination state in MariaDB, jobs in process) or use Upstash over TLS. The database moved from Neon PostgreSQL to Hostinger's own MariaDB
    on 2026-11-04 (`apps/api/prisma/migrations/20261104000000_mysql_baseline`): the integrity layer was ported — append-only and
    answer-lock triggers, CHECK constraints, partial unique indexes as generated columns, row locks on `app_locks` instead of advisory locks —
    and every connection pins `time_zone=+00:00` (see `apps/api/src/infra/db-url.ts`). The old PostgreSQL migrations are in `prisma/migrations-postgres-archive`.
@@ -61,7 +61,7 @@
    | Variable | Value / note |
    |---|---|
    | `DATABASE_URL` | Hostinger MariaDB URL above (`mysql://…?sslaccept=strict`) |
-   | `REDIS_URL` | Upstash `rediss://…` |
+   | `REDIS_URL` | optional — leave unset (or empty) to run on MariaDB only; Upstash `rediss://…` to use Redis |
    | `COOKIE_SECRET`, `RECEIPT_SECRET`, `MFA_KEY`, `METRICS_TOKEN` | independent random values (≥ 36 bytes base64url) |
    | `API_INTERNAL_URL` | `http://127.0.0.1:47321` (**build-time**) |
    | `API_PORT` | `47321` |
@@ -128,7 +128,23 @@ Live check: student on oes 200, CCE on dashboard 200, cross-portal 401 both ways
 Free-tier limits to watch: Upstash 500k commands/month (BullMQ polling consumes some continuously); Neon free compute auto-suspends when idle,
 so the first request after a quiet period is slower.
 
-## Redis from Hostinger (intermittent)
+## Running without Redis
+
+With `REDIS_URL` unset (or empty) nothing needs Redis (`apps/api/src/infra/kv.service.ts`, migration `20261104300000_database_kv_store`,
+applied automatically on start):
+
+| Was in Redis | Without Redis |
+|---|---|
+| registration codes (`reg:*`, `treg:*`), reset tokens (`rt:*`), rate-limit windows (`rl:*`), session + paper caches | table `kv_entries` (expiry checked on every read against the database clock, swept every minute) |
+| candidate heartbeats (online / last seen) | table `attempt_heartbeats` (one row per attempt, upserted) |
+| exam event pub/sub (live control room) | in-process dispatch; other processes catch up from `exam_events` every 2 s |
+| BullMQ mail + grading jobs | in-process runner (5 attempts, exponential back-off); the worker also sweeps the mail outbox every 15 s and the lifecycle sweeper grades anything missed |
+
+Cost: a few extra small queries (a sign-in or registration touches `kv_entries`; each 15 s heartbeat is one upsert). Fine for the demo
+scale; with Redis back, set `REDIS_URL` again — both backends are tested in CI (`verify` with Redis, `node24` without).
+Queued jobs that were not yet run are lost on a restart, but every one has a database backstop, so nothing is lost for good.
+
+## Redis from Hostinger (history, when Upstash was used)
 
 Right after the first deploys every Redis connection to Upstash ended in `ECONNRESET` and `/api/health` reported `degraded`; about
 20 minutes later it reported `{"status":"ok","db":true,"redis":true}` with no change on our side. So outbound 6379 is **not** blocked —
@@ -147,7 +163,7 @@ Done 2026-11-01: Redis now lives in `us-east-1` next to the Boston web server (h
 (`rediss://`, TLS-only) was reset, `queue.add()` waited forever, and any request that enqueued work (password-reset / registration
 mail) hung with no response. The health check uses a different client that keeps TLS, so it stayed `ok`. Fixed by `bullConnection()`
 (keeps TLS, username, password, db) plus a 3 s cap on enqueueing mail; the outbox row is always written first.
-Removing the dependency entirely is still PR #3 (after porting the exam-control services).
+Since 2026-11-04 the dependency is optional (see "Running without Redis").
 
 ## Lessons (things that cost time)
 
@@ -175,7 +191,7 @@ Removing the dependency entirely is still PR #3 (after porting the exam-control 
 menu: accessible disclosure from #2 + icon button / unread filter from foundation) and `apps/web/src/app/(app)/exams/page.tsx` (typed DTOs
 from #2 + URL state / required markers from foundation) were resolved by keeping both sides.
 
-**Not merged: PR #3 `claude/hosting-stage1-no-redis`.** It removes Redis/BullMQ but predates the exam-control backend now on `main`, whose
+**Not merged: PR #3 `claude/hosting-stage1-no-redis`** (superseded by the optional-Redis backend, 2026-11-04). It removed Redis/BullMQ but predates the exam-control backend now on `main`, whose
 event channel, live monitor, control service and student registration use Redis (`modules/control/events.service.ts`, `monitor.service.ts`,
 `control.service.ts`, `auth/registration.service.ts`). Merging needs those ported to the database-backed design first (hosting track, see
 `docs/COORDINATION.md`); a mechanical conflict resolution would break live exam control.

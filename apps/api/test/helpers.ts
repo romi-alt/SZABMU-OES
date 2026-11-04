@@ -1,22 +1,22 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createApp } from '../src/bootstrap';
 import { PrismaService } from '../src/infra/prisma.service';
-import { RedisService } from '../src/infra/redis.service';
+import { KvService } from '../src/infra/kv.service';
 import { DOMAIN, DEMO_PASSWORD, resetDatabase, seed } from '../src/seed/seed';
 import type { INestApplicationContext } from '@nestjs/common';
 
-export interface Ctx { app: NestFastifyApplication; prisma: PrismaService; redis: RedisService; seeded: Awaited<ReturnType<typeof seed>> }
+export interface Ctx { app: NestFastifyApplication; prisma: PrismaService; kv: KvService; seeded: Awaited<ReturnType<typeof seed>> }
 
 export async function boot(opts: { studentsPerCampus?: number } = {}): Promise<Ctx> {
   const app = await createApp();
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   const prisma = app.get(PrismaService);
-  const redis = app.get(RedisService);
+  const kv = app.get(KvService);
   await resetDatabase(prisma);
-  await redis.client.flushdb();
+  await kv.flushAll();
   const seeded = await seed(app as unknown as INestApplicationContext, { studentsPerCampus: opts.studentsPerCampus ?? 6 });
-  return { app, prisma, redis, seeded };
+  return { app, prisma, kv, seeded };
 }
 
 export interface Res<T = any> { status: number; body: T; headers: Record<string, any>; raw: string }
