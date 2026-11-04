@@ -195,7 +195,7 @@ enum MessageStatus {
 model Institution {
   id          String          @id @default(uuid()) @db.Char(36)
   code        String          @unique
-  name        String
+  name        String          @db.VarChar(255)
   type        InstitutionType
   affiliation Affiliation     @default(CONSTITUENT)
   city        String?
@@ -220,7 +220,7 @@ model Department {
   id            String      @id @default(uuid()) @db.Char(36)
   institutionId String      @db.Char(36)
   code          String
-  name          String
+  name          String      @db.VarChar(255)
   institution   Institution @relation(fields: [institutionId], references: [id])
   createdAt     DateTime    @default(now()) @db.DateTime(3)
 
@@ -231,7 +231,7 @@ model Department {
 model Program {
   id          String        @id @default(uuid()) @db.Char(36)
   code        String        @unique
-  name        String
+  name        String        @db.VarChar(255)
   level       String        @default("UNDERGRADUATE")
   durationYrs Int           @default(5)
   active      Boolean       @default(true)
@@ -248,7 +248,7 @@ model Course {
   id                String             @id @default(uuid()) @db.Char(36)
   programId         String             @db.Char(36)
   code              String             @unique
-  title             String
+  title             String             @db.VarChar(255)
   semester          Int
   credits           Int                @default(3)
   program           Program            @relation(fields: [programId], references: [id])
@@ -266,8 +266,8 @@ model Course {
 
 model User {
   id                String    @id @default(uuid()) @db.Char(36)
-  email             String    @unique
-  fullName          String
+  email             String    @unique @db.VarChar(254)
+  fullName          String    @db.VarChar(255)
   phone             String?
   role              Role
   passwordHash      String
@@ -360,7 +360,7 @@ model RosterEntry {
   institutionId   String      @db.Char(36)
   programId       String      @db.Char(36)
   regNo           String      @unique
-  fullName        String
+  fullName        String      @db.VarChar(255)
   dateOfBirth     DateTime    @db.Date
   semester        Int
   batchYear       Int
@@ -470,7 +470,7 @@ model QuestionOption {
 model Exam {
   id                      String             @id @default(uuid()) @db.Char(36)
   code                    String             @unique
-  title                   String
+  title                   String             @db.VarChar(255)
   courseId                String             @db.Char(36)
   createdBy               String             @db.Char(36)
   status                  ExamStatus         @default(DRAFT)
@@ -814,7 +814,7 @@ model Notification {
 
 model OutboundMessage {
   id        String        @id @default(uuid()) @db.Char(36)
-  toEmail   String
+  toEmail   String        @db.VarChar(254)
   subject   String        @db.Text
   body      String        @db.Text
   kind      String
