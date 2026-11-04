@@ -97,7 +97,7 @@ export class TeacherRegistrationService {
     await this.validateAssignments(d.assignments);
     const photo = d.photo ? decodePhoto(d.photo) : undefined;
     const employeeId = d.employeeId.trim();
-    if (await this.prisma.teacherProfile.findFirst({ where: { employeeId: { equals: employeeId, mode: 'insensitive' } }, select: { userId: true } })) throw conflict('EMPLOYEE_ID_TAKEN', 'This faculty / employee ID is already registered. Contact your campus administrator.');
+    if (await this.prisma.teacherProfile.findFirst({ where: { employeeId: { equals: employeeId } }, select: { userId: true } })) throw conflict('EMPLOYEE_ID_TAKEN', 'This faculty / employee ID is already registered. Contact your campus administrator.');
     const passwordHash = await argon2.hash(d.password, { type: argon2.argon2id });     // always computed, so timing does not reveal whether the email is taken
     const taken = !!(await this.prisma.user.findUnique({ where: { email }, select: { id: true } }));
     let devCode: string | undefined;

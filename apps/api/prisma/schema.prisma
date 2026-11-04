@@ -1,5 +1,6 @@
-// SZABMU Online Examination System — PostgreSQL schema.
-// Conventions: uuid PKs, timestamptz everywhere, enum-typed states, snake_case tables via @@map.
+// SZABMU Online Examination System — MySQL / MariaDB schema (Hostinger managed MariaDB 11.x).
+// Conventions: uuid PKs stored as CHAR(36), DATETIME(3) in UTC everywhere (every connection pins time_zone=+00:00),
+// enum-typed states, snake_case tables via @@map. Lists are JSON arrays (MySQL has no array columns).
 
 generator client {
   provider     = "prisma-client"
@@ -8,7 +9,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
 }
 
 enum Role {
@@ -193,15 +194,15 @@ enum MessageStatus {
 // ───────────────────────── Organisation ─────────────────────────
 
 model Institution {
-  id          String          @id @default(uuid()) @db.Uuid
+  id          String          @id @default(uuid()) @db.Char(36)
   code        String          @unique
-  name        String
+  name        String          @db.VarChar(255)
   type        InstitutionType
   affiliation Affiliation     @default(CONSTITUENT)
   city        String?
   active      Boolean         @default(true)
-  createdAt   DateTime        @default(now()) @db.Timestamptz
-  updatedAt   DateTime        @updatedAt @db.Timestamptz
+  createdAt   DateTime        @default(now()) @db.DateTime(3)
+  updatedAt   DateTime        @updatedAt @db.DateTime(3)
 
   departments       Department[]
   users             UserInstitution[]
@@ -217,45 +218,45 @@ model Institution {
 }
 
 model Department {
-  id            String      @id @default(uuid()) @db.Uuid
-  institutionId String      @db.Uuid
+  id            String      @id @default(uuid()) @db.Char(36)
+  institutionId String      @db.Char(36)
   code          String
-  name          String
+  name          String      @db.VarChar(255)
   institution   Institution @relation(fields: [institutionId], references: [id])
-  createdAt     DateTime    @default(now()) @db.Timestamptz
+  createdAt     DateTime    @default(now()) @db.DateTime(3)
 
   @@unique([institutionId, code])
   @@map("departments")
 }
 
 model Program {
-  id          String        @id @default(uuid()) @db.Uuid
+  id          String        @id @default(uuid()) @db.Char(36)
   code        String        @unique
-  name        String
+  name        String        @db.VarChar(255)
   level       String        @default("UNDERGRADUATE")
   durationYrs Int           @default(5)
   active      Boolean       @default(true)
   courses     Course[]
   students    Student[]
   roster      RosterEntry[]
-  createdAt   DateTime      @default(now()) @db.Timestamptz
+  createdAt   DateTime      @default(now()) @db.DateTime(3)
 
   @@map("programs")
 }
 
 /// A university-level subject/paper within a program and academic year/semester.
 model Course {
-  id                String             @id @default(uuid()) @db.Uuid
-  programId         String             @db.Uuid
+  id                String             @id @default(uuid()) @db.Char(36)
+  programId         String             @db.Char(36)
   code              String             @unique
-  title             String
+  title             String             @db.VarChar(255)
   semester          Int
   credits           Int                @default(3)
   program           Program            @relation(fields: [programId], references: [id])
   questions         Question[]
   exams             Exam[]
   enrollments       Enrollment[]
-  createdAt         DateTime           @default(now()) @db.Timestamptz
+  createdAt         DateTime           @default(now()) @db.DateTime(3)
   courseAssignments CourseAssignment[]
 
   @@index([programId, semester])
@@ -265,24 +266,24 @@ model Course {
 // ───────────────────────── Identity ─────────────────────────
 
 model User {
-  id                String    @id @default(uuid()) @db.Uuid
-  email             String    @unique
-  fullName          String
+  id                String    @id @default(uuid()) @db.Char(36)
+  email             String    @unique @db.VarChar(254)
+  fullName          String    @db.VarChar(255)
   phone             String?
   role              Role
   passwordHash      String
   mustChangePw      Boolean   @default(false)
   /// TOTP (RFC 6238). Secret is AES-256-GCM encrypted at rest; totpLastStep prevents code replay.
   totpSecretEnc     String?
-  totpEnabledAt     DateTime? @db.Timestamptz
+  totpEnabledAt     DateTime? @db.DateTime(3)
   totpLastStep      Int?
   active            Boolean   @default(true)
   failedLogins      Int       @default(0)
-  lockedUntil       DateTime? @db.Timestamptz
-  lastLoginAt       DateTime? @db.Timestamptz
-  passwordChangedAt DateTime  @default(now()) @db.Timestamptz
-  createdAt         DateTime  @default(now()) @db.Timestamptz
-  updatedAt         DateTime  @updatedAt @db.Timestamptz
+  lockedUntil       DateTime? @db.DateTime(3)
+  lastLoginAt       DateTime? @db.DateTime(3)
+  passwordChangedAt DateTime  @default(now()) @db.DateTime(3)
+  createdAt         DateTime  @default(now()) @db.DateTime(3)
+  updatedAt         DateTime  @updatedAt @db.DateTime(3)
 
   institutions      UserInstitution[]
   sessions          Session[]
@@ -301,8 +302,8 @@ model User {
 
 /// Institution assignments. Campus-scoped roles may only act within these.
 model UserInstitution {
-  userId        String      @db.Uuid
-  institutionId String      @db.Uuid
+  userId        String      @db.Char(36)
+  institutionId String      @db.Char(36)
   user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   institution   Institution @relation(fields: [institutionId], references: [id])
 
@@ -312,16 +313,16 @@ model UserInstitution {
 }
 
 model Session {
-  id            String    @id @default(uuid()) @db.Uuid
-  userId        String    @db.Uuid
+  id            String    @id @default(uuid()) @db.Char(36)
+  userId        String    @db.Char(36)
   tokenHash     String    @unique
-  createdAt     DateTime  @default(now()) @db.Timestamptz
-  expiresAt     DateTime  @db.Timestamptz
-  revokedAt     DateTime? @db.Timestamptz
+  createdAt     DateTime  @default(now()) @db.DateTime(3)
+  expiresAt     DateTime  @db.DateTime(3)
+  revokedAt     DateTime? @db.DateTime(3)
   /// Set when the second factor was satisfied for THIS session.
-  mfaVerifiedAt DateTime? @db.Timestamptz
+  mfaVerifiedAt DateTime? @db.DateTime(3)
   ip            String?
-  userAgent     String?
+  userAgent     String?   @db.Text
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -329,13 +330,13 @@ model Session {
 }
 
 model PasswordReset {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @db.Uuid
+  id        String    @id @default(uuid()) @db.Char(36)
+  userId    String    @db.Char(36)
   codeHash  String
-  expiresAt DateTime  @db.Timestamptz
+  expiresAt DateTime  @db.DateTime(3)
   attempts  Int       @default(0)
-  usedAt    DateTime? @db.Timestamptz
-  createdAt DateTime  @default(now()) @db.Timestamptz
+  usedAt    DateTime? @db.DateTime(3)
+  createdAt DateTime  @default(now()) @db.DateTime(3)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
@@ -343,10 +344,10 @@ model PasswordReset {
 }
 
 model PasswordHistory {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
+  id        String   @id @default(uuid()) @db.Char(36)
+  userId    String   @db.Char(36)
   hash      String
-  createdAt DateTime @default(now()) @db.Timestamptz
+  createdAt DateTime @default(now()) @db.DateTime(3)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
@@ -358,43 +359,43 @@ model PasswordHistory {
 /// Official register of students entitled to claim an account (supplied by the institution / Registrar). A person can only self-register
 /// by matching an unclaimed entry on registration number + date of birth AND proving control of the email they give.
 model RosterEntry {
-  id              String      @id @default(uuid()) @db.Uuid
-  institutionId   String      @db.Uuid
-  programId       String      @db.Uuid
+  id              String      @id @default(uuid()) @db.Char(36)
+  institutionId   String      @db.Char(36)
+  programId       String      @db.Char(36)
   regNo           String      @unique
-  fullName        String
+  fullName        String      @db.VarChar(255)
   dateOfBirth     DateTime    @db.Date
   semester        Int
   batchYear       Int
-  claimedAt       DateTime?   @db.Timestamptz
-  claimedByUserId String?     @db.Uuid
-  importedBy      String?     @db.Uuid
+  claimedAt       DateTime?   @db.DateTime(3)
+  claimedByUserId String?     @db.Char(36)
+  importedBy      String?     @db.Char(36)
   institution     Institution @relation(fields: [institutionId], references: [id])
   program         Program     @relation(fields: [programId], references: [id])
-  createdAt       DateTime    @default(now()) @db.Timestamptz
+  createdAt       DateTime    @default(now()) @db.DateTime(3)
 
   @@index([institutionId, claimedAt])
   @@map("roster_entries")
 }
 
 model Student {
-  id                   String                @id @default(uuid()) @db.Uuid
-  userId               String                @unique @db.Uuid
-  institutionId        String                @db.Uuid
-  programId            String                @db.Uuid
+  id                   String                @id @default(uuid()) @db.Char(36)
+  userId               String                @unique @db.Char(36)
+  institutionId        String                @db.Char(36)
+  programId            String                @db.Char(36)
   regNo                String                @unique
   semester             Int
   batchYear            Int
   dateOfBirth          DateTime?             @db.Date
   guardianPhone        String?
-  address              String?
+  address              String?               @db.Text
   status               String                @default("ACTIVE")
   fatherName           String?
   gender               String?
   photo                Bytes?
   photoMime            String?
   /// Set when the student completed the one-time profile form. Null for every student created before the onboarding flow (treated as complete).
-  profileCompletedAt   DateTime?            @db.Timestamptz
+  profileCompletedAt   DateTime?             @db.DateTime(3)
   /// TRUE for students who chose their own institution/programme/semester. They cannot be enrolled or admitted to an examination until an administrator verifies them (sets it false).
   selfDeclared         Boolean               @default(false)
   user                 User                  @relation(fields: [userId], references: [id])
@@ -405,23 +406,23 @@ model Student {
   attempts             Attempt[]
   eligibilityOverrides EligibilityOverride[]
   results              Result[]
-  createdAt            DateTime              @default(now()) @db.Timestamptz
+  createdAt            DateTime              @default(now()) @db.DateTime(3)
 
   @@index([institutionId, programId, semester])
   @@map("students")
 }
 
 model Enrollment {
-  id              String            @id @default(uuid()) @db.Uuid
-  studentId       String            @db.Uuid
-  courseId        String            @db.Uuid
+  id              String            @id @default(uuid()) @db.Char(36)
+  studentId       String            @db.Char(36)
+  courseId        String            @db.Char(36)
   term            String
   status          EnrollmentStatus  @default(ENROLLED)
   eligibility     EligibilityStatus @default(ELIGIBLE)
   attendancePct   Float?
-  eligibilityNote String?
-  decidedBy       String?           @db.Uuid
-  createdAt       DateTime          @default(now()) @db.Timestamptz
+  eligibilityNote String?           @db.Text
+  decidedBy       String?           @db.Char(36)
+  createdAt       DateTime          @default(now()) @db.DateTime(3)
   student         Student           @relation(fields: [studentId], references: [id])
   course          Course            @relation(fields: [courseId], references: [id])
 
@@ -433,28 +434,28 @@ model Enrollment {
 // ───────────────────────── Question bank ─────────────────────────
 
 model Question {
-  id            String         @id @default(uuid()) @db.Uuid
-  courseId      String         @db.Uuid
-  institutionId String         @db.Uuid
-  authorId      String         @db.Uuid
+  id            String         @id @default(uuid()) @db.Char(36)
+  courseId      String         @db.Char(36)
+  institutionId String         @db.Char(36)
+  authorId      String         @db.Char(36)
   type          QuestionType   @default(MCQ)
   /// Clinical scenario text (history, examination, investigations) for CLINICAL_MCQ.
-  vignette      String?
-  stem          String
-  explanation   String?
+  vignette      String?        @db.Text
+  stem          String         @db.Text
+  explanation   String?        @db.Text
   difficulty    Difficulty     @default(MEDIUM)
-  tags          String[]       @default([])
+  tags          Json
   status        QuestionStatus @default(DRAFT)
   version       Int            @default(1)
   usedCount     Int            @default(0)
-  reviewNote    String?
-  reviewedBy    String?        @db.Uuid
-  reviewedAt    DateTime?      @db.Timestamptz
-  poolId        String?        @db.Uuid
-  topic         String?
+  reviewNote    String?        @db.Text
+  reviewedBy    String?        @db.Char(36)
+  reviewedAt    DateTime?      @db.DateTime(3)
+  poolId        String?        @db.Char(36)
+  topic         String?        @db.VarChar(191)
   defaultMarks  Float          @default(1)
-  createdAt     DateTime       @default(now()) @db.Timestamptz
-  updatedAt     DateTime       @updatedAt @db.Timestamptz
+  createdAt     DateTime       @default(now()) @db.DateTime(3)
+  updatedAt     DateTime       @updatedAt @db.DateTime(3)
 
   pool        QuestionPool?    @relation(fields: [poolId], references: [id], onDelete: SetNull)
   course      Course           @relation(fields: [courseId], references: [id])
@@ -469,12 +470,12 @@ model Question {
 }
 
 model QuestionOption {
-  id         String   @id @default(uuid()) @db.Uuid
-  questionId String   @db.Uuid
+  id         String   @id @default(uuid()) @db.Char(36)
+  questionId String   @db.Char(36)
   label      String // A..E
-  text       String
+  text       String   @db.Text
   isCorrect  Boolean  @default(false)
-  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade, onUpdate: Restrict)
 
   @@unique([questionId, label])
   @@map("question_options")
@@ -483,44 +484,44 @@ model QuestionOption {
 // ───────────────────────── Exams ─────────────────────────
 
 model Exam {
-  id                      String             @id @default(uuid()) @db.Uuid
+  id                      String             @id @default(uuid()) @db.Char(36)
   code                    String             @unique
-  title                   String
-  courseId                String             @db.Uuid
-  createdBy               String             @db.Uuid
+  title                   String             @db.VarChar(255)
+  courseId                String             @db.Char(36)
+  createdBy               String             @db.Char(36)
   status                  ExamStatus         @default(DRAFT)
   paperStatus             PaperStatus        @default(DRAFT)
   term                    String             @default("2026-SPRING")
-  paperSubmittedBy        String?            @db.Uuid
-  paperApprovedBy         String?            @db.Uuid
-  paperApprovedAt         DateTime?          @db.Timestamptz
-  paperReviewNote         String?
-  opensAt                 DateTime           @db.Timestamptz
-  closesAt                DateTime           @db.Timestamptz
+  paperSubmittedBy        String?            @db.Char(36)
+  paperApprovedBy         String?            @db.Char(36)
+  paperApprovedAt         DateTime?          @db.DateTime(3)
+  paperReviewNote         String?            @db.Text
+  opensAt                 DateTime           @db.DateTime(3)
+  closesAt                DateTime           @db.DateTime(3)
   durationMin             Int
   totalMarks              Float              @default(0)
   passPercent             Float              @default(50)
   negativeMarking         Float              @default(0)
   shuffleQuestions        Boolean            @default(true)
-  instructions            String?
+  instructions            String?            @db.Text
   /// INDIVIDUAL: each candidate's clock starts when they start. SYNCHRONIZED: one official clock starts at `officialStartAt`.
   timingPolicy            TimingPolicy       @default(INDIVIDUAL)
   /// AUTOMATIC: SCHEDULED→LIVE/CLOSED follow the window (legacy behaviour). MANUAL: staff commands drive the lifecycle.
   controlMode             ControlMode        @default(AUTOMATIC)
   /// How a suspension treats the clock. NULL = undecided: suspending is refused until an authorised approver sets it.
   suspendTimePolicy       SuspendTimePolicy?
-  controlPolicyApprovedBy String?            @db.Uuid
-  controlPolicyApprovedAt DateTime?          @db.Timestamptz
-  officialStartAt         DateTime?          @db.Timestamptz
-  admissionOpenedAt       DateTime?          @db.Timestamptz
-  admissionClosedAt       DateTime?          @db.Timestamptz
-  closedAt                DateTime?          @db.Timestamptz
+  controlPolicyApprovedBy String?            @db.Char(36)
+  controlPolicyApprovedAt DateTime?          @db.DateTime(3)
+  officialStartAt         DateTime?          @db.DateTime(3)
+  admissionOpenedAt       DateTime?          @db.DateTime(3)
+  admissionClosedAt       DateTime?          @db.DateTime(3)
+  closedAt                DateTime?          @db.DateTime(3)
   /// Set by CLOSE(force): reconciliation seals every remaining attempt (survives a crash mid-way).
-  forceCloseAt            DateTime?          @db.Timestamptz
+  forceCloseAt            DateTime?          @db.DateTime(3)
   /// Bumped by every control transition (optimistic concurrency + event ordering).
   stateVersion            Int                @default(0)
-  createdAt               DateTime           @default(now()) @db.Timestamptz
-  updatedAt               DateTime           @updatedAt @db.Timestamptz
+  createdAt               DateTime           @default(now()) @db.DateTime(3)
+  updatedAt               DateTime           @updatedAt @db.DateTime(3)
 
   course               Course                @relation(fields: [courseId], references: [id])
   institutions         ExamInstitution[]
@@ -545,8 +546,8 @@ model Exam {
 }
 
 model ExamInstitution {
-  examId        String      @db.Uuid
-  institutionId String      @db.Uuid
+  examId        String      @db.Char(36)
+  institutionId String      @db.Char(36)
   venue         String?
   exam          Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
   institution   Institution @relation(fields: [institutionId], references: [id])
@@ -559,9 +560,9 @@ model ExamInstitution {
 /// A question placed on a paper. `snapshot` + `correctLabel` are frozen at paper approval;
 /// later edits to the bank never alter an approved paper.
 model ExamQuestion {
-  id           String          @id @default(uuid()) @db.Uuid
-  examId       String          @db.Uuid
-  questionId   String          @db.Uuid
+  id           String          @id @default(uuid()) @db.Char(36)
+  examId       String          @db.Char(36)
+  questionId   String          @db.Char(36)
   position     Int
   marks        Float           @default(1)
   snapshot     Json?
@@ -577,20 +578,20 @@ model ExamQuestion {
 }
 
 model ExamCandidate {
-  id              String          @id @default(uuid()) @db.Uuid
-  examId          String          @db.Uuid
-  studentId       String          @db.Uuid
-  institutionId   String          @db.Uuid
+  id              String          @id @default(uuid()) @db.Char(36)
+  examId          String          @db.Char(36)
+  studentId       String          @db.Char(36)
+  institutionId   String          @db.Char(36)
   extraTimeMin    Int             @default(0)
-  accommodation   String?
+  accommodation   String?         @db.Text
   /// Current admission decision. Re-validated when a NEW attempt starts; frozen on the attempt afterwards.
   status          CandidateStatus @default(ADMITTED)
   /// ENROLMENT = derived from enrolment data by the roster build; OVERRIDE = set by an authorised manual decision (never auto-reverted).
   decisionSource  String          @default("ENROLMENT")
-  statusReason    String?
-  statusChangedAt DateTime?       @db.Timestamptz
+  statusReason    String?         @db.Text
+  statusChangedAt DateTime?       @db.DateTime(3)
   rosterVersion   Int             @default(1)
-  createdAt       DateTime        @default(now()) @db.Timestamptz
+  createdAt       DateTime        @default(now()) @db.DateTime(3)
   exam            Exam            @relation(fields: [examId], references: [id], onDelete: Cascade)
   student         Student         @relation(fields: [studentId], references: [id])
   institution     Institution     @relation(fields: [institutionId], references: [id])
@@ -602,9 +603,9 @@ model ExamCandidate {
 }
 
 model ExamInvigilator {
-  examId        String @db.Uuid
-  userId        String @db.Uuid
-  institutionId String @db.Uuid
+  examId        String @db.Char(36)
+  userId        String @db.Char(36)
+  institutionId String @db.Char(36)
   exam          Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
 
   @@id([examId, userId, institutionId])
@@ -615,34 +616,34 @@ model ExamInvigilator {
 // ───────────────────────── Live attempt ─────────────────────────
 
 model Attempt {
-  id               String                @id @default(uuid()) @db.Uuid
-  examId           String                @db.Uuid
-  studentId        String                @db.Uuid
+  id               String                @id @default(uuid()) @db.Char(36)
+  examId           String                @db.Char(36)
+  studentId        String                @db.Char(36)
   status           AttemptStatus         @default(IN_PROGRESS)
-  startedAt        DateTime              @db.Timestamptz
+  startedAt        DateTime              @db.DateTime(3)
   /// Authoritative server-computed deadline (includes accommodations, capped at window end).
-  deadlineAt       DateTime              @db.Timestamptz
+  deadlineAt       DateTime              @db.DateTime(3)
   extraTimeMin     Int                   @default(0)
-  submittedAt      DateTime?             @db.Timestamptz
+  submittedAt      DateTime?             @db.DateTime(3)
   submitKey        String?
   receiptCode      String?               @unique
   answerDigest     String?
-  questionOrder    String[]
+  questionOrder    Json
   /// Single active browser session claim; older tabs are rejected (stale-tab protection).
   activeClientId   String?
   clientEpoch      Int                   @default(0)
-  lastHeartbeatAt  DateTime?             @db.Timestamptz
+  lastHeartbeatAt  DateTime?             @db.DateTime(3)
   integrityFlags   Int                   @default(0)
   /// Eligibility decision frozen at start (source, roster version, enrolment, override). Never re-evaluated per save.
   admission        Json?
   ip               String?
-  userAgent        String?
+  userAgent        String?               @db.Text
   /// Set while the attempt is suspended: saves/submits are refused by the database predicate, independent of any worker.
-  suspendedAt      DateTime?             @db.Timestamptz
-  suspensionId     String?               @db.Uuid
+  suspendedAt      DateTime?             @db.DateTime(3)
+  suspensionId     String?               @db.Char(36)
   /// Bounded retry bookkeeping for the lifecycle reconciler (never loops forever on a poison attempt).
   lifecycleRetries Int                   @default(0)
-  lifecycleError   String?
+  lifecycleError   String?               @db.Text
   exam             Exam                  @relation(fields: [examId], references: [id])
   student          Student               @relation(fields: [studentId], references: [id])
   answers          AttemptAnswer[]
@@ -660,14 +661,14 @@ model Attempt {
 /// Authoritative current answer per question. `revision` is a client-monotonic counter;
 /// writes with revision <= stored revision are rejected or treated as idempotent replays.
 model AttemptAnswer {
-  attemptId       String       @db.Uuid
-  examQuestionId  String       @db.Uuid
+  attemptId       String       @db.Char(36)
+  examQuestionId  String       @db.Char(36)
   selectedLabel   String?
   state           AnswerState  @default(SKIPPED)
   markedForReview Boolean      @default(false)
   visited         Boolean      @default(true)
   revision        Int
-  savedAt         DateTime     @default(now()) @db.Timestamptz
+  savedAt         DateTime     @default(now()) @db.DateTime(3)
   attempt         Attempt      @relation(fields: [attemptId], references: [id], onDelete: Cascade)
   examQuestion    ExamQuestion @relation(fields: [examQuestionId], references: [id])
 
@@ -678,13 +679,13 @@ model AttemptAnswer {
 /// Append-only journal of every accepted answer write — evidence for disputes and recovery.
 model AnswerEvent {
   id              BigInt      @id @default(autoincrement())
-  attemptId       String      @db.Uuid
-  examQuestionId  String      @db.Uuid
+  attemptId       String      @db.Char(36)
+  examQuestionId  String      @db.Char(36)
   revision        Int
   selectedLabel   String?
   state           AnswerState
   markedForReview Boolean
-  at              DateTime    @default(now()) @db.Timestamptz
+  at              DateTime    @default(now()) @db.DateTime(3)
 
   @@index([attemptId, examQuestionId, revision])
   @@map("answer_events")
@@ -692,11 +693,11 @@ model AnswerEvent {
 
 model AttemptEvent {
   id        BigInt   @id @default(autoincrement())
-  attemptId String   @db.Uuid
+  attemptId String   @db.Char(36)
   kind      String // TAB_HIDDEN, FULLSCREEN_EXIT, OFFLINE, ONLINE, PASTE_BLOCKED, TIME_EXTENDED, SESSION_CLAIMED, FORCE_SUBMITTED
   detail    Json?
-  actorId   String?  @db.Uuid
-  at        DateTime @default(now()) @db.Timestamptz
+  actorId   String?  @db.Char(36)
+  at        DateTime @default(now()) @db.DateTime(3)
   attempt   Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
 
   @@index([attemptId, at])
@@ -706,20 +707,20 @@ model AttemptEvent {
 // ───────────────────────── Incidents ─────────────────────────
 
 model Incident {
-  id            String           @id @default(uuid()) @db.Uuid
-  examId        String           @db.Uuid
-  institutionId String           @db.Uuid
-  attemptId     String?          @db.Uuid
-  studentId     String?          @db.Uuid
+  id            String           @id @default(uuid()) @db.Char(36)
+  examId        String           @db.Char(36)
+  institutionId String           @db.Char(36)
+  attemptId     String?          @db.Char(36)
+  studentId     String?          @db.Char(36)
   type          IncidentType
   severity      IncidentSeverity @default(LOW)
-  description   String
+  description   String           @db.Text
   status        IncidentStatus   @default(OPEN)
-  resolution    String?
-  reportedBy    String           @db.Uuid
-  resolvedBy    String?          @db.Uuid
-  createdAt     DateTime         @default(now()) @db.Timestamptz
-  resolvedAt    DateTime?        @db.Timestamptz
+  resolution    String?          @db.Text
+  reportedBy    String           @db.Char(36)
+  resolvedBy    String?          @db.Char(36)
+  createdAt     DateTime         @default(now()) @db.DateTime(3)
+  resolvedAt    DateTime?        @db.DateTime(3)
   exam          Exam             @relation(fields: [examId], references: [id])
   institution   Institution      @relation(fields: [institutionId], references: [id])
   attempt       Attempt?         @relation(fields: [attemptId], references: [id])
@@ -731,11 +732,11 @@ model Incident {
 }
 
 model IncidentNote {
-  id         String   @id @default(uuid()) @db.Uuid
-  incidentId String   @db.Uuid
-  authorId   String   @db.Uuid
-  body       String
-  createdAt  DateTime @default(now()) @db.Timestamptz
+  id         String   @id @default(uuid()) @db.Char(36)
+  incidentId String   @db.Char(36)
+  authorId   String   @db.Char(36)
+  body       String   @db.Text
+  createdAt  DateTime @default(now()) @db.DateTime(3)
   incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
 
   @@map("incident_notes")
@@ -746,14 +747,14 @@ model IncidentNote {
 /// Lecturer/examiner review actions on a paper after the sitting: void a defective question
 /// (full marks to all) or correct the answer key. Triggers a regrade.
 model KeyAction {
-  id             String        @id @default(uuid()) @db.Uuid
-  examId         String        @db.Uuid
-  examQuestionId String        @db.Uuid
+  id             String        @id @default(uuid()) @db.Char(36)
+  examId         String        @db.Char(36)
+  examQuestionId String        @db.Char(36)
   kind           KeyActionKind
   newLabel       String?
-  reason         String
-  actorId        String        @db.Uuid
-  createdAt      DateTime      @default(now()) @db.Timestamptz
+  reason         String        @db.Text
+  actorId        String        @db.Char(36)
+  createdAt      DateTime      @default(now()) @db.DateTime(3)
   exam           Exam          @relation(fields: [examId], references: [id])
   examQuestion   ExamQuestion  @relation(fields: [examQuestionId], references: [id])
 
@@ -762,33 +763,33 @@ model KeyAction {
 }
 
 model ResultBatch {
-  id                 String            @id @default(uuid()) @db.Uuid
-  examId             String            @unique @db.Uuid
+  id                 String            @id @default(uuid()) @db.Char(36)
+  examId             String            @unique @db.Char(36)
   status             ResultBatchStatus @default(GRADED)
-  gradedAt           DateTime          @default(now()) @db.Timestamptz
-  reviewedBy         String?           @db.Uuid
-  reviewedAt         DateTime?         @db.Timestamptz
-  examinerApprovedBy String?           @db.Uuid
-  examinerApprovedAt DateTime?         @db.Timestamptz
-  publishedBy        String?           @db.Uuid
-  publishedAt        DateTime?         @db.Timestamptz
-  reviewNote         String?
+  gradedAt           DateTime          @default(now()) @db.DateTime(3)
+  reviewedBy         String?           @db.Char(36)
+  reviewedAt         DateTime?         @db.DateTime(3)
+  examinerApprovedBy String?           @db.Char(36)
+  examinerApprovedAt DateTime?         @db.DateTime(3)
+  publishedBy        String?           @db.Char(36)
+  publishedAt        DateTime?         @db.DateTime(3)
+  reviewNote         String?           @db.Text
   exam               Exam              @relation(fields: [examId], references: [id])
 
   @@map("result_batches")
 }
 
 model Result {
-  id          String       @id @default(uuid()) @db.Uuid
-  examId      String       @db.Uuid
-  studentId   String       @db.Uuid
-  attemptId   String?      @db.Uuid
+  id          String       @id @default(uuid()) @db.Char(36)
+  examId      String       @db.Char(36)
+  studentId   String       @db.Char(36)
+  attemptId   String?      @db.Char(36)
   rawScore    Float
   adjustment  Float        @default(0)
   totalMarks  Float
   percent     Float
   status      ResultStatus
-  gradedAt    DateTime     @default(now()) @db.Timestamptz
+  gradedAt    DateTime     @default(now()) @db.DateTime(3)
   exam        Exam         @relation(fields: [examId], references: [id])
   student     Student      @relation(fields: [studentId], references: [id])
   certificate Certificate?
@@ -799,13 +800,13 @@ model Result {
 }
 
 model Certificate {
-  id         String    @id @default(uuid()) @db.Uuid
-  resultId   String    @unique @db.Uuid
+  id         String    @id @default(uuid()) @db.Char(36)
+  resultId   String    @unique @db.Char(36)
   serial     String    @unique
   verifyCode String    @unique
-  issuedAt   DateTime  @default(now()) @db.Timestamptz
-  issuedBy   String    @db.Uuid
-  revokedAt  DateTime? @db.Timestamptz
+  issuedAt   DateTime  @default(now()) @db.DateTime(3)
+  issuedBy   String    @db.Char(36)
+  revokedAt  DateTime? @db.DateTime(3)
   result     Result    @relation(fields: [resultId], references: [id])
 
   @@map("certificates")
@@ -814,13 +815,13 @@ model Certificate {
 // ───────────────────────── Cross-cutting ─────────────────────────
 
 model Notification {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @db.Uuid
-  title     String
-  body      String
-  link      String?
-  readAt    DateTime? @db.Timestamptz
-  createdAt DateTime  @default(now()) @db.Timestamptz
+  id        String    @id @default(uuid()) @db.Char(36)
+  userId    String    @db.Char(36)
+  title     String    @db.Text
+  body      String    @db.Text
+  link      String?   @db.Text
+  readAt    DateTime? @db.DateTime(3)
+  createdAt DateTime  @default(now()) @db.DateTime(3)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt, createdAt])
@@ -828,16 +829,16 @@ model Notification {
 }
 
 model OutboundMessage {
-  id        String        @id @default(uuid()) @db.Uuid
-  toEmail   String
-  subject   String
-  body      String
+  id        String        @id @default(uuid()) @db.Char(36)
+  toEmail   String        @db.VarChar(254)
+  subject   String        @db.Text
+  body      String        @db.Text
   kind      String
   status    MessageStatus @default(PENDING)
   attempts  Int           @default(0)
-  lastError String?
-  createdAt DateTime      @default(now()) @db.Timestamptz
-  sentAt    DateTime?     @db.Timestamptz
+  lastError String?       @db.Text
+  createdAt DateTime      @default(now()) @db.DateTime(3)
+  sentAt    DateTime?     @db.DateTime(3)
 
   @@index([status, createdAt])
   @@map("outbound_messages")
@@ -846,13 +847,13 @@ model OutboundMessage {
 /// Tamper-evident audit trail: each row's hash covers the previous row's hash.
 model AuditLog {
   seq           BigInt   @id @default(autoincrement())
-  at            DateTime @default(now()) @db.Timestamptz
-  actorId       String?  @db.Uuid
+  at            DateTime @default(now()) @db.DateTime(3)
+  actorId       String?  @db.Char(36)
   actorRole     Role?
   action        String
   entity        String
   entityId      String?
-  institutionId String?  @db.Uuid
+  institutionId String?  @db.Char(36)
   meta          Json?
   ip            String?
   prevHash      String
@@ -868,16 +869,16 @@ model AuditLog {
 
 /// Immutable, hash-stamped roster snapshot produced by every roster build/refresh and approved by the acting scheduler.
 model ExamRosterVersion {
-  id             String   @id @default(uuid()) @db.Uuid
-  examId         String   @db.Uuid
+  id             String   @id @default(uuid()) @db.Char(36)
+  examId         String   @db.Char(36)
   version        Int
-  createdById    String   @db.Uuid
-  approvedById   String   @db.Uuid
+  createdById    String   @db.Char(36)
+  approvedById   String   @db.Char(36)
   candidateCount Int
   revokedCount   Int
   digest         String
   snapshot       Json
-  createdAt      DateTime @default(now()) @db.Timestamptz
+  createdAt      DateTime @default(now()) @db.DateTime(3)
   exam           Exam     @relation(fields: [examId], references: [id])
 
   @@unique([examId, version])
@@ -886,15 +887,15 @@ model ExamRosterVersion {
 
 /// Append-only record of every manual eligibility decision.
 model EligibilityOverride {
-  id           String   @id @default(uuid()) @db.Uuid
-  examId       String   @db.Uuid
-  studentId    String   @db.Uuid
-  attemptId    String?  @db.Uuid
+  id           String   @id @default(uuid()) @db.Char(36)
+  examId       String   @db.Char(36)
+  studentId    String   @db.Char(36)
+  attemptId    String?  @db.Char(36)
   oldDecision  String
   newDecision  String
-  reason       String
-  approvedById String   @db.Uuid
-  createdAt    DateTime @default(now()) @db.Timestamptz
+  reason       String   @db.Text
+  approvedById String   @db.Char(36)
+  createdAt    DateTime @default(now()) @db.DateTime(3)
   exam         Exam     @relation(fields: [examId], references: [id])
   student      Student  @relation(fields: [studentId], references: [id])
   attempt      Attempt? @relation(fields: [attemptId], references: [id], onDelete: Restrict)
@@ -908,25 +909,25 @@ model EligibilityOverride {
 /// A lecturer may author/manage questions, build papers and review grading ONLY for courses explicitly assigned
 /// to them at a given institution. Revocation is a soft delete so history is kept.
 model CourseAssignment {
-  id            String      @id @default(uuid()) @db.Uuid
-  userId        String      @db.Uuid
-  courseId      String      @db.Uuid
-  institutionId String      @db.Uuid
-  assignedById  String      @db.Uuid
-  createdAt     DateTime    @default(now()) @db.Timestamptz
-  revokedAt     DateTime?   @db.Timestamptz
-  revokedById   String?     @db.Uuid
+  id            String           @id @default(uuid()) @db.Char(36)
+  userId        String           @db.Char(36)
+  courseId      String           @db.Char(36)
+  institutionId String           @db.Char(36)
+  assignedById  String           @db.Char(36)
+  createdAt     DateTime         @default(now()) @db.DateTime(3)
+  revokedAt     DateTime?        @db.DateTime(3)
+  revokedById   String?          @db.Char(36)
   /// Existing (admin-made) rows are APPROVED. Self-registered teachers request PENDING rows that an administrator decides one by one.
   status        AssignmentStatus @default(APPROVED)
   /// Academic session the assignment applies to (teachers); null for legacy lecturer assignments.
-  term          String?
-  requestedAt   DateTime?   @db.Timestamptz
-  decidedById   String?     @db.Uuid
-  decidedAt     DateTime?   @db.Timestamptz
-  decisionNote  String?
-  user          User        @relation(fields: [userId], references: [id])
-  course        Course      @relation(fields: [courseId], references: [id])
-  institution   Institution @relation(fields: [institutionId], references: [id])
+  term          String?          @db.VarChar(100)
+  requestedAt   DateTime?        @db.DateTime(3)
+  decidedById   String?          @db.Char(36)
+  decidedAt     DateTime?        @db.DateTime(3)
+  decisionNote  String?          @db.Text
+  user          User             @relation(fields: [userId], references: [id], onUpdate: Restrict)
+  course        Course           @relation(fields: [courseId], references: [id], onUpdate: Restrict)
+  institution   Institution      @relation(fields: [institutionId], references: [id], onUpdate: Restrict)
 
   @@index([userId, revokedAt])
   @@index([courseId, institutionId])
@@ -936,11 +937,11 @@ model CourseAssignment {
 
 /// Single-use MFA recovery codes (only SHA-256 hashes are stored).
 model MfaRecoveryCode {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @db.Uuid
+  id        String    @id @default(uuid()) @db.Char(36)
+  userId    String    @db.Char(36)
   codeHash  String
-  usedAt    DateTime? @db.Timestamptz
-  createdAt DateTime  @default(now()) @db.Timestamptz
+  usedAt    DateTime? @db.DateTime(3)
+  createdAt DateTime  @default(now()) @db.DateTime(3)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, codeHash])
@@ -949,20 +950,20 @@ model MfaRecoveryCode {
 
 /// A suspension of the whole exam, a campus cohort or selected candidates. History is never deleted.
 model ExamSuspension {
-  id            String            @id @default(uuid()) @db.Uuid
-  examId        String            @db.Uuid
+  id            String            @id @default(uuid()) @db.Char(36)
+  examId        String            @db.Char(36)
   scope         SuspensionScope
-  institutionId String?           @db.Uuid
-  studentIds    String[]          @db.Uuid
-  reason        String
-  incidentId    String?           @db.Uuid
+  institutionId String?           @db.Char(36)
+  studentIds    Json
+  reason        String            @db.Text
+  incidentId    String?           @db.Char(36)
   timePolicy    SuspendTimePolicy
-  suspendedBy   String            @db.Uuid
-  suspendedAt   DateTime          @default(now()) @db.Timestamptz
+  suspendedBy   String            @db.Char(36)
+  suspendedAt   DateTime          @default(now()) @db.DateTime(3)
   affectedCount Int               @default(0)
-  resumedBy     String?           @db.Uuid
-  resumedAt     DateTime?         @db.Timestamptz
-  resumeNote    String?
+  resumedBy     String?           @db.Char(36)
+  resumedAt     DateTime?         @db.DateTime(3)
+  resumeNote    String?           @db.Text
   /// Seconds added to deadlines at resume (FREEZE_CLOCK) — 0 under CLOCK_CONTINUES.
   pausedSeconds Int?
   exam          Exam              @relation(fields: [examId], references: [id])
@@ -973,19 +974,19 @@ model ExamSuspension {
 
 /// A group extension (selected candidates, campus cohort or the whole active cohort). (examId, idempotencyKey) is unique: a repeat is never applied twice.
 model ExamExtension {
-  id             String         @id @default(uuid()) @db.Uuid
-  examId         String         @db.Uuid
+  id             String         @id @default(uuid()) @db.Char(36)
+  examId         String         @db.Char(36)
   scope          ExtensionScope
-  institutionId  String?        @db.Uuid
-  studentIds     String[]       @db.Uuid
+  institutionId  String?        @db.Char(36)
+  studentIds     Json
   minutes        Int
-  reason         String
-  approvedBy     String         @db.Uuid
+  reason         String         @db.Text
+  approvedBy     String         @db.Char(36)
   idempotencyKey String
   affectedCount  Int
-  closesAtBefore DateTime?      @db.Timestamptz
-  closesAtAfter  DateTime?      @db.Timestamptz
-  createdAt      DateTime       @default(now()) @db.Timestamptz
+  closesAtBefore DateTime?      @db.DateTime(3)
+  closesAtAfter  DateTime?      @db.DateTime(3)
+  createdAt      DateTime       @default(now()) @db.DateTime(3)
   exam           Exam           @relation(fields: [examId], references: [id])
 
   @@unique([examId, idempotencyKey])
@@ -994,13 +995,13 @@ model ExamExtension {
 
 /// Idempotency ledger for control commands: the same (examId, key) returns the stored result and never re-executes.
 model ExamCommand {
-  id             String   @id @default(uuid()) @db.Uuid
-  examId         String   @db.Uuid
+  id             String   @id @default(uuid()) @db.Char(36)
+  examId         String   @db.Char(36)
   idempotencyKey String
   command        String
-  actorId        String   @db.Uuid
+  actorId        String   @db.Char(36)
   result         Json
-  createdAt      DateTime @default(now()) @db.Timestamptz
+  createdAt      DateTime @default(now()) @db.DateTime(3)
   exam           Exam     @relation(fields: [examId], references: [id])
 
   @@unique([examId, idempotencyKey])
@@ -1011,19 +1012,19 @@ model ExamCommand {
 /// `id` is the stream cursor (monotonic per database); delivery to Redis is retried and consumers must tolerate duplicates.
 model ExamEvent {
   id               BigInt        @id @default(autoincrement())
-  eventId          String        @unique @default(uuid()) @db.Uuid
-  examId           String        @db.Uuid
+  eventId          String        @unique @default(uuid()) @db.Char(36)
+  examId           String        @db.Char(36)
   /// NULL = exam-wide; otherwise only that campus's staff (and its candidates) may see it.
-  institutionId    String?       @db.Uuid
+  institutionId    String?       @db.Char(36)
   /// NULL = every candidate in scope; otherwise targeted at one candidate.
-  studentId        String?       @db.Uuid
+  studentId        String?       @db.Char(36)
   aggregateVersion Int
   type             String
   payload          Json          @default("{}")
-  createdAt        DateTime      @default(dbgenerated("clock_timestamp()")) @db.Timestamptz
+  createdAt        DateTime      @default(now()) @db.DateTime(3)
   deliveryStatus   EventDelivery @default(PENDING)
   retryCount       Int           @default(0)
-  deliveredAt      DateTime?     @db.Timestamptz
+  deliveredAt      DateTime?     @db.DateTime(3)
   exam             Exam          @relation(fields: [examId], references: [id])
 
   @@index([examId, id])
@@ -1035,20 +1036,28 @@ model ExamEvent {
 model LifecycleLease {
   name      String   @id
   owner     String
-  expiresAt DateTime @db.Timestamptz
-  updatedAt DateTime @default(now()) @db.Timestamptz
+  expiresAt DateTime @db.DateTime(3)
+  updatedAt DateTime @default(now()) @db.DateTime(3)
 
   @@map("lifecycle_leases")
 }
 
+/// Row locks that serialise critical sections inside a transaction (MySQL has no transaction-scoped advisory locks).
+/// Rows are created by the migration; code takes them with SELECT ... FOR UPDATE.
+model AppLock {
+  name String @id
+
+  @@map("app_locks")
+}
+
 model LifecycleRun {
-  id         String    @id @default(uuid()) @db.Uuid
+  id         String    @id @default(uuid()) @db.Char(36)
   instance   String
-  startedAt  DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz
-  finishedAt DateTime? @db.Timestamptz
+  startedAt  DateTime  @default(now()) @db.DateTime(3)
+  finishedAt DateTime? @db.DateTime(3)
   durationMs Int?
   stats      Json      @default("{}")
-  error      String?
+  error      String?   @db.Text
 
   @@index([startedAt])
   @@map("lifecycle_runs")
@@ -1072,7 +1081,7 @@ enum AssignmentStatus {
 /// Extra profile of a self-registered teacher (role TEACHER). No access follows from this row alone: access needs status APPROVED
 /// here AND an APPROVED course assignment.
 model TeacherProfile {
-  userId       String        @id @db.Uuid
+  userId       String        @id @db.Char(36)
   employeeId   String        @unique
   department   String
   designation  String
@@ -1080,13 +1089,13 @@ model TeacherProfile {
   photo        Bytes?
   photoMime    String?
   status       TeacherStatus @default(PENDING)
-  submittedAt  DateTime      @default(now()) @db.Timestamptz
-  reviewedById String?       @db.Uuid
-  reviewedAt   DateTime?     @db.Timestamptz
-  reviewNote   String?
-  suspendedAt  DateTime?     @db.Timestamptz
-  createdAt    DateTime      @default(now()) @db.Timestamptz
-  updatedAt    DateTime      @updatedAt @db.Timestamptz
+  submittedAt  DateTime      @default(now()) @db.DateTime(3)
+  reviewedById String?       @db.Char(36)
+  reviewedAt   DateTime?     @db.DateTime(3)
+  reviewNote   String?       @db.Text
+  suspendedAt  DateTime?     @db.DateTime(3)
+  createdAt    DateTime      @default(now()) @db.DateTime(3)
+  updatedAt    DateTime      @updatedAt @db.DateTime(3)
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([status])
@@ -1095,17 +1104,17 @@ model TeacherProfile {
 
 /// A teacher's named group of questions for one approved (course, institution, term) assignment.
 model QuestionPool {
-  id            String     @id @default(uuid()) @db.Uuid
-  ownerId       String     @db.Uuid
-  courseId      String     @db.Uuid
-  institutionId String     @db.Uuid
-  term          String?
+  id            String     @id @default(uuid()) @db.Char(36)
+  ownerId       String     @db.Char(36)
+  courseId      String     @db.Char(36)
+  institutionId String     @db.Char(36)
+  term          String?    @db.VarChar(100)
   name          String
-  description   String?
-  archivedAt    DateTime?  @db.Timestamptz
-  submittedAt   DateTime?  @db.Timestamptz
-  createdAt     DateTime   @default(now()) @db.Timestamptz
-  updatedAt     DateTime   @updatedAt @db.Timestamptz
+  description   String?    @db.Text
+  archivedAt    DateTime?  @db.DateTime(3)
+  submittedAt   DateTime?  @db.DateTime(3)
+  createdAt     DateTime   @default(now()) @db.DateTime(3)
+  updatedAt     DateTime   @updatedAt @db.DateTime(3)
   questions     Question[]
 
   @@index([ownerId, archivedAt])
@@ -1115,10 +1124,10 @@ model QuestionPool {
 
 /// A student who signed up with a registration number and verified email but has not yet completed the one-time profile. The Student row is created only when the profile is saved.
 model StudentSignup {
-  userId      String    @id @db.Uuid
+  userId      String    @id @db.Char(36)
   regNo       String    @unique
-  createdAt   DateTime  @default(now()) @db.Timestamptz
-  completedAt DateTime? @db.Timestamptz
+  createdAt   DateTime  @default(now()) @db.DateTime(3)
+  completedAt DateTime? @db.DateTime(3)
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("student_signups")

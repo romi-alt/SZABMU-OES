@@ -2,6 +2,7 @@ import { CourseAccessService } from '../org/course-access.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { LINKS, percent, scoreQuestion, sumScores } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
+import { idList, int } from '../../infra/sql';
 import { QueuesService } from '../../infra/queues.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -62,17 +63,17 @@ export class ResultsService {
     const exam = await this.loadExam(u, examId);
     const sf = scope.filter(u);
     const eqs = await this.prisma.examQuestion.findMany({ where: { examId }, orderBy: { position: 'asc' } });
-    const rows = await this.prisma.$queryRaw<{ eqid: string; label: string | null; n: number }[]>`
-      SELECT aa."examQuestionId" AS eqid, aa."selectedLabel" AS label, count(*)::int AS n
+    const rows = (await this.prisma.$queryRaw<{ eqid: string; label: string | null; n: bigint }[]>`
+      SELECT aa."examQuestionId" AS eqid, aa."selectedLabel" AS label, COUNT(*) AS n
       FROM attempt_answers aa JOIN attempts a ON a.id = aa."attemptId" JOIN students s ON s.id = a."studentId"
-      WHERE a."examId" = ${examId}::uuid AND a.status IN ('SUBMITTED','AUTO_SUBMITTED')
-        AND (${sf ? 1 : 0}::int = 0 OR s."institutionId" = ANY(${sf?.in ?? []}::uuid[]))
-      GROUP BY 1, 2`;
-    const sat = await this.prisma.$queryRaw<{ n: number }[]>`
-      SELECT count(*)::int AS n FROM attempts a JOIN students s ON s.id = a."studentId"
-      WHERE a."examId" = ${examId}::uuid AND a.status IN ('SUBMITTED','AUTO_SUBMITTED') AND (${sf ? 1 : 0}::int = 0 OR s."institutionId" = ANY(${sf?.in ?? []}::uuid[]))`;
+      WHERE a."examId" = ${examId} AND a.status IN ('SUBMITTED','AUTO_SUBMITTED')
+        AND (${sf ? 1 : 0} = 0 OR s."institutionId" IN ${idList(sf?.in ?? [])})
+      GROUP BY aa."examQuestionId", aa."selectedLabel"`).map((r) => ({ ...r, n: int(r.n) }));
+    const sat = await this.prisma.$queryRaw<{ n: bigint }[]>`
+      SELECT COUNT(*) AS n FROM attempts a JOIN students s ON s.id = a."studentId"
+      WHERE a."examId" = ${examId} AND a.status IN ('SUBMITTED','AUTO_SUBMITTED') AND (${sf ? 1 : 0} = 0 OR s."institutionId" IN ${idList(sf?.in ?? [])})`;
     const actions = await this.prisma.keyAction.findMany({ where: { examId } });
-    const n = sat[0]!.n;
+    const n = int(sat[0]!.n);
     return {
       exam: { id: exam.id, code: exam.code, title: exam.title, status: exam.status, batch: exam.resultBatch?.status ?? null }, candidates: n,
       questions: eqs.map((q) => {
@@ -132,7 +133,7 @@ export class ResultsService {
       await tx.resultBatch.update({ where: { examId }, data: { status: 'PUBLISHED', publishedBy: u.id, publishedAt: new Date() } });
       await tx.exam.update({ where: { id: examId }, data: { status: 'PUBLISHED' } });
       for (const r of passes) {
-        const seq = (await tx.$queryRaw<{ n: bigint }[]>`SELECT nextval('certificate_serial_seq') AS n`)[0]!.n;
+        const seq = (await tx.$queryRaw<{ n: bigint }[]>`SELECT NEXTVAL(certificate_serial_seq) AS n`)[0]!.n;
         await tx.certificate.upsert({ where: { resultId: r.id }, create: { resultId: r.id, serial: `SZABMU/${new Date().getUTCFullYear()}/${seq}`, verifyCode: randomBytes(5).toString('hex').toUpperCase(), issuedBy: u.id }, update: {} });
       }
     });

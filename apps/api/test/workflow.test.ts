@@ -252,9 +252,9 @@ describe('audit trail', () => {
     await expect(ctx.prisma.$executeRaw`DELETE FROM audit_logs WHERE seq = 2`).rejects.toThrow(/append-only/);
     await expect(ctx.prisma.$executeRaw`UPDATE answer_events SET "selectedLabel" = 'A'`).rejects.toThrow(/append-only/);
     // a privileged attacker who disables the trigger is still detected by the chain
-    await ctx.prisma.$executeRawUnsafe('ALTER TABLE audit_logs DISABLE TRIGGER audit_logs_append_only');
+    await ctx.prisma.$executeRawUnsafe('DROP TRIGGER audit_logs_no_update');
     await ctx.prisma.$executeRawUnsafe(`UPDATE audit_logs SET action = 'forged' WHERE seq = 5`);
-    await ctx.prisma.$executeRawUnsafe('ALTER TABLE audit_logs ENABLE TRIGGER audit_logs_append_only');
+    await ctx.prisma.$executeRawUnsafe("CREATE TRIGGER audit_logs_no_update BEFORE UPDATE ON audit_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit_logs is append-only'");
     const bad = await sup.get('/audit/verify');
     expect(bad.body.brokenAt).toBe('5');
   });
@@ -264,7 +264,7 @@ describe('database constraints', () => {
   it('reject malformed rows even when the application is bypassed', async () => {
     const q = await ctx.prisma.question.findFirstOrThrow();
     await expect(ctx.prisma.questionOption.create({ data: { questionId: q.id, label: 'Z', text: 'bad label' } })).rejects.toThrow();
-    await expect(ctx.prisma.$executeRaw`UPDATE question_options SET "isCorrect" = true WHERE "questionId" = ${q.id}::uuid`).rejects.toThrow(/one_correct|duplicate key/);
+    await expect(ctx.prisma.$executeRaw`UPDATE question_options SET "isCorrect" = true WHERE "questionId" = ${q.id}`).rejects.toThrow(/one_correct|Duplicate entry|duplicate key/);
     await expect(ctx.prisma.exam.update({ where: { id: examId }, data: { durationMin: 1 } })).rejects.toThrow();
     await expect(ctx.prisma.$executeRaw`UPDATE users SET email = 'UPPER@CASE.TEST' WHERE email = ${`cce@${DOMAIN}`}`).rejects.toThrow();
   });

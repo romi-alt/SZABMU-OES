@@ -45,7 +45,7 @@ describe('exam-path metrics', () => {
     expect(m.saves.value({ result: 'ok' })).toBe(before + 2); expect(m.saves.value({ result: 'duplicate' })).toBe(1);
     expect(m.saves.value({ result: 'stale' })).toBe(1); expect(m.saves.value({ result: 'superseded' })).toBe(1);
     expect(m.saveDuration.count()).toBe(nLat + 5);
-    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = clock_timestamp() - interval '45 minutes', "deadlineAt" = clock_timestamp() - interval '30 seconds' WHERE id = ${t.attemptId}::uuid`;
+    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = NOW(3) - INTERVAL 45 MINUTE, "deadlineAt" = NOW(3) - INTERVAL 30 SECOND WHERE id = ${t.attemptId}`;
     expect((await save(s, t.attemptId, q, t.clientId, 9, 'A')).status).toBe(409);
     expect(m.saves.value({ result: 'expired' })).toBe(1);
   });
@@ -104,7 +104,7 @@ describe('security and availability signals', () => {
     expect(series(text, 'oes_campus_candidates', { institution: 'DMC-B', state: 'disconnected' })).toBe(0);
     // campus A's candidate stops heart-beating (network outage): backdate heartbeat and start time
     await ctx.redis.client.hset(`hb:${examId}`, ta.id, JSON.stringify({ t: Date.now() - 120_000, online: true }));
-    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = clock_timestamp() - interval '5 minutes' WHERE id = ${ta.id}::uuid`;
+    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = NOW(3) - INTERVAL 5 MINUTE WHERE id = ${ta.id}`;
     text = await m.render({ forceCampus: true });
     expect(series(text, 'oes_campus_candidates', { institution: 'DMC-A', state: 'disconnected' })).toBeGreaterThanOrEqual(1);
     expect(series(text, 'oes_campus_candidates', { institution: 'DMC-B', state: 'disconnected' })).toBe(0);
@@ -112,7 +112,7 @@ describe('security and availability signals', () => {
     expect(series(text, 'oes_active_attempts')).toBeGreaterThanOrEqual(2);
     // client reports itself offline ⇒ disconnected even with a fresh heartbeat
     await ctx.redis.client.hset(`hb:${examId}`, tb.attemptId, JSON.stringify({ t: Date.now(), online: false }));
-    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = clock_timestamp() - interval '5 minutes' WHERE id = ${tb.attemptId}::uuid`;
+    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = NOW(3) - INTERVAL 5 MINUTE WHERE id = ${tb.attemptId}`;
     text = await m.render({ forceCampus: true });
     expect(series(text, 'oes_campus_candidates', { institution: 'DMC-B', state: 'disconnected' })).toBeGreaterThanOrEqual(1);
   });

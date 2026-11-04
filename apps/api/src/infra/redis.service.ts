@@ -8,7 +8,7 @@ export class RedisService implements OnModuleDestroy {
   /** Circuit breaker: after a failure, skip Redis for a short time so an outage costs microseconds, not seconds per call. */
   private downUntil = 0;
   constructor(@Inject(CONFIG) cfg: Config) {
-    // Redis is a cache/coordination layer only (answers live in PostgreSQL). It must never slow the exam path when it is down:
+    // Redis is a cache/coordination layer only (answers live in the database). It must never slow the exam path when it is down:
     // no offline queue (commands fail immediately while disconnected), a hard per-command timeout, and fast reconnects.
     this.client = new Redis(cfg.REDIS_URL, { maxRetriesPerRequest: 1, enableOfflineQueue: false, commandTimeout: 500, connectTimeout: 2000, retryStrategy: (n) => Math.min(n * 200, 2000), lazyConnect: false });
     this.client.on('error', () => undefined);

@@ -157,7 +157,7 @@ function HealthCard({ h }: any) {
         {row('Answer writes (this API instance)', h.saves.total ? `${h.saves.successRate}% ok of ${h.saves.total} · p95 ≤ ${h.saves.p95Seconds === null ? '—' : Math.round(h.saves.p95Seconds * 1000)} ms` : 'no writes yet')}
         {row('API errors (this API instance)', `${h.apiErrors.http5xx} server errors · ${h.apiErrors.unhandled} unhandled`, h.apiErrors.http5xx > 0)}
       </tbody></table>
-      <div className="small muted" style={{ padding: '8px 16px' }}>Counts and states come from PostgreSQL. Save and error figures are per API process since it started.</div>
+      <div className="small muted" style={{ padding: '8px 16px' }}>Counts and states come from the database. Save and error figures are per API process since it started.</div>
     </Card>
   );
 }
