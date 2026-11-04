@@ -63,6 +63,8 @@ test.describe('staff workflows', () => {
     await expect(page.getByRole('heading', { name: 'Live monitor' })).toBeVisible();
     const rows = page.locator('tbody tr');
     await expect(rows.first()).toBeVisible();
+    // The first row can be visible before the candidate rows have rendered: wait for a campus cell before reading the column.
+    await expect(page.locator('tbody tr td:nth-child(3)').first()).toHaveText(/DMC-/);
     const campus = await page.locator('tbody tr td:nth-child(3)').allInnerTexts();
     expect(new Set(campus)).toEqual(new Set(['DMC-B']));
     const mine = page.locator('tbody tr', { hasText: 'DMC-B-2024-0003' });
