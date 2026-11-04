@@ -4,7 +4,7 @@ import type { Prisma } from '../../generated/prisma/client';
 import { CONFIG, type Config } from '../../config';
 import { MetricsService } from '../../infra/metrics.service';
 import { PrismaService } from '../../infra/prisma.service';
-import { int } from '../../infra/sql';
+import { int, json } from '../../infra/sql';
 import { RedisService } from '../../infra/redis.service';
 
 export interface ExamEvent { id: number; eventId: string; examId: string; institutionId: string | null; studentId: string | null; version: number; type: string; payload: Record<string, any>; at: string }
@@ -30,7 +30,7 @@ export interface Subscriber { id: number; examId: string; viewer: Viewer; lastId
 interface Stream { subs: Map<number, Subscriber>; polledUpTo: number; nextPoll: number }
 
 const row = (r: { id: bigint; eventId: string; examId: string; institutionId: string | null; studentId: string | null; aggregateVersion: number; type: string; payload: unknown; createdAt: Date }): ExamEvent =>
-  ({ id: Number(r.id), eventId: r.eventId, examId: r.examId, institutionId: r.institutionId, studentId: r.studentId, version: r.aggregateVersion, type: r.type, payload: (r.payload ?? {}) as Record<string, any>, at: r.createdAt.toISOString() });
+  ({ id: Number(r.id), eventId: r.eventId, examId: r.examId, institutionId: r.institutionId, studentId: r.studentId, version: r.aggregateVersion, type: r.type, payload: json<Record<string, any>>(r.payload ?? {}), at: r.createdAt.toISOString() });
 
 /**
  * Durable event delivery.
