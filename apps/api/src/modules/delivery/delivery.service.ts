@@ -4,7 +4,7 @@ import { SAVE_GRACE_SECONDS, computeDeadline, computeSyncDeadline, seededOrder }
 import { startableStates, type ExamState } from '../control/exam-state';
 import { answerDigest, receiptCode } from '@oes/shared/server';
 import { PrismaService } from '../../infra/prisma.service';
-import { int, stringList } from '../../infra/sql';
+import { int, retryOnDeadlock, stringList } from '../../infra/sql';
 import { RedisService } from '../../infra/redis.service';
 import { QUEUES, QueuesService } from '../../infra/queues.service';
 import { AuditService } from '../audit/audit.service';
@@ -206,7 +206,7 @@ export class DeliveryService {
     const studentId = this.studentIdOf(u);
     if ((d.state === 'ANSWERED') !== (d.selectedLabel !== null)) throw badRequest('state ANSWERED requires a selected option, and only then');
     const label = d.selectedLabel;
-    const r = await this.writeAnswer(attemptId, studentId, examQuestionId, label, d).catch(async (e: unknown) => {
+    const r = await retryOnDeadlock(() => this.writeAnswer(attemptId, studentId, examQuestionId, label, d)).catch(async (e: unknown) => {
       // Two first-writes of the same answer raced to INSERT: the loser re-runs and is judged against the winner's revision.
       if (/Duplicate entry|P2002|1062/.test(String((e as Error)?.message ?? e))) return this.writeAnswer(attemptId, studentId, examQuestionId, label, d);
       throw e;
@@ -342,7 +342,7 @@ export class DeliveryService {
     // 2. The seal itself: as few round trips as possible while the connection is held.
     //    (lock) → (read answers, fresh snapshot so a save we waited for is included) → (one statement: update + journal).
     //    Waiting for a free connection is bounded generously instead of failing after Prisma's 2 s default.
-    const out = await this.prisma.$transaction(async (tx) => {
+    const out = await retryOnDeadlock(() => this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ id: string; examId: string; studentId: string; status: string; deadlineAt: Date; activeClientId: string | null; suspendedAt: Date | null; expired: boolean; receiptCode: string | null; submittedAt: Date | null; answerDigest: string | null; now: Date }[]>`
         SELECT a.id, a."examId", a."studentId", a.status, a."deadlineAt", a."activeClientId", a."suspendedAt", a."receiptCode", a."submittedAt", a."answerDigest", NOW(3) AS now,
                (TIMESTAMPADD(MICROSECOND, CASE WHEN a."suspendedAt" IS NOT NULL AND (SELECT sp."timePolicy" FROM exam_suspensions sp WHERE sp.id = a."suspensionId") = 'FREEZE_CLOCK' THEN TIMESTAMPDIFF(MICROSECOND, a."suspendedAt", NOW(3)) ELSE 0 END,
@@ -382,7 +382,7 @@ export class DeliveryService {
       await tx.$executeRaw`UPDATE attempts SET status = ${status}, "submittedAt" = ${submittedAt}, "submitKey" = ${o.submitKey ?? null}, "receiptCode" = ${code}, "answerDigest" = ${digest} WHERE id = ${attemptId}`;
       await tx.$executeRaw`INSERT INTO attempt_events ("attemptId", kind, "actorId", detail) VALUES (${attemptId}, ${kind}, ${o.actor?.id ?? null}, ${detail})`;
       return { receiptCode: code, submittedAt, answered: answers.filter((x) => x.state === 'ANSWERED').length, total, digest, status, replayed: false as const, late, examId: a.examId, studentId: a.studentId, fresh: true as const };
-    }, { maxWait: 15_000, timeout: 20_000 });
+    }, { maxWait: 15_000, timeout: 20_000 }));
     if ('skipped' in out) return out;
     if (out.fresh) {
       // Candidate submits / deadline auto-submits are recorded on the attempt itself (status, receipt, digest, attempt_events).

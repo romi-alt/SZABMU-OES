@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { Role } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
+import { retryOnDeadlock } from '../../infra/sql';
 import type { AuthUser } from '../../common/auth';
 import type { Prisma } from '../../generated/prisma/client';
 
@@ -29,13 +30,13 @@ export function canonical(v: unknown): string {
   return JSON.stringify(norm(v));
 }
 
-/** Hash-chained audit trail. Rows are serialised with an advisory lock so the chain is linear. */
+/** Hash-chained audit trail. Rows are serialised with a row lock (app_locks 'audit_chain') so the chain is linear. */
 @Injectable()
 export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
   async log(e: AuditEntry): Promise<void> {
-    await this.prisma.$transaction((tx) => this.append(tx, e));
+    await retryOnDeadlock(() => this.prisma.$transaction((tx) => this.append(tx, e)));
   }
 
   /**
