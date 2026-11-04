@@ -53,7 +53,9 @@ export class KvService implements OnModuleDestroy {
   get available() { return Date.now() >= this.downUntil; }
   private async safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
     if (!this.available) return fallback;
-    try { return await fn(); } catch { this.downUntil = Date.now() + 3000; return fallback; }
+    // Only Redis trips the breaker: it protects requests from a separate, possibly dead service. On the database backend the store IS the
+    // database the request needs anyway, and tripping would switch off rate limits (fail open) for every caller after one transient error.
+    try { return await fn(); } catch { if (this.redis) this.downUntil = Date.now() + 3000; return fallback; }
   }
   async onModuleDestroy() {
     if (this.sweeper) clearInterval(this.sweeper);

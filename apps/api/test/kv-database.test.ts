@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Config } from '../src/config';
 import { KvService } from '../src/infra/kv.service';
 import { PrismaService } from '../src/infra/prisma.service';
@@ -67,6 +67,12 @@ describe('database coordination store', () => {
     expect(await kv.lastBeats('ex1', ['att1', 'att2', 'nope'])).toEqual([now, now - 120_000, null]);
     const all = await kv.beatsOf('ex1');
     expect(all.size).toBe(3); expect(all.get('att3')).toEqual({ t: now + 5, online: false });
+  });
+
+  it('a transient database error fails soft without switching the store (and rate limits) off', async () => {
+    const spy = vi.spyOn(prisma, '$queryRaw').mockRejectedValueOnce(new Error('Connection terminated unexpectedly'));
+    expect(await kv.getJson('sess:x')).toBeNull(); spy.mockRestore();
+    expect(kv.available).toBe(true); expect(await kv.hit('rl:after-error', 60)).toBe(1);
   });
 
   it('clearPrefix removes only matching keys (treating % and _ literally)', async () => {
