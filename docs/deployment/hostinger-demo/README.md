@@ -15,15 +15,16 @@
 | Hosting | Hostinger Cloud Enterprise (order `1009002313`, hPanel user `u943531942`), **one** managed Node.js website |
 | Node.js | 24 (highest Hostinger offers; CI job `node24` is green for build/typecheck/lint/tests) |
 | Source | GitHub `romi-alt/SZABMU-OES`, branch `main` — Hostinger Git auto-deploy rebuilds on every push |
-| PostgreSQL | **Neon** free tier, project `szabmu-oes-us` (`muddy-tooth-28867630`), PG 16, region `aws-us-east-1` — same coast as the Hostinger web server (`us-bos-web1774`, Boston). The first project `szabmu-oes` (Singapore, `empty-voice-15975689`) is no longer used |
+| Database | **Hostinger managed MariaDB 11.8** (since 2026-11-04): database/user `u943531942_szabmu` on `srv1774.hstgr.io:3306` (same server as the website), TLS with certificate verification (`sslaccept=strict`). Limits: 150 connections, **500 new connections per hour**, idle connections closed after 300 s, statements capped at 300 s. Before that: Neon PostgreSQL `szabmu-oes-us` (`muddy-tooth-28867630`) — kept read-only as the pre-migration copy |
 | Redis | **Upstash** free tier (one database allowed): `szabmu-oes-us`, AWS `us-east-1` (N. Virginia), TLS `rediss://…happy-parrot-199048.upstash.io:6379`, 500k commands/month. The Singapore database was deleted 2026-11-01 |
 | Entry point | `scripts/hostinger-single-site.mjs` (`npm run start:hostinger`) |
 
 ## Why it looks like this
 
-1. **Hostinger has no PostgreSQL and no Redis.** Its managed databases are MySQL only; the exam engine depends on PostgreSQL features
-   (`clock_timestamp()`, `ON CONFLICT … WHERE`, `SKIP LOCKED`, advisory locks, PL/pgSQL triggers) and on Redis (sessions/recovery, BullMQ, SSE fan-out).
-   Both are therefore external managed services (Neon + Upstash free tiers), reached over TLS.
+1. **Hostinger has no Redis**, so Redis is Upstash (free tier) over TLS. The database moved from Neon PostgreSQL to Hostinger's own MariaDB
+   on 2026-11-04 (`apps/api/prisma/migrations/20261104000000_mysql_baseline`): the integrity layer was ported — append-only and
+   answer-lock triggers, CHECK constraints, partial unique indexes as generated columns, row locks on `app_locks` instead of advisory locks —
+   and every connection pins `time_zone=+00:00` (see `apps/api/src/infra/db-url.ts`). The old PostgreSQL migrations are in `prisma/migrations-postgres-archive`.
 2. **Only one Node.js slot was free** on the account (9 Node.js sites already exist; limit ≈10). The production plan wants three sites
    (student web, staff web, API). The demo collapses them into **one process tree**:
    - one Node HTTP server listens on Hostinger's `PORT`;
@@ -40,15 +41,18 @@
 
 ## How it was done (reproducible)
 
-1. **Neon** (console, signed-in browser): created project `szabmu-oes-us`, PG 16, `aws-us-east-1`. Copied the owner connection string (`sslmode=require`).
+1. **Database** (hPanel → Databases → MySQL): database + user `u943531942_szabmu`; Remote MySQL allows `%` so the workstation can migrate it.
+   URL: `mysql://u943531942_szabmu:<password, @ as %40>@srv1774.hstgr.io:3306/u943531942_szabmu?sslaccept=strict`.
 2. **Upstash** (console): created Redis `szabmu-oes`, Free plan, AWS Singapore. Used the TCP `rediss://default:<token>@<host>:6379` URL.
 3. **Schema + demo data**, from a workstation (never from the Hostinger build — see `../hostinger-managed/04-database-requirements.md` D10):
    ```bash
-   export DATABASE_URL='postgresql://…neon.tech/neondb?sslmode=require' REDIS_URL='rediss://…upstash.io:6379'
+   export DATABASE_URL='mysql://u943531942_szabmu:…@srv1774.hstgr.io:3306/u943531942_szabmu?sslaccept=strict' REDIS_URL='rediss://…upstash.io:6379'
    npm run build:api
    npm run db:migrate
    NODE_ENV=development DB_TX_TIMEOUT_MS=600000 DB_TX_MAX_WAIT_MS=60000 node apps/api/dist/seed/seed.js --reset
    # SYNTHETIC data. Over a slow/remote link the seed's big transactions exceed even 30 s (P2028), hence the long limits here.
+   # Moving existing data from the old PostgreSQL instead of seeding (row-for-row, hashes and receipts unchanged):
+   SOURCE_DATABASE_URL='postgresql://…neon.tech/neondb?sslmode=require' node scripts/pg-to-mysql.mjs   # add --replace to overwrite
    ```
 4. **Hostinger website:** generated a free subdomain (`hosting_domains_generate-free-subdomain`) and created the website on order `1009002313`.
 5. **Environment variables** (hPanel → Websites → the site → Node.js → Environment variables, or `hosting_nodejs_replace-environment-variables`;
@@ -56,7 +60,7 @@
 
    | Variable | Value / note |
    |---|---|
-   | `DATABASE_URL` | Neon connection string, `sslmode=require` |
+   | `DATABASE_URL` | Hostinger MariaDB URL above (`mysql://…?sslaccept=strict`) |
    | `REDIS_URL` | Upstash `rediss://…` |
    | `COOKIE_SECRET`, `RECEIPT_SECRET`, `MFA_KEY`, `METRICS_TOKEN` | independent random values (≥ 36 bytes base64url) |
    | `API_INTERNAL_URL` | `http://127.0.0.1:47321` (**build-time**) |
@@ -104,8 +108,8 @@ Live check: student on oes 200, CCE on dashboard 200, cross-portal 401 both ways
 | Redeploy | push to `main` (auto-deploy), or `hosting_nodejs_start-build` / `hosting_deploy` |
 | Restart without rebuild | `hosting_nodejs_restart-application` (picks up runtime env changes) |
 | Runtime logs | `hosting_nodejs_runtime-logs` (only `console.*` output is captured — raw child-process stdio is not) |
-| New migration | run `npm run db:migrate` from a workstation with the Neon `DATABASE_URL`, **before** pushing code that needs it |
-| Reset demo data | `NODE_ENV=development node apps/api/dist/seed/seed.js --reset` against Neon (wipes everything) |
+| New migration | run `npm run db:migrate` from a workstation with the MariaDB `DATABASE_URL`, **before** pushing code that needs it |
+| Reset demo data | `NODE_ENV=development node apps/api/dist/seed/seed.js --reset` against the MariaDB database (wipes everything) |
 | Try student self-registration | the seed puts 10 unclaimed register entries in: reg no `DEMO-A-2025-0001`…`0005` (DMC-A) and `DEMO-B-2025-0001`…`0005` (DMC-B), date of birth `2005-01-0N` for entry N (e.g. `DEMO-A-2025-0003` → `2005-01-03`). Register on the student site with one of them and a real email; each entry can be claimed once. More: dashboard → Student register → Add student / Import |
 | Build logs / failure analysis | `hosting_get-deployment` with the domain |
 | Rotate a secret | change it in Neon/Upstash or generate a new one → replace the full env set → restart (rebuild if build-time) |
@@ -118,7 +122,7 @@ Live check: student on oes 200, CCE on dashboard 200, cross-portal 401 both ways
 | Two portals on two Node.js sites | two host names on one process (enforced) | a crash or deploy affects both portals at once |
 | `MFA_ENFORCE=true` | off | seeded staff sign in with password only |
 | Separate always-on worker host | workers inside the API child (`RUN_WORKERS=true`) | if Hostinger idles/restarts the process, timers pause until the next request wakes it |
-| PITR backups, monitoring | Neon free-tier history only; no alerting | not suitable for real candidates |
+| PITR backups, monitoring | Hostinger daily backups (hPanel → Files → Backups) only; no alerting | not suitable for real candidates |
 | Real mail | Hostinger mailbox `no-reply@szabmu.site` via authenticated SMTP (`SMTP_HOST=smtp.hostinger.com`, `SMTP_PORT=465`, `SMTP_SECURE=true`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`); while `SMTP_HOST` is unset mail stays in the DB outbox | seeded `@demo.szabmu.invalid` accounts still receive nothing — only accounts with a real address get codes. Add `SMTP_PASS` in the hPanel form, never via the env-var API (it is a full replace and values read back masked) |
 
 Free-tier limits to watch: Upstash 500k commands/month (BullMQ polling consumes some continuously); Neon free compute auto-suspends when idle,

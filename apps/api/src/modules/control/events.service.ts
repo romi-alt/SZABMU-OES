@@ -4,6 +4,7 @@ import type { Prisma } from '../../generated/prisma/client';
 import { CONFIG, type Config } from '../../config';
 import { MetricsService } from '../../infra/metrics.service';
 import { PrismaService } from '../../infra/prisma.service';
+import { int, json } from '../../infra/sql';
 import { RedisService } from '../../infra/redis.service';
 
 export interface ExamEvent { id: number; eventId: string; examId: string; institutionId: string | null; studentId: string | null; version: number; type: string; payload: Record<string, any>; at: string }
@@ -29,7 +30,7 @@ export interface Subscriber { id: number; examId: string; viewer: Viewer; lastId
 interface Stream { subs: Map<number, Subscriber>; polledUpTo: number; nextPoll: number }
 
 const row = (r: { id: bigint; eventId: string; examId: string; institutionId: string | null; studentId: string | null; aggregateVersion: number; type: string; payload: unknown; createdAt: Date }): ExamEvent =>
-  ({ id: Number(r.id), eventId: r.eventId, examId: r.examId, institutionId: r.institutionId, studentId: r.studentId, version: r.aggregateVersion, type: r.type, payload: (r.payload ?? {}) as Record<string, any>, at: r.createdAt.toISOString() });
+  ({ id: Number(r.id), eventId: r.eventId, examId: r.examId, institutionId: r.institutionId, studentId: r.studentId, version: r.aggregateVersion, type: r.type, payload: json<Record<string, any>>(r.payload ?? {}), at: r.createdAt.toISOString() });
 
 /**
  * Durable event delivery.
@@ -51,7 +52,7 @@ export class ExamEventsService implements OnModuleDestroy {
   async emit(tx: Prisma.TransactionClient, e: EmitSpec): Promise<number> {
     const r = await tx.$queryRaw<{ id: bigint }[]>`
       INSERT INTO exam_events ("eventId", "examId", "institutionId", "studentId", "aggregateVersion", type, payload)
-      VALUES (gen_random_uuid(), ${e.examId}::uuid, ${e.institutionId ?? null}::uuid, ${e.studentId ?? null}::uuid, ${e.version}::int, ${e.type}, ${JSON.stringify(e.payload ?? {})}::jsonb) RETURNING id`;
+      VALUES (UUID(), ${e.examId}, ${e.institutionId ?? null}, ${e.studentId ?? null}, ${e.version}, ${e.type}, ${JSON.stringify(e.payload ?? {})}) RETURNING id`;
     return Number(r[0]!.id);
   }
 
@@ -69,12 +70,12 @@ export class ExamEventsService implements OnModuleDestroy {
       for (const r of rows) {
         try {
           await this.redis.client.publish(CHANNEL(r.examId), JSON.stringify(row(r)));
-          await tx.$executeRaw`UPDATE exam_events SET "deliveryStatus" = 'DELIVERED', "deliveredAt" = clock_timestamp() WHERE id = ${r.id}`;
+          await tx.$executeRaw`UPDATE exam_events SET "deliveryStatus" = 'DELIVERED', "deliveredAt" = NOW(3) WHERE id = ${r.id}`;
           published++;
         } catch {
           failed++;
           const exhausted = r.retryCount + 1 >= MAX_RETRIES;
-          await tx.$executeRaw`UPDATE exam_events SET "retryCount" = "retryCount" + 1, "deliveryStatus" = ${exhausted ? 'FAILED' : 'PENDING'}::"EventDelivery" WHERE id = ${r.id}`;
+          await tx.$executeRaw`UPDATE exam_events SET "retryCount" = "retryCount" + 1, "deliveryStatus" = ${exhausted ? 'FAILED' : 'PENDING'} WHERE id = ${r.id}`;
         }
       }
     }, { maxWait: 5000, timeout: 20000 });
@@ -84,14 +85,14 @@ export class ExamEventsService implements OnModuleDestroy {
   }
 
   async pendingCount(): Promise<number> {
-    return (await this.prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM exam_events WHERE "deliveryStatus" = 'PENDING'`)[0]!.n;
+    return int((await this.prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*) AS n FROM exam_events WHERE "deliveryStatus" = 'PENDING'`)[0]!.n);
   }
   async outboxStats(): Promise<{ pending: number; failed: number; oldestPendingSeconds: number | null }> {
-    const r = (await this.prisma.$queryRaw<{ pending: number; failed: number; oldest: number | null }[]>`
-      SELECT count(*) FILTER (WHERE "deliveryStatus" = 'PENDING')::int AS pending, count(*) FILTER (WHERE "deliveryStatus" = 'FAILED')::int AS failed,
-             extract(epoch FROM clock_timestamp() - min("createdAt") FILTER (WHERE "deliveryStatus" = 'PENDING'))::float AS oldest
+    const r = (await this.prisma.$queryRaw<{ pending: bigint; failed: bigint; oldest: number | null }[]>`
+      SELECT COUNT(CASE WHEN "deliveryStatus" = 'PENDING' THEN 1 END) AS pending, COUNT(CASE WHEN "deliveryStatus" = 'FAILED' THEN 1 END) AS failed,
+             TIMESTAMPDIFF(MICROSECOND, MIN(CASE WHEN "deliveryStatus" = 'PENDING' THEN "createdAt" END), NOW(3)) / 1e6 AS oldest
       FROM exam_events WHERE "deliveryStatus" <> 'DELIVERED'`)[0]!;
-    return { pending: r.pending, failed: r.failed, oldestPendingSeconds: r.oldest };
+    return { pending: int(r.pending), failed: int(r.failed), oldestPendingSeconds: r.oldest === null ? null : Number(r.oldest) };
   }
 
   // ───────────── read side ─────────────
@@ -102,7 +103,7 @@ export class ExamEventsService implements OnModuleDestroy {
     return { events: rows.slice(0, limit).map(row).filter((e) => visibleTo(e, viewer)), gap };
   }
   async latestId(examId: string): Promise<number> {
-    const r = await this.prisma.$queryRaw<{ id: bigint | null }[]>`SELECT max(id) AS id FROM exam_events WHERE "examId" = ${examId}::uuid`;
+    const r = await this.prisma.$queryRaw<{ id: bigint | null }[]>`SELECT max(id) AS id FROM exam_events WHERE "examId" = ${examId}`;
     return Number(r[0]?.id ?? 0);
   }
 

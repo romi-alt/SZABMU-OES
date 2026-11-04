@@ -1,12 +1,13 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { hostname } from 'node:os';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { SAVE_GRACE_SECONDS } from '@oes/shared';
 import { LINKS } from '@oes/shared';
 import { Prisma } from '../../generated/prisma/client';
 import { CONFIG, type Config } from '../../config';
 import { MetricsService } from '../../infra/metrics.service';
 import { PrismaService } from '../../infra/prisma.service';
+import { int } from '../../infra/sql';
 import { AuditService } from '../audit/audit.service';
 import { DeliveryService } from '../delivery/delivery.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -19,7 +20,7 @@ const CONCURRENCY_ENV = () => Math.max(1, Math.min(32, Number(process.env.LIFECY
 const MAX_ATTEMPT_RETRIES = 5; const leaseSeconds = () => Number(process.env.LIFECYCLE_LEASE_SECONDS ?? 15); const BATCH = 200; const BUDGET_MS = 20_000;
 
 /**
- * The lifecycle reconciler. PostgreSQL is the authority: every transition is derived from database state and the database clock,
+ * The lifecycle reconciler. The database is the authority: every transition is derived from database state and the database clock,
  * is idempotent, and can be executed by any API process. Redis is not involved in correctness (it only accelerates event delivery).
  *
  *  - ownership: one process at a time holds a database lease (a crashed owner's lease simply expires); every step is ALSO safe if two
@@ -50,17 +51,16 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
   onModuleDestroy() { if (this.timer) clearInterval(this.timer); }
 
   private async acquireLease(): Promise<boolean> {
-    const r = await this.prisma.$queryRaw<{ owner: string }[]>`
-      INSERT INTO lifecycle_leases (name, owner, "expiresAt") VALUES ('lifecycle', ${this.instance}, clock_timestamp() + make_interval(secs => ${leaseSeconds()}::int))
-      ON CONFLICT (name) DO UPDATE SET owner = EXCLUDED.owner, "expiresAt" = EXCLUDED."expiresAt", "updatedAt" = clock_timestamp()
-      WHERE lifecycle_leases."expiresAt" < clock_timestamp() OR lifecycle_leases.owner = EXCLUDED.owner
-      RETURNING owner`;
-    return r.length > 0;
+    // The row exists after the first call; the guarded UPDATE is the atomic claim (an expired lease, or one we already hold).
+    await this.prisma.$executeRaw`INSERT IGNORE INTO lifecycle_leases (name, owner, "expiresAt", "updatedAt") VALUES ('lifecycle', '', '1970-01-01 00:00:01', NOW(3))`;
+    const n = await this.prisma.$executeRaw`UPDATE lifecycle_leases SET owner = ${this.instance}, "expiresAt" = TIMESTAMPADD(SECOND, ${leaseSeconds()}, NOW(3)), "updatedAt" = NOW(3)
+      WHERE name = 'lifecycle' AND ("expiresAt" < NOW(3) OR owner = ${this.instance})`;
+    return n > 0;
   }
 
   /** Extends our own lease (no-op if someone else took it). Called between steps so a long pass does not lose ownership mid-way. */
   private async renewLease() {
-    await this.prisma.$executeRaw`UPDATE lifecycle_leases SET "expiresAt" = clock_timestamp() + make_interval(secs => ${leaseSeconds()}::int), "updatedAt" = clock_timestamp() WHERE name = 'lifecycle' AND owner = ${this.instance}`.catch(() => undefined);
+    await this.prisma.$executeRaw`UPDATE lifecycle_leases SET "expiresAt" = TIMESTAMPADD(SECOND, ${leaseSeconds()}, NOW(3)), "updatedAt" = NOW(3) WHERE name = 'lifecycle' AND owner = ${this.instance}`.catch(() => undefined);
   }
 
   // ───────────── one reconciliation pass ─────────────
@@ -86,7 +86,8 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
     this.running = true;                                   // claim the slot BEFORE any await so two callers can never run a pass together
     if (!opts.examId && !(await this.acquireLease())) { this.running = false; this.metrics.lifecycleRuns.inc({ outcome: 'skipped_not_leader' }); return { ...stats, skipped: true }; }
     const started = Date.now(); const deadline = started + BUDGET_MS;
-    const run = (await this.prisma.$queryRaw<{ id: string }[]>`INSERT INTO lifecycle_runs (id, instance) VALUES (gen_random_uuid(), ${this.instance}) RETURNING id`)[0]!.id;
+    const run = randomUUID();
+    await this.prisma.$executeRaw`INSERT INTO lifecycle_runs (id, instance) VALUES (${run}, ${this.instance})`;
     let error: string | null = null;
     try {
       const step = async (name: string, fn: () => Promise<void>) => { if (!opts.examId) await this.renewLease(); try { await fn(); } catch (e) { error = `${name}: ${String(e).replace(/\s+/g, ' ').slice(0, 300)}`; this.log.error(`step ${name} failed: ${error}`); } };
@@ -98,10 +99,10 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
       await step('scoring', () => this.progressScoring(stats, opts.examId, deadline));
       await step('backstopGrading', () => this.gradeBackstop(stats, opts.examId, deadline));
       await step('publish', async () => { await this.events.publishPending(200); });
-      await step('prune', async () => { await this.prisma.$executeRaw`DELETE FROM lifecycle_runs WHERE "startedAt" < clock_timestamp() - interval '2 days'`; });
-      stats.poisoned = (await this.prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM attempts WHERE status = 'IN_PROGRESS' AND "lifecycleRetries" >= ${MAX_ATTEMPT_RETRIES}`)[0]!.n;
+      await step('prune', async () => { await this.prisma.$executeRaw`DELETE FROM lifecycle_runs WHERE "startedAt" < NOW(3) - INTERVAL 2 DAY`; });
+      stats.poisoned = int((await this.prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*) AS n FROM attempts WHERE status = 'IN_PROGRESS' AND "lifecycleRetries" >= ${MAX_ATTEMPT_RETRIES}`)[0]!.n);
     } finally {
-      await this.prisma.$executeRaw`UPDATE lifecycle_runs SET "finishedAt" = clock_timestamp(), "durationMs" = ${Date.now() - started}::int, stats = ${JSON.stringify(stats)}::jsonb, error = ${error} WHERE id = ${run}::uuid`.catch(() => undefined);
+      await this.prisma.$executeRaw`UPDATE lifecycle_runs SET "finishedAt" = NOW(3), "durationMs" = ${Date.now() - started}, stats = ${JSON.stringify(stats)}, error = ${error} WHERE id = ${run}`.catch(() => undefined);
       this.running = false;
       this.metrics.lifecycleRuns.inc({ outcome: error ? 'error' : 'ok' });
     }
@@ -113,14 +114,14 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
 
   // ───────────── step A: seal attempts whose database-derived deadline has passed ─────────────
   private async expireAttempts(stats: LifecycleStats, examId: string | undefined, deadline: number) {
-    const scope = examId ? Prisma.sql`AND a."examId" = ${examId}::uuid` : Prisma.empty;
+    const scope = examId ? Prisma.sql`AND a."examId" = ${examId}` : Prisma.empty;
     while (Date.now() < deadline) {
       // Frozen (suspended under FREEZE_CLOCK) attempts accrue no time; everything else expires at deadline + grace on the DATABASE clock.
       const ids = await this.prisma.$queryRaw<{ id: string }[]>`
         SELECT a.id FROM attempts a LEFT JOIN exam_suspensions s ON s.id = a."suspensionId"
-        WHERE a.status = 'IN_PROGRESS' AND a."lifecycleRetries" < ${MAX_ATTEMPT_RETRIES} AND a."deadlineAt" < clock_timestamp() ${scope}
-          AND a."deadlineAt" + make_interval(secs => ${SAVE_GRACE_SECONDS}::int)
-              + CASE WHEN a."suspendedAt" IS NOT NULL AND s."timePolicy" = 'FREEZE_CLOCK' THEN clock_timestamp() - a."suspendedAt" ELSE interval '0' END < clock_timestamp()
+        WHERE a.status = 'IN_PROGRESS' AND a."lifecycleRetries" < ${MAX_ATTEMPT_RETRIES} AND a."deadlineAt" < NOW(3) ${scope}
+          AND TIMESTAMPADD(MICROSECOND, CASE WHEN a."suspendedAt" IS NOT NULL AND s."timePolicy" = 'FREEZE_CLOCK' THEN TIMESTAMPDIFF(MICROSECOND, a."suspendedAt", NOW(3)) ELSE 0 END,
+              TIMESTAMPADD(SECOND, ${SAVE_GRACE_SECONDS}, a."deadlineAt")) < NOW(3)
         ORDER BY a."deadlineAt" LIMIT ${BATCH}`;
       if (!ids.length) return;
       let sealed = 0;
@@ -129,7 +130,7 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
           const r = await this.delivery.sealIfExpired(id, { bulk: true });
           if (!('skipped' in r)) { sealed++; stats.autoSubmitted++; this.metrics.lifecycleTransitions.inc({ kind: 'auto_submit' }); }
         } catch (e) {
-          await this.prisma.$executeRaw`UPDATE attempts SET "lifecycleRetries" = "lifecycleRetries" + 1, "lifecycleError" = ${String((e as Error).message).slice(0, 200)} WHERE id = ${id}::uuid`;
+          await this.prisma.$executeRaw`UPDATE attempts SET "lifecycleRetries" = "lifecycleRetries" + 1, "lifecycleError" = ${String((e as Error).message).slice(0, 200)} WHERE id = ${id}`;
         }
       });
       if (ids.length < BATCH || sealed === 0) return;            // nothing more to do (or only failures remain: bounded by the retry counter)
@@ -142,10 +143,10 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
     await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM exams WHERE "controlMode" = 'AUTOMATIC' AND status IN ('SCHEDULED', 'ADMISSION_OPEN') AND "paperStatus" = 'APPROVED'
-          AND "opensAt" <= clock_timestamp() AND "closesAt" > clock_timestamp() ${examId ? Prisma.sql`AND id = ${examId}::uuid` : Prisma.empty}
+          AND "opensAt" <= NOW(3) AND "closesAt" > NOW(3) ${examId ? Prisma.sql`AND id = ${examId}` : Prisma.empty}
         ORDER BY "opensAt" LIMIT 50 FOR UPDATE SKIP LOCKED`;
       for (const r of rows) {
-        await tx.$executeRaw`UPDATE exams SET status = 'LIVE', "officialStartAt" = COALESCE("officialStartAt", "opensAt"), "admissionOpenedAt" = COALESCE("admissionOpenedAt", "opensAt") WHERE id = ${r.id}::uuid`;
+        await tx.$executeRaw`UPDATE exams SET status = 'LIVE', "officialStartAt" = COALESCE("officialStartAt", "opensAt"), "admissionOpenedAt" = COALESCE("admissionOpenedAt", "opensAt") WHERE id = ${r.id}`;
         await finishTransition(tx, this, { examId: r.id, actor: null, action: 'exam.lifecycle.start', meta: { by: 'window-start' }, events: [{ type: 'EXAM_STARTED', payload: { automatic: true } }] });
         stats.opened++; this.metrics.lifecycleTransitions.inc({ kind: 'start' });
       }
@@ -155,14 +156,14 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
 
   /** CLOSE(force) crash-safety: any exam still carrying forceCloseAt gets its remaining attempts sealed. */
   private async forceClose(stats: LifecycleStats, examId: string | undefined, deadline: number) {
-    const exams = await this.prisma.$queryRaw<{ id: string }[]>`SELECT id FROM exams WHERE status = 'CLOSING' AND "forceCloseAt" IS NOT NULL ${examId ? Prisma.sql`AND id = ${examId}::uuid` : Prisma.empty} LIMIT 20`;
+    const exams = await this.prisma.$queryRaw<{ id: string }[]>`SELECT id FROM exams WHERE status = 'CLOSING' AND "forceCloseAt" IS NOT NULL ${examId ? Prisma.sql`AND id = ${examId}` : Prisma.empty} LIMIT 20`;
     for (const e of exams) {
       while (Date.now() < deadline) {
-        const ids = await this.prisma.$queryRaw<{ id: string }[]>`SELECT id FROM attempts WHERE "examId" = ${e.id}::uuid AND status = 'IN_PROGRESS' AND "lifecycleRetries" < ${MAX_ATTEMPT_RETRIES} LIMIT ${BATCH}`;
+        const ids = await this.prisma.$queryRaw<{ id: string }[]>`SELECT id FROM attempts WHERE "examId" = ${e.id} AND status = 'IN_PROGRESS' AND "lifecycleRetries" < ${MAX_ATTEMPT_RETRIES} LIMIT ${BATCH}`;
         if (!ids.length) break;
         await this.pool(ids.map((x) => x.id), async (id) => {
           try { await this.delivery.finalize(id, { mode: 'FORCED', reason: 'Examination closed by the controller', bulk: true }); stats.forceSealed++; }
-          catch (err) { await this.prisma.$executeRaw`UPDATE attempts SET "lifecycleRetries" = "lifecycleRetries" + 1, "lifecycleError" = ${String((err as Error).message).slice(0, 200)} WHERE id = ${id}::uuid`; }
+          catch (err) { await this.prisma.$executeRaw`UPDATE attempts SET "lifecycleRetries" = "lifecycleRetries" + 1, "lifecycleError" = ${String((err as Error).message).slice(0, 200)} WHERE id = ${id}`; }
         });
       }
     }
@@ -173,11 +174,11 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
     await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ id: string }[]>`
         SELECT e.id FROM exams e
-        WHERE (e.status = 'CLOSING' OR (e.status IN ('SCHEDULED', 'ADMISSION_OPEN', 'LIVE') AND e."closesAt" <= clock_timestamp()))
-          AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a."examId" = e.id AND a.status = 'IN_PROGRESS') ${examId ? Prisma.sql`AND e.id = ${examId}::uuid` : Prisma.empty}
-        ORDER BY e."closesAt" LIMIT 50 FOR UPDATE OF e SKIP LOCKED`;
+        WHERE (e.status = 'CLOSING' OR (e.status IN ('SCHEDULED', 'ADMISSION_OPEN', 'LIVE') AND e."closesAt" <= NOW(3)))
+          AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a."examId" = e.id AND a.status = 'IN_PROGRESS') ${examId ? Prisma.sql`AND e.id = ${examId}` : Prisma.empty}
+        ORDER BY e."closesAt" LIMIT 50 FOR UPDATE SKIP LOCKED`;
       for (const r of rows) {
-        await tx.$executeRaw`UPDATE exams SET status = 'CLOSED', "closedAt" = clock_timestamp(), "admissionClosedAt" = COALESCE("admissionClosedAt", clock_timestamp()) WHERE id = ${r.id}::uuid`;
+        await tx.$executeRaw`UPDATE exams SET status = 'CLOSED', "closedAt" = NOW(3), "admissionClosedAt" = COALESCE("admissionClosedAt", NOW(3)) WHERE id = ${r.id}`;
         await finishTransition(tx, this, { examId: r.id, actor: null, action: 'exam.lifecycle.close', meta: { by: 'reconciler' }, events: [{ type: 'EXAM_CLOSED', payload: {} }] });
         stats.closed++; this.metrics.lifecycleTransitions.inc({ kind: 'close' });
       }
@@ -188,9 +189,9 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
   /** AUTOMATIC exams proceed from CLOSED to SCORING by themselves; MANUAL exams wait for INITIATE_SCORING. */
   private async autoScoring(stats: LifecycleStats, examId?: string) {
     await this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM exams WHERE status = 'CLOSED' AND "controlMode" = 'AUTOMATIC' ${examId ? Prisma.sql`AND id = ${examId}::uuid` : Prisma.empty} LIMIT 50 FOR UPDATE SKIP LOCKED`;
+      const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM exams WHERE status = 'CLOSED' AND "controlMode" = 'AUTOMATIC' ${examId ? Prisma.sql`AND id = ${examId}` : Prisma.empty} LIMIT 50 FOR UPDATE SKIP LOCKED`;
       for (const r of rows) {
-        await tx.$executeRaw`UPDATE exams SET status = 'SCORING' WHERE id = ${r.id}::uuid`;
+        await tx.$executeRaw`UPDATE exams SET status = 'SCORING' WHERE id = ${r.id}`;
         await finishTransition(tx, this, { examId: r.id, actor: null, action: 'exam.lifecycle.scoring_started', meta: { by: 'reconciler' }, events: [{ type: 'SCORING_STARTED', payload: {} }] });
         stats.scoringStarted++; this.metrics.lifecycleTransitions.inc({ kind: 'scoring_start' });
       }
@@ -202,15 +203,15 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
     const exams = await this.prisma.exam.findMany({ where: { status: 'SCORING', ...(examId ? { id: examId } : {}) }, select: { id: true, code: true, title: true, totalMarks: true }, take: 20 });
     for (const ex of exams) {
       await this.gradeUngraded(stats, ex.id, deadline);
-      const pendingGrade = (await this.prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM attempts a LEFT JOIN results r ON r."examId" = a."examId" AND r."studentId" = a."studentId" WHERE a."examId" = ${ex.id}::uuid AND (a.status = 'IN_PROGRESS' OR (a.status IN ('SUBMITTED','AUTO_SUBMITTED') AND r.id IS NULL))`)[0]!.n;
+      const pendingGrade = int((await this.prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*) AS n FROM attempts a LEFT JOIN results r ON r."examId" = a."examId" AND r."studentId" = a."studentId" WHERE a."examId" = ${ex.id} AND (a.status = 'IN_PROGRESS' OR (a.status IN ('SUBMITTED','AUTO_SUBMITTED') AND r.id IS NULL))`)[0]!.n);
       if (pendingGrade > 0) continue;
       const moved = await this.prisma.$transaction(async (tx) => {
-        const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM exams WHERE id = ${ex.id}::uuid AND status = 'SCORING' FOR UPDATE SKIP LOCKED`;
+        const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM exams WHERE id = ${ex.id} AND status = 'SCORING' FOR UPDATE`;   // wait, not SKIP LOCKED: InnoDB share-locks this row for every FK insert (e.g. a grade job writing results); the status predicate is re-read after the wait
         if (!locked.length) return false;
-        const absent = await tx.$queryRaw<{ studentId: string }[]>`SELECT c."studentId" FROM exam_candidates c WHERE c."examId" = ${ex.id}::uuid AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a."examId" = ${ex.id}::uuid AND a."studentId" = c."studentId")`;
+        const absent = await tx.$queryRaw<{ studentId: string }[]>`SELECT c."studentId" FROM exam_candidates c WHERE c."examId" = ${ex.id} AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a."examId" = ${ex.id} AND a."studentId" = c."studentId")`;
         await tx.result.createMany({ data: absent.map((s) => ({ examId: ex.id, studentId: s.studentId, rawScore: 0, totalMarks: ex.totalMarks, percent: 0, status: 'ABSENT' as const })), skipDuplicates: true });
         await tx.resultBatch.upsert({ where: { examId: ex.id }, create: { examId: ex.id }, update: {} });
-        await tx.$executeRaw`UPDATE exams SET status = 'RESULT_PENDING' WHERE id = ${ex.id}::uuid`;
+        await tx.$executeRaw`UPDATE exams SET status = 'RESULT_PENDING' WHERE id = ${ex.id}`;
         await finishTransition(tx, this, { examId: ex.id, actor: null, action: 'exam.lifecycle.results_pending', meta: { absentees: absent.length }, events: [{ type: 'RESULTS_PENDING', payload: { absentees: absent.length } }] });
         return true;
       });
@@ -224,7 +225,7 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
     while (Date.now() < deadline) {
       const ids = await this.prisma.$queryRaw<{ id: string }[]>`
         SELECT a.id FROM attempts a LEFT JOIN results r ON r."examId" = a."examId" AND r."studentId" = a."studentId"
-        WHERE a.status IN ('SUBMITTED', 'AUTO_SUBMITTED') AND r.id IS NULL ${examId ? Prisma.sql`AND a."examId" = ${examId}::uuid` : Prisma.empty} LIMIT ${BATCH}`;
+        WHERE a.status IN ('SUBMITTED', 'AUTO_SUBMITTED') AND r.id IS NULL ${examId ? Prisma.sql`AND a."examId" = ${examId}` : Prisma.empty} LIMIT ${BATCH}`;
       if (!ids.length) return;
       let ok = 0;
       await this.pool(ids.map((x) => x.id), async (id) => { try { await this.results.gradeAttempt(id); ok++; stats.graded++; } catch (e) { this.log.warn(`grade ${id}: ${(e as Error).message}`); } });
@@ -243,12 +244,13 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
   // ───────────── health (for the control centre) ─────────────
   async health() {
     const last = (await this.prisma.$queryRaw<{ at: Date | null; age: number | null; instance: string | null; ms: number | null }[]>`
-      SELECT "finishedAt" AS at, extract(epoch FROM clock_timestamp() - "finishedAt")::float AS age, instance, "durationMs" AS ms FROM lifecycle_runs WHERE error IS NULL AND "finishedAt" IS NOT NULL ORDER BY "startedAt" DESC LIMIT 1`)[0];
+      SELECT "finishedAt" AS at, TIMESTAMPDIFF(MICROSECOND, "finishedAt", NOW(3)) / 1e6 AS age, instance, "durationMs" AS ms FROM lifecycle_runs WHERE error IS NULL AND "finishedAt" IS NOT NULL ORDER BY "startedAt" DESC LIMIT 1`)[0];
     const lastError = (await this.prisma.$queryRaw<{ at: Date; error: string }[]>`SELECT "startedAt" AS at, error FROM lifecycle_runs WHERE error IS NOT NULL ORDER BY "startedAt" DESC LIMIT 1`)[0];
-    const lease = (await this.prisma.$queryRaw<{ owner: string; live: boolean }[]>`SELECT owner, "expiresAt" > clock_timestamp() AS live FROM lifecycle_leases WHERE name = 'lifecycle'`)[0];
-    const backlog = (await this.prisma.$queryRaw<{ expired: number; poisoned: number }[]>`
-      SELECT count(*) FILTER (WHERE "deadlineAt" + make_interval(secs => ${SAVE_GRACE_SECONDS + 15}::int) < clock_timestamp() AND "suspendedAt" IS NULL)::int AS expired,
-             count(*) FILTER (WHERE "lifecycleRetries" >= ${MAX_ATTEMPT_RETRIES})::int AS poisoned FROM attempts WHERE status = 'IN_PROGRESS'`)[0]!;
+    const lease = (await this.prisma.$queryRaw<{ owner: string; live: boolean }[]>`SELECT owner, "expiresAt" > NOW(3) AS live FROM lifecycle_leases WHERE name = 'lifecycle'`)[0];
+    const b = (await this.prisma.$queryRaw<{ expired: bigint; poisoned: bigint }[]>`
+      SELECT COUNT(CASE WHEN TIMESTAMPADD(SECOND, ${SAVE_GRACE_SECONDS + 15}, "deadlineAt") < NOW(3) AND "suspendedAt" IS NULL THEN 1 END) AS expired,
+             COUNT(CASE WHEN "lifecycleRetries" >= ${MAX_ATTEMPT_RETRIES} THEN 1 END) AS poisoned FROM attempts WHERE status = 'IN_PROGRESS'`)[0]!;
+    const backlog = { expired: int(b.expired), poisoned: int(b.poisoned) };
     const stale = last?.age == null || last.age > 30;
     return { lastRunAt: last?.at ?? null, lastRunAgeSeconds: last?.age ?? null, lastRunDurationMs: last?.ms ?? null, lastRunInstance: last?.instance ?? null, lastError: lastError ?? null, leaseOwner: lease?.live ? lease.owner : null,
       expiredBacklog: backlog.expired, poisonedAttempts: backlog.poisoned, status: stale ? 'STALE' : backlog.expired > 0 || backlog.poisoned > 0 ? 'DEGRADED' : 'OK' };

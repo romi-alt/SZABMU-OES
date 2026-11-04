@@ -109,7 +109,7 @@ export class TeacherService {
   async students(u: AuthUser, f: { assignmentId?: string; search?: string; page: number; pageSize: number }) {
     let pairs = await this.pairs(u);
     if (f.assignmentId) { const a = await this.myAssignment(u, f.assignmentId); pairs = [{ courseId: a.courseId, institutionId: a.institutionId, term: a.term }]; }
-    const where: Prisma.StudentWhereInput = { AND: [this.studentWhere(pairs), f.search ? { user: { fullName: { contains: f.search, mode: 'insensitive' } } } : {}] };
+    const where: Prisma.StudentWhereInput = { AND: [this.studentWhere(pairs), f.search ? { user: { fullName: { contains: f.search } } } : {}] };
     const [rows, total] = await Promise.all([
       this.prisma.student.findMany({ where, select: { user: { select: { fullName: true } } }, orderBy: { user: { fullName: 'asc' } }, ...paginate(f) }),
       this.prisma.student.count({ where }),
@@ -211,9 +211,9 @@ export class TeacherService {
     const and: Prisma.QuestionWhereInput[] = [{ authorId: u.id, status: f.status ? (f.status as never) : { not: 'RETIRED' }, poolId: { not: null }, OR: pairs.map((p) => ({ courseId: p.courseId, institutionId: p.institutionId })) }];
     if (f.poolId) { await this.ownPool(u, f.poolId); and.push({ poolId: f.poolId }); }
     if (f.assignmentId) { const a = await this.myAssignment(u, f.assignmentId); and.push({ courseId: a.courseId, institutionId: a.institutionId }); }
-    if (f.topic) and.push({ topic: { equals: f.topic, mode: 'insensitive' } });
+    if (f.topic) and.push({ topic: { equals: f.topic } });
     if (f.difficulty) and.push({ difficulty: f.difficulty as never });
-    if (f.search) and.push({ OR: [{ stem: { contains: f.search, mode: 'insensitive' } }, { topic: { contains: f.search, mode: 'insensitive' } }] });
+    if (f.search) and.push({ OR: [{ stem: { contains: f.search } }, { topic: { contains: f.search } }] });
     const where = { AND: and };
     const [rows, total, topics] = await Promise.all([
       this.prisma.question.findMany({ where, include: { options: true, course: { select: { code: true } } }, orderBy: { createdAt: 'desc' }, ...paginate(f) }),
@@ -269,7 +269,7 @@ export class TeacherService {
     });
     await this.prisma.$transaction(async (tx) => {
       for (const input of prepared) {
-        const q = await tx.question.create({ data: { courseId: input.courseId, institutionId: input.institutionId!, authorId: u.id, type: 'MCQ', stem: input.stem, explanation: input.explanation, difficulty: input.difficulty, poolId, topic: input.topic, defaultMarks: input.defaultMarks ?? 1, options: { create: input.options } } });
+        const q = await tx.question.create({ data: { courseId: input.courseId, institutionId: input.institutionId!, authorId: u.id, type: 'MCQ', tags: [], stem: input.stem, explanation: input.explanation, difficulty: input.difficulty, poolId, topic: input.topic, defaultMarks: input.defaultMarks ?? 1, options: { create: input.options } } });
         await this.audit.append(tx, { actor: u, action: 'question.create', entity: 'question', entityId: q.id, institutionId: p.institutionId, meta: { import: true, pool: poolId }, ip });
       }
     }, { timeout: 60_000 });

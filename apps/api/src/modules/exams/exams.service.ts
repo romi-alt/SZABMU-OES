@@ -165,7 +165,7 @@ export class ExamsService {
     });
     const eligible = new Map(enr.filter((e) => e.eligibility !== 'INELIGIBLE').map((e) => [e.student.id, e.student.institutionId]));
     return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'roster:' + examId}))`;
+      await tx.$queryRaw`SELECT id FROM exams WHERE id = ${examId} FOR UPDATE`;   // serialises roster builds/overrides for this exam
       const current = await tx.examCandidate.findMany({ where: { examId } });
       const started = new Set((await tx.attempt.findMany({ where: { examId }, select: { studentId: true } })).map((a) => a.studentId));
       const version = ((await tx.examRosterVersion.aggregate({ where: { examId }, _max: { version: true } }))._max.version ?? 0) + 1;
@@ -211,7 +211,7 @@ export class ExamsService {
     const reason = d.reason.trim();
     const newDecision = d.decision === 'GRANT' ? 'ADMITTED' : 'REVOKED';
     const out = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'roster:' + examId}))`;
+      await tx.$queryRaw`SELECT id FROM exams WHERE id = ${examId} FOR UPDATE`;
       const cand = await tx.examCandidate.findUnique({ where: { examId_studentId: { examId, studentId } } });
       const attempt = await tx.attempt.findUnique({ where: { examId_studentId: { examId, studentId } }, select: { id: true, status: true } });
       const oldDecision = cand ? cand.status : 'NOT_ON_ROSTER';

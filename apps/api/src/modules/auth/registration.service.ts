@@ -3,6 +3,7 @@ import argon2 from 'argon2';
 import { randomInt } from 'node:crypto';
 import { checkPassword } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
+import { idList } from '../../infra/sql';
 import { RedisService } from '../../infra/redis.service';
 import { MailService } from '../../infra/mail.service';
 import { AppError, badRequest, conflict } from '../../common/errors';
@@ -39,7 +40,7 @@ export class RegistrationService {
     if (!policy.ok) throw badRequest(policy.problems[0] ?? 'Choose a stronger password.');
     const passwordHash = await argon2.hash(d.password, { type: argon2.argon2id });     // always computed: response time must not reveal whether the email or number is taken
     const emailTaken = !!(await this.prisma.user.findUnique({ where: { email }, select: { id: true } }));
-    const regTaken = !!(await this.prisma.student.findFirst({ where: { regNo: { equals: regNo, mode: 'insensitive' } }, select: { id: true } })) || !!(await this.prisma.studentSignup.findFirst({ where: { regNo: { equals: regNo, mode: 'insensitive' } }, select: { userId: true } }));
+    const regTaken = !!(await this.prisma.student.findFirst({ where: { regNo: { equals: regNo } }, select: { id: true } })) || !!(await this.prisma.studentSignup.findFirst({ where: { regNo: { equals: regNo } }, select: { userId: true } }));
     // A student must be told why no code arrives, so these two outcomes are explicit (the per-IP, per-number and per-email rate limits cap probing).
     if (regTaken || emailTaken) {
       await this.audit.log({ actor: null, action: 'auth.register_unavailable', entity: 'student_signup', meta: { regNo, reason: regTaken ? 'reg_no_taken' : 'email_taken' }, ip });
@@ -72,7 +73,7 @@ export class RegistrationService {
     try {
       userId = await this.prisma.$transaction(async (tx) => {
         if (await tx.user.findUnique({ where: { email }, select: { id: true } })) throw conflict('EMAIL_TAKEN', 'This email already has an account');
-        if (await tx.student.findFirst({ where: { regNo: { equals: p.regNo, mode: 'insensitive' } }, select: { id: true } })) throw conflict('REG_NO_TAKEN', 'This registration number is already in use. Contact your campus examination office.');
+        if (await tx.student.findFirst({ where: { regNo: { equals: p.regNo } }, select: { id: true } })) throw conflict('REG_NO_TAKEN', 'This registration number is already in use. Contact your campus examination office.');
         // The name is a placeholder until the student completes the profile (the Student record is created only then).
         const user = await tx.user.create({ data: { email, fullName: email.split('@')[0]!, role: 'STUDENT', passwordHash: p.passwordHash, mustChangePw: false } });
         await tx.studentSignup.create({ data: { userId: user.id, regNo: p.regNo } });
@@ -93,7 +94,7 @@ export class RegistrationService {
     const programs = await this.prisma.program.findMany({ where: { code: { in: codes } }, select: { id: true, code: true } });
     const byCode = new Map(programs.map((p) => [p.code, p.id])); const unknown = codes.filter((c) => !byCode.has(c));
     if (unknown.length) throw badRequest(`Unknown programme code(s): ${unknown.join(', ')}`);
-    const existing = await this.prisma.$queryRaw<{ regNo: string }[]>`SELECT "regNo" FROM roster_entries WHERE lower("regNo") = ANY(${regs}) UNION SELECT "regNo" FROM students WHERE lower("regNo") = ANY(${regs})`;
+    const existing = await this.prisma.$queryRaw<{ regNo: string }[]>`SELECT "regNo" FROM roster_entries WHERE "regNo" IN ${idList(regs)} UNION SELECT "regNo" FROM students WHERE "regNo" IN ${idList(regs)}`;   // the _ci collation compares case-insensitively
     if (existing.length) throw conflict('ROSTER_DUPLICATES', 'Some registration numbers are already registered', { regNos: existing.map((e) => e.regNo) });
     await this.prisma.rosterEntry.createMany({ data: rows.map((r) => ({ institutionId, programId: byCode.get(r.programCode.trim())!, regNo: r.regNo.trim(), fullName: r.fullName.trim(), dateOfBirth: new Date(r.dateOfBirth), semester: r.semester, batchYear: r.batchYear, importedBy: u.id })) });
     await this.audit.log({ actor: u, action: 'roster.import', entity: 'institution', entityId: institutionId, institutionId, meta: { count: rows.length }, ip });
@@ -107,7 +108,7 @@ export class RegistrationService {
     const where = {
       ...(inst ? { institutionId: inst } : {}),
       ...(q.status === 'claimed' ? { claimedAt: { not: null } } : q.status === 'unclaimed' ? { claimedAt: null } : {}),
-      ...(q.search ? { OR: [{ regNo: { contains: q.search, mode: 'insensitive' as const } }, { fullName: { contains: q.search, mode: 'insensitive' as const } }] } : {}),
+      ...(q.search ? { OR: [{ regNo: { contains: q.search } }, { fullName: { contains: q.search } }] } : {}),
     };
     const [items, total, claimed] = await Promise.all([
       this.prisma.rosterEntry.findMany({ where, orderBy: { regNo: 'asc' }, skip: (q.page - 1) * q.pageSize, take: q.pageSize, select: { id: true, regNo: true, fullName: true, semester: true, batchYear: true, claimedAt: true, institution: { select: { code: true } }, program: { select: { code: true } } } }),

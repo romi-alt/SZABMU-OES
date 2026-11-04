@@ -32,7 +32,7 @@ export class TeacherAdminService {
     const where: Prisma.TeacherProfileWhereInput = {
       ...(f.status ? { status: f.status as never } : {}),
       ...(u.institutionIds === null ? {} : { user: { courseAssignments: { some: this.aWhere(u) } } }),
-      ...(f.search ? { OR: [{ employeeId: { contains: f.search, mode: 'insensitive' } }, { department: { contains: f.search, mode: 'insensitive' } }, { user: { fullName: { contains: f.search, mode: 'insensitive' } } }, { user: { email: { contains: f.search, mode: 'insensitive' } } }] } : {}),
+      ...(f.search ? { OR: [{ employeeId: { contains: f.search } }, { department: { contains: f.search } }, { user: { fullName: { contains: f.search } } }, { user: { email: { contains: f.search } } }] } : {}),
     };
     const [rows, total, pending] = await Promise.all([
       this.prisma.teacherProfile.findMany({ where, orderBy: [{ status: 'asc' }, { submittedAt: 'desc' }], ...paginate(f), include: { user: { select: { id: true, fullName: true, email: true } } } }),

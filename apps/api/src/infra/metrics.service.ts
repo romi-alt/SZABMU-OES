@@ -76,7 +76,7 @@ export class MetricsService {
   private readonly lifecycleAge = new Gauge('oes_lifecycle_last_success_age_seconds', 'Seconds since ANY API process last completed a lifecycle run (read from PostgreSQL)');
   private readonly outboxPending = new Gauge('oes_exam_events_pending', 'Exam events not yet published to Redis');
   private readonly outboxOldest = new Gauge('oes_exam_events_oldest_pending_seconds', 'Age of the oldest unpublished exam event');
-  private readonly dbUp = new Gauge('oes_db_up', '1 if PostgreSQL answered a probe on this scrape');
+  private readonly dbUp = new Gauge('oes_db_up', '1 if the database answered a probe on this scrape');
   private readonly redisUp = new Gauge('oes_redis_up', '1 if Redis answered a probe on this scrape');
   private readonly active = new Gauge('oes_active_attempts', 'Attempts currently IN_PROGRESS');
   private readonly campus = new Gauge('oes_campus_candidates', 'In-progress candidates per campus by connectivity (heartbeat within the stale window)', ['institution', 'state']);
@@ -111,10 +111,10 @@ export class MetricsService {
     this.dbUp.set({}, db ? 1 : 0);
     this.lifecycleAge.reset(); this.outboxPending.reset(); this.outboxOldest.reset();
     if (db) {
-      const l = await this.prisma.$queryRaw<{ age: number | null }[]>`SELECT extract(epoch FROM clock_timestamp() - max("finishedAt"))::float AS age FROM lifecycle_runs WHERE error IS NULL AND "finishedAt" IS NOT NULL`.catch(() => null);
-      if (l?.[0]?.age != null) this.lifecycleAge.set({}, l[0].age);
-      const o = await this.prisma.$queryRaw<{ n: number; oldest: number | null }[]>`SELECT count(*)::int AS n, extract(epoch FROM clock_timestamp() - min("createdAt"))::float AS oldest FROM exam_events WHERE "deliveryStatus" = 'PENDING'`.catch(() => null);
-      if (o?.[0]) { this.outboxPending.set({}, o[0].n); this.outboxOldest.set({}, o[0].oldest ?? 0); }
+      const l = await this.prisma.$queryRaw<{ age: number | null }[]>`SELECT TIMESTAMPDIFF(MICROSECOND, MAX("finishedAt"), NOW(3)) / 1e6 AS age FROM lifecycle_runs WHERE error IS NULL AND "finishedAt" IS NOT NULL`.catch(() => null);
+      if (l?.[0]?.age != null) this.lifecycleAge.set({}, Number(l[0].age));
+      const o = await this.prisma.$queryRaw<{ n: bigint; oldest: number | null }[]>`SELECT COUNT(*) AS n, TIMESTAMPDIFF(MICROSECOND, MIN("createdAt"), NOW(3)) / 1e6 AS oldest FROM exam_events WHERE "deliveryStatus" = 'PENDING'`.catch(() => null);
+      if (o?.[0]) { this.outboxPending.set({}, Number(o[0].n)); this.outboxOldest.set({}, Number(o[0].oldest ?? 0)); }
     }
     let rd = true; try { await this.redis.client.ping(); } catch { rd = false; }
     this.redisUp.set({}, rd ? 1 : 0);

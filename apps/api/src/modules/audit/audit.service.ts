@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { Role } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
+import { retryOnDeadlock } from '../../infra/sql';
 import type { AuthUser } from '../../common/auth';
 import type { Prisma } from '../../generated/prisma/client';
 
@@ -17,7 +18,7 @@ export interface AuditEntry {
 
 const GENESIS = '0'.repeat(64);
 
-/** Key-order-independent JSON: Postgres jsonb does not preserve key order, so the hash must not depend on it. */
+/** Key-order-independent JSON: a JSON column does not guarantee key order on read-back, so the hash must not depend on it. */
 export function canonical(v: unknown): string {
   if (v === undefined) return 'null';
   const norm = (x: unknown): unknown => {
@@ -29,13 +30,13 @@ export function canonical(v: unknown): string {
   return JSON.stringify(norm(v));
 }
 
-/** Hash-chained audit trail. Rows are serialised with an advisory lock so the chain is linear. */
+/** Hash-chained audit trail. Rows are serialised with a row lock (app_locks 'audit_chain') so the chain is linear. */
 @Injectable()
 export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
   async log(e: AuditEntry): Promise<void> {
-    await this.prisma.$transaction((tx) => this.append(tx, e));
+    await retryOnDeadlock(() => this.prisma.$transaction((tx) => this.append(tx, e)));
   }
 
   /**
@@ -43,7 +44,7 @@ export class AuditService {
    * (used by exam control commands). Takes the global chain lock last-ish: call it at the end of the caller's transaction.
    */
   async append(tx: Prisma.TransactionClient, e: AuditEntry): Promise<void> {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(7001)`;
+    await tx.$queryRaw`SELECT name FROM app_locks WHERE name = 'audit_chain' FOR UPDATE`;   // serialises the hash chain until commit
     const last = await tx.auditLog.findFirst({ orderBy: { seq: 'desc' }, select: { hash: true } });
     const prevHash = last?.hash ?? GENESIS;
     const at = new Date();
