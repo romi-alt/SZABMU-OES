@@ -11,7 +11,7 @@ test.describe('access pattern', () => {
     await expect(sp.getByRole('heading', { name: 'Question bank', exact: true })).toHaveCount(0); await expect.poll(() => sp.title()).toMatch(/No access/);
     await box.getByRole('link', { name: 'Go to dashboard' }).click(); await expect(sp).toHaveURL(/\/dashboard/); await s.close();
     const l = await browser.newContext(); const lp = await l.newPage(); await login(lp, 'lecturer.a');
-    for (const [url, name] of [['/schedule', 'Exam schedule'], ['/results', 'Results']] as const) { await lp.goto(url); await expect(lp.getByRole('heading', { name: `You do not have access to ${name}` })).toBeVisible(); }
+    for (const [url, name] of [['/schedule', 'My Examinations'], ['/results', 'Results']] as const) { await lp.goto(url); await expect(lp.getByRole('heading', { name: `You do not have access to ${name}` })).toBeVisible(); }
     await l.close();
   });
   test('allowed pages are unaffected', async ({ browser }) => {

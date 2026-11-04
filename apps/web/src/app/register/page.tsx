@@ -2,26 +2,26 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { checkPassword } from '@oes/shared';
+import { useRouter } from 'next/navigation';
 import { ApiError, post } from '@/api';
+import { useMe } from '@/session';
 import { errMsg } from '@/ui';
-import { AuthButton, AuthField, AuthFrame, AuthHeading, Icon } from '../AuthFrame';
+import { AuthButton, AuthField, AuthFrame, AuthHeading } from '../AuthFrame';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-type Touched = Partial<Record<'regNo' | 'dob' | 'email' | 'pw' | 'pw2', boolean>>;
+type Touched = Partial<Record<'regNo' | 'email' | 'pw' | 'pw2', boolean>>;
 
-/** Student registration: details must match the official register, then a code sent to the email proves control of it. */
+/** Student sign-up: registration number, email and password; a code sent to the email proves control of it, then the student continues to the one-time profile. */
 export default function Register() {
-  const [step, setStep] = useState<'details' | 'code' | 'done'>('details');
-  const [regNo, setRegNo] = useState(''); const [dob, setDob] = useState(''); const [email, setEmail] = useState(''); const [pw, setPw] = useState(''); const [pw2, setPw2] = useState('');
+  const [step, setStep] = useState<'details' | 'code'>('details'); const router = useRouter(); const { refresh } = useMe();
+  const [regNo, setRegNo] = useState(''); const [email, setEmail] = useState(''); const [pw, setPw] = useState(''); const [pw2, setPw2] = useState('');
   const [touched, setTouched] = useState<Touched>({}); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [devCode, setDevCode] = useState(''); const [info, setInfo] = useState('');
   const [digits, setDigits] = useState(['', '', '', '', '', '']); const refs = useRef<(HTMLInputElement | null)[]>([]); const code = digits.join('');
   useEffect(() => { document.title = 'Student registration · SZABMU OES'; }, []);
 
-  const today = new Date().toISOString().slice(0, 10);
   const strength = checkPassword(pw, [email.split('@')[0] ?? '']);
   const errors = {
-    regNo: regNo.trim().length < 3 ? 'Enter your registration number.' : '',
-    dob: !dob ? 'Enter your date of birth.' : dob >= today || dob < '1940-01-01' ? 'Enter a valid date of birth.' : '',
+    regNo: !/^[A-Za-z0-9][A-Za-z0-9._/-]{2,39}$/.test(regNo.trim()) ? 'Enter your registration number (letters, digits . _ / - only).' : '',
     email: !EMAIL_RE.test(email) ? 'Enter a valid email address.' : '',
     pw: strength.ok ? '' : strength.problems[0] ?? 'Choose a stronger password.',
     pw2: pw2 !== pw ? 'Passwords do not match.' : '',
@@ -32,9 +32,9 @@ export default function Register() {
 
   const [errCode, setErrCode] = useState('');
   async function run(fn: () => Promise<void>) { setBusy(true); setErr(''); setErrCode(''); try { await fn(); } catch (e) { setErr(errMsg(e)); setErrCode(e instanceof ApiError ? e.code : ''); } finally { setBusy(false); } }
-  const submit = () => { setTouched({ regNo: true, dob: true, email: true, pw: true, pw2: true }); if (invalid) return Promise.resolve(); return run(async () => {
-    const r = await post('/auth/register', { regNo: regNo.trim(), dateOfBirth: dob, email: email.trim(), password: pw }); setInfo(r.message); setDevCode(r.devCode ?? ''); setDigits(['', '', '', '', '', '']); setStep('code'); }); };
-  const verify = () => run(async () => { await post('/auth/register/verify', { email: email.trim(), code }); setStep('done'); });
+  const submit = () => { setTouched({ regNo: true, email: true, pw: true, pw2: true }); if (invalid) return Promise.resolve(); return run(async () => {
+    const r = await post('/auth/register', { regNo: regNo.trim(), email: email.trim(), password: pw }); setInfo(r.message); setDevCode(r.devCode ?? ''); setDigits(['', '', '', '', '', '']); setStep('code'); }); };
+  const verify = () => run(async () => { await post('/auth/register/verify', { email: email.trim(), code }); await refresh(); router.replace('/complete-profile'); });
   function onDigit(i: number, v: string) { const d = v.replace(/\D/g, '').slice(-1); const n = [...digits]; n[i] = d; setDigits(n); if (d && i < 5) refs.current[i + 1]?.focus(); }
   function onPaste(e: React.ClipboardEvent) { const t = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6); if (t.length === 6) { e.preventDefault(); setDigits(t.split('')); } }
 
@@ -43,21 +43,20 @@ export default function Register() {
       {step === 'details' && <>
         <AuthHeading icon="userPlus" title="Student Registration" lead={<>Fields marked <span aria-hidden>*</span><span className="sr-only">with an asterisk</span> are required.</>} />
         <form noValidate onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-          <AuthField label="Registration number" icon="id" mono value={regNo} onChange={setRegNo} onBlur={blur('regNo')} required autoFocus autoComplete="off" placeholder="e.g. DMC-A-2024-0008" error={show('regNo')} hint="Exactly as on your admission letter." />
-          <AuthField label="Date of birth" icon="calendar" type="date" value={dob} onChange={setDob} onBlur={blur('dob')} required autoComplete="bday" min="1940-01-01" max={today} error={show('dob')} />
+          <AuthField label="Registration number" icon="id" mono value={regNo} onChange={setRegNo} onBlur={blur('regNo')} required autoFocus autoComplete="off" placeholder="e.g. DMC-A-2024-0008" error={show('regNo')} hint="The number printed on your admission letter or student card." />
           <AuthField label="Email address" icon="mail" type="email" value={email} onChange={setEmail} onBlur={blur('email')} required autoComplete="email" inputMode="email" placeholder="Enter your email" error={show('email')} hint="We send a 6-digit code here. It becomes your sign-in email." />
           <AuthField label="Password" icon="lock" type="password" value={pw} onChange={setPw} onBlur={blur('pw')} required autoComplete="new-password" placeholder="Create a password" error={touched.pw && pw ? '' : show('pw')} />
           <div className="meter" aria-hidden>{[1, 2, 3, 4].map((n) => <i key={n} className={strength.score >= n ? (strength.score <= 2 ? 'weak' : 'on') : ''} />)}</div>
           <span className="small" style={{ color: strength.ok ? 'var(--green)' : 'var(--ink-3)', minHeight: 20 }}>{pw ? (strength.ok ? 'Strong password' : strength.problems[0]) : 'At least 10 characters, three of four character types.'}</span>
           <AuthField label="Confirm password" icon="lock" type="password" value={pw2} onChange={setPw2} onBlur={blur('pw2')} required autoComplete="new-password" placeholder="Re-enter your password" error={show('pw2')} />
-          {err && <div className="notice bad" role="alert" data-testid="register-error">{err}
+          {err && <div className="notice bad" role="alert">{err}
             {errCode === 'ALREADY_REGISTERED' && <div style={{ marginTop: 8 }}><Link href="/login" className="auth-link">Sign in</Link> · <Link href="/forgot" className="auth-link">Forgot password</Link></div>}
-            {errCode === 'EMAIL_IN_USE' && <div style={{ marginTop: 8 }}><Link href="/login" className="auth-link">Sign in with this email</Link></div>}
-          </div>}
+            {errCode === 'EMAIL_IN_USE' && <div style={{ marginTop: 8 }}><Link href="/login" className="auth-link">Sign in with this email</Link></div>}</div>}
           <AuthButton busy={busy}>Create Account</AuthButton>
         </form>
         <p className="auth-alt">Already registered? <Link href="/login" className="auth-link">Sign in</Link></p>
-        <p className="small faint" style={{ margin: 0, textAlign: 'center' }}>You can register only after your college has added you to its student register. Not sure? Ask your campus examination office. Registering does not enrol you in any examination.</p>
+        <p className="auth-alt" style={{ borderTop: 0, paddingTop: 0, marginTop: 0 }}><span>Teaching staff?</span><Link href="/register/teacher" className="auth-link">Register as a teacher</Link></p>
+        <p className="small faint" style={{ margin: 0, textAlign: 'center' }}>Signing up does not enrol you in any examination. After this you complete a short profile once.</p>
       </>}
       {step === 'code' && <>
         <AuthHeading icon="mail" title="Check your email" lead={<span data-testid="register-info">{info}</span>} />
@@ -69,11 +68,6 @@ export default function Register() {
           <AuthButton busy={busy} disabled={code.length !== 6}>Create Account</AuthButton>
         </form>
         <p className="auth-alt">Wrong details? <button type="button" className="btn-link auth-link" onClick={() => { setStep('details'); setErr(''); }}>Go back</button></p>
-      </>}
-      {step === 'done' && <>
-        <AuthHeading icon="user" title="Account created" />
-        <div className="notice ok" role="status">Your student account is ready. Sign in with <b>{email.trim()}</b> and the password you chose.</div>
-        <Link className="auth-btn" href="/login" style={{ textDecoration: 'none' }}>Go to sign in<Icon name="arrow" size={18} /></Link>
       </>}
     </AuthFrame>
   );

@@ -12,6 +12,8 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
     super({
       // Text protocol: one round trip per statement instead of prepare + execute + close (the adapter disables the prepare cache).
       adapter: new PrismaMariaDb(poolConfigFromUrl(cfg.DATABASE_URL, { connectionLimit: cfg.DB_POOL_MAX }), { useTextProtocol: true }),
+      // Photos are binary and personal: never selected unless a query asks for them with `omit: { photo: false }`.
+      omit: { student: { photo: true }, teacherProfile: { photo: true } },
       transactionOptions: { maxWait: cfg.DB_TX_MAX_WAIT_MS, timeout: cfg.DB_TX_TIMEOUT_MS },
     });
   }

@@ -6,7 +6,7 @@ import { fmtDT } from '@/api';
 import { Badge } from '@/ui';
 
 /** A /me/exams row as delivered by the API. */
-export type MyExam = ExamStatusInput & { examId: string; code: string; title: string; course: { title: string; semester: number }; durationMin: number; questionCount: number };
+export type MyExam = ExamStatusInput & { examId: string; code: string; title: string; course: { title: string; semester: number; program?: { code: string } }; totalMarks?: number; durationMin: number; questionCount: number };
 export const presentExam = (r: MyExam, offsetMs = 0): ExamPresentation => describeExam(r, new Date(Date.now() + offsetMs), (d) => fmtDT(d));
 
 /** Live countdown that follows the server clock (offset = serverNow − browser now). Only rendered when the presentation model says the number is meaningful. */

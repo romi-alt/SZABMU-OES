@@ -20,8 +20,8 @@ if (!DST || !/^(mysql|mariadb):/.test(DST)) throw new Error('DATABASE_URL must b
 const replace = process.argv.includes('--replace');
 
 // Parents before children (FK order); generated columns (correctFlag, activeKey) are computed by MySQL and never copied.
-const TABLES = ['institutions', 'departments', 'programs', 'courses', 'users', 'user_institutions', 'sessions', 'password_resets', 'password_history',
-  'mfa_recovery_codes', 'roster_entries', 'students', 'enrollments', 'questions', 'question_options', 'exams', 'exam_institutions', 'exam_questions',
+const TABLES = ['institutions', 'departments', 'programs', 'courses', 'users', 'teacher_profiles', 'student_signups', 'user_institutions', 'sessions', 'password_resets', 'password_history',
+  'mfa_recovery_codes', 'roster_entries', 'students', 'enrollments', 'question_pools', 'questions', 'question_options', 'exams', 'exam_institutions', 'exam_questions',
   'exam_candidates', 'exam_invigilators', 'exam_roster_versions', 'attempts', 'attempt_answers', 'answer_events', 'attempt_events', 'incidents',
   'incident_notes', 'key_actions', 'result_batches', 'results', 'certificates', 'notifications', 'outbound_messages', 'audit_logs',
   'eligibility_overrides', 'course_assignments', 'exam_suspensions', 'exam_extensions', 'exam_commands', 'exam_events', 'lifecycle_leases', 'lifecycle_runs'];
@@ -44,6 +44,12 @@ try {
     if (!myCols.has(r.t)) myCols.set(r.t, new Map()); myCols.get(r.t).set(r.c, r.d);
   }
   const missing = TABLES.filter((t) => !myCols.has(t)); if (missing.length) throw new Error(`target is missing tables (run db:migrate first): ${missing}`);
+  // Nothing in the source may be left behind silently: every source table must be listed above and every source column must exist in the target.
+  const pgCols = (await src.query("SELECT table_name t, column_name c FROM information_schema.columns WHERE table_schema = 'public'")).rows;
+  const unknownTables = [...new Set(pgCols.map((r) => r.t))].filter((t) => t !== '_prisma_migrations' && !TABLES.includes(t));
+  if (unknownTables.length) throw new Error(`source has tables this script does not copy: ${unknownTables} — add them to TABLES (in FK order)`);
+  const lost = pgCols.filter((r) => TABLES.includes(r.t) && !myCols.get(r.t)?.has(r.c) && !(r.t === 'course_assignments' && r.c === 'activeKey')).map((r) => `${r.t}.${r.c}`);
+  if (lost.length) throw new Error(`target is missing source columns (migrate the target first): ${lost}`);
   const nonEmpty = [];
   for (const t of TABLES) if (Number((await my.query(`SELECT COUNT(*) n FROM \`${t}\``))[0].n) > 0) nonEmpty.push(t);
   if (nonEmpty.length && !replace) throw new Error(`target already has data in ${nonEmpty.join(', ')} — pass --replace to empty and overwrite it`);

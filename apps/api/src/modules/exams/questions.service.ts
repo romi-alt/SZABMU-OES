@@ -17,8 +17,14 @@ export interface QuestionInput {
   explanation?: string;
   difficulty: 'EASY' | 'MEDIUM' | 'HARD';
   tags?: string[];
+  poolId?: string;
+  topic?: string;
+  defaultMarks?: number;
   options: { label: string; text: string; isCorrect: boolean }[];
 }
+
+/** Roles that may only touch questions they wrote themselves. */
+export const authorOnly = (u: AuthUser) => u.role === 'LECTURER' || u.role === 'TEACHER';
 
 export function validateQuestion(q: QuestionInput) {
   const labels = q.options.map((o) => o.label);
@@ -65,7 +71,7 @@ export class QuestionsService {
     if (!(await this.prisma.course.findUnique({ where: { id: d.courseId }, select: { id: true } }))) throw badRequest('Unknown course');
     await this.access.assert(u, d.courseId, institutionId);
     const q = await this.prisma.question.create({
-      data: { courseId: d.courseId, institutionId, authorId: u.id, type: d.type, vignette: d.vignette, stem: d.stem, explanation: d.explanation, difficulty: d.difficulty, tags: d.tags ?? [], options: { create: d.options } },
+      data: { courseId: d.courseId, institutionId, authorId: u.id, type: d.type, vignette: d.vignette, stem: d.stem, explanation: d.explanation, difficulty: d.difficulty, tags: d.tags ?? [], poolId: d.poolId, topic: d.topic, defaultMarks: d.defaultMarks ?? 1, options: { create: d.options } },
     });
     await this.audit.log({ actor: u, action: 'question.create', entity: 'question', entityId: q.id, institutionId, ip });
     return this.load(u, q.id);
@@ -73,14 +79,14 @@ export class QuestionsService {
 
   async update(u: AuthUser, id: string, d: QuestionInput, ip?: string) {
     const q = await this.load(u, id);
-    if (u.role === 'LECTURER' && q.authorId !== u.id) throw forbidden('Only the author may edit this question');
+    if (authorOnly(u) && q.authorId !== u.id) throw forbidden('Only the author may edit this question');
     if (['SUBMITTED'].includes(q.status)) throw conflict('LOCKED', 'A question under review cannot be edited; ask the reviewer to reject it first');
     validateQuestion(d);
     await this.prisma.$transaction([
       this.prisma.questionOption.deleteMany({ where: { questionId: id } }),
       this.prisma.question.update({
         where: { id },
-        data: { type: d.type, vignette: d.vignette ?? null, stem: d.stem, explanation: d.explanation ?? null, difficulty: d.difficulty, tags: d.tags ?? [], // editing approved content returns it to draft; approved papers keep their frozen snapshot
+        data: { type: d.type, vignette: d.vignette ?? null, stem: d.stem, explanation: d.explanation ?? null, difficulty: d.difficulty, tags: d.tags ?? [], topic: d.topic ?? null, defaultMarks: d.defaultMarks ?? q.defaultMarks, // editing approved content returns it to draft; approved papers keep their frozen snapshot
           status: 'DRAFT', version: { increment: 1 }, options: { create: d.options } },
       }),
     ]);
@@ -90,7 +96,7 @@ export class QuestionsService {
 
   async submit(u: AuthUser, id: string, ip?: string) {
     const q = await this.load(u, id);
-    if (u.role === 'LECTURER' && q.authorId !== u.id) throw forbidden('Only the author may submit this question');
+    if (authorOnly(u) && q.authorId !== u.id) throw forbidden('Only the author may submit this question');
     if (!['DRAFT', 'REJECTED'].includes(q.status)) throw conflict('BAD_STATE', `Cannot submit a ${q.status} question`);
     await this.prisma.question.update({ where: { id }, data: { status: 'SUBMITTED', reviewNote: null } });
     await this.audit.log({ actor: u, action: 'question.submit', entity: 'question', entityId: id, institutionId: q.institutionId, ip });
@@ -112,7 +118,7 @@ export class QuestionsService {
 
   async retire(u: AuthUser, id: string, ip?: string) {
     const q = await this.load(u, id);
-    if (u.role === 'LECTURER' && q.authorId !== u.id) throw forbidden();
+    if (authorOnly(u) && q.authorId !== u.id) throw forbidden();
     await this.prisma.question.update({ where: { id }, data: { status: 'RETIRED' } });
     await this.audit.log({ actor: u, action: 'question.retire', entity: 'question', entityId: id, institutionId: q.institutionId, ip });
     return { status: 'RETIRED' };
