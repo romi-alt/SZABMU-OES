@@ -52,7 +52,12 @@ describe('exam-path metrics', () => {
 
   it('a database failure during a save is a counted server error, a counted DB error, and is never reported as saved', async () => {
     const s = await as(ctx, 'student.a003'); const t = await startExam(ctx, s); const errs = m.saves.value({ result: 'error' }); const dbe = m.dbErrors.value({ kind: 'connection' });
-    const spy = vi.spyOn(ctx.prisma, '$queryRaw').mockRejectedValueOnce(new Error('Connection terminated unexpectedly'));
+    // Fail the first query of the SAVE itself. Without Redis the session cache is read from kv_entries first (and fails soft), so skip that one.
+    const orig = ctx.prisma.$queryRaw.bind(ctx.prisma); let failed = false;
+    const spy = vi.spyOn(ctx.prisma, '$queryRaw').mockImplementation(((q: TemplateStringsArray, ...v: unknown[]) => {
+      if (!failed && !q.join('').includes('kv_entries')) { failed = true; return Promise.reject(new Error('Connection terminated unexpectedly')); }
+      return orig(q, ...v);
+    }) as never);
     const r = await save(s, t.attemptId, t.questions[0]!.id, t.clientId, 1, 'A');
     spy.mockRestore();
     expect(r.status).toBe(500); expect(r.body).not.toHaveProperty('saved');
