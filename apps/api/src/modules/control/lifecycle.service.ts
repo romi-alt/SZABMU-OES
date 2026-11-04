@@ -52,7 +52,7 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
 
   private async acquireLease(): Promise<boolean> {
     // The row exists after the first call; the guarded UPDATE is the atomic claim (an expired lease, or one we already hold).
-    await this.prisma.$executeRaw`INSERT IGNORE INTO lifecycle_leases (name, owner, "expiresAt", "updatedAt") VALUES ('lifecycle', '', NOW(3), NOW(3))`;
+    await this.prisma.$executeRaw`INSERT IGNORE INTO lifecycle_leases (name, owner, "expiresAt", "updatedAt") VALUES ('lifecycle', '', '1970-01-01 00:00:01', NOW(3))`;
     const n = await this.prisma.$executeRaw`UPDATE lifecycle_leases SET owner = ${this.instance}, "expiresAt" = TIMESTAMPADD(SECOND, ${leaseSeconds()}, NOW(3)), "updatedAt" = NOW(3)
       WHERE name = 'lifecycle' AND ("expiresAt" < NOW(3) OR owner = ${this.instance})`;
     return n > 0;
@@ -206,7 +206,7 @@ export class LifecycleService implements OnApplicationBootstrap, OnModuleDestroy
       const pendingGrade = int((await this.prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*) AS n FROM attempts a LEFT JOIN results r ON r."examId" = a."examId" AND r."studentId" = a."studentId" WHERE a."examId" = ${ex.id} AND (a.status = 'IN_PROGRESS' OR (a.status IN ('SUBMITTED','AUTO_SUBMITTED') AND r.id IS NULL))`)[0]!.n);
       if (pendingGrade > 0) continue;
       const moved = await this.prisma.$transaction(async (tx) => {
-        const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM exams WHERE id = ${ex.id} AND status = 'SCORING' FOR UPDATE SKIP LOCKED`;
+        const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM exams WHERE id = ${ex.id} AND status = 'SCORING' FOR UPDATE`;   // wait, not SKIP LOCKED: InnoDB share-locks this row for every FK insert (e.g. a grade job writing results); the status predicate is re-read after the wait
         if (!locked.length) return false;
         const absent = await tx.$queryRaw<{ studentId: string }[]>`SELECT c."studentId" FROM exam_candidates c WHERE c."examId" = ${ex.id} AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a."examId" = ${ex.id} AND a."studentId" = c."studentId")`;
         await tx.result.createMany({ data: absent.map((s) => ({ examId: ex.id, studentId: s.studentId, rawScore: 0, totalMarks: ex.totalMarks, percent: 0, status: 'ABSENT' as const })), skipDuplicates: true });

@@ -14,6 +14,11 @@ export function stringList(v: unknown): string[] {
   return Array.isArray(v) ? v.map(String) : [];
 }
 
+/** A JSON column read through raw SQL: MariaDB stores JSON as LONGTEXT, so the text protocol may hand back the serialised string. */
+export function json<T = unknown>(v: unknown): T {
+  return (typeof v === 'string' ? JSON.parse(v) : v) as T;
+}
+
 /** COUNT(*) and friends come back from MySQL as BIGINT; every count in this application fits a JS number. */
 export function int(v: bigint | number | string | null | undefined): number {
   return v === null || v === undefined ? 0 : Number(v);
