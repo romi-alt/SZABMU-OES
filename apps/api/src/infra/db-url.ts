@@ -35,6 +35,9 @@ export function poolConfigFromUrl(url: string, extra: Partial<PoolConfig> = {}):
     initSql: SESSION_INIT_SQL,
     // Hostinger closes connections idle for 300 s (wait_timeout); release them first so the pool never hands out a dead socket.
     idleTimeout: 240,
+    // The driver would otherwise refill every released slot at once (minimumIdle defaults to the pool size), re-creating up to
+    // connectionLimit connections every idleTimeout — and Hostinger allows only 500 NEW connections per hour per user.
+    minimumIdle: 2,
     ...extra,
   };
 }

@@ -5,7 +5,7 @@ import type { AuthUser } from '../../common/auth';
 import { AppError, badRequest, conflict, notFound } from '../../common/errors';
 import { MetricsService } from '../../infra/metrics.service';
 import { PrismaService } from '../../infra/prisma.service';
-import { idList, int, stringList } from '../../infra/sql';
+import { idList, int, retryOnDeadlock, stringList } from '../../infra/sql';
 import { RedisService } from '../../infra/redis.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -42,7 +42,7 @@ export class ExamControlService {
   private async command(u: AuthUser, examId: string, command: Command, input: CommandInput, fn: (c: { tx: Tx; exam: ExamRow; now: Date }) => Promise<Outcome>) {
     let background: (() => Promise<unknown>) | undefined; let payload: Record<string, unknown>;
     try {
-      payload = await this.prisma.$transaction(async (tx) => {
+      payload = await retryOnDeadlock(() => this.prisma.$transaction(async (tx) => {
         const exam = (await tx.$queryRaw<ExamRow[]>`SELECT ${LOCK_COLS} FROM exams WHERE id = ${examId} FOR UPDATE`)[0];
         if (!exam) throw notFound('Exam');
         if (input.idempotencyKey) {
@@ -57,7 +57,7 @@ export class ExamControlService {
         if (input.idempotencyKey) await tx.examCommand.create({ data: { examId, idempotencyKey: input.idempotencyKey, command, actorId: u.id, result: out as never } });
         background = o.background;
         return out;
-      }, { maxWait: 10_000, timeout: 60_000 });
+      }, { maxWait: 10_000, timeout: 60_000 }));
     } catch (e) { this.metrics.controlCommands.inc({ command, outcome: e instanceof AppError ? 'refused' : 'error' }); throw e; }
     this.metrics.controlCommands.inc({ command, outcome: payload.replayed ? 'replayed' : payload.changed ? 'applied' : 'noop' });
     if (payload.changed) this.events.nudge();
