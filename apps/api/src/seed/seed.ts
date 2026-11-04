@@ -26,8 +26,14 @@ export async function asUser(prisma: PrismaService, email: string): Promise<Auth
 }
 
 export async function resetDatabase(prisma: PrismaService) {
-  const rows = await prisma.$queryRaw<{ tablename: string }[]>`SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
-  await prisma.$executeRawUnsafe(`TRUNCATE ${rows.map((r) => `"${r.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`);
+  // app_locks holds fixed lock rows created by the migration; sequences are not base tables.
+  const rows = await prisma.$queryRaw<{ t: string }[]>`SELECT table_name AS t FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' AND table_name NOT IN ('_prisma_migrations', 'app_locks')`;
+  // TRUNCATE skips DELETE triggers (append-only guards) and resets AUTO_INCREMENT. FOREIGN_KEY_CHECKS is per session, so pin one connection.
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
+    try { for (const r of rows) await tx.$executeRawUnsafe(`TRUNCATE TABLE \`${r.t}\``); }
+    finally { await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1'); }
+  }, { timeout: 120_000 });
 }
 
 /** Creates the synthetic demo universe. Idempotent only after resetDatabase(). */

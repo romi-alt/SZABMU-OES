@@ -3,6 +3,7 @@ import argon2 from 'argon2';
 import { randomInt } from 'node:crypto';
 import { checkPassword } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
+import { idList } from '../../infra/sql';
 import { RedisService } from '../../infra/redis.service';
 import { MailService } from '../../infra/mail.service';
 import { AppError, badRequest, conflict } from '../../common/errors';
@@ -46,7 +47,7 @@ export class RegistrationService {
     const policy = checkPassword(d.password, [email.split('@')[0] ?? '']);
     if (!policy.ok) throw badRequest(policy.problems[0] ?? 'Choose a stronger password.');
     const passwordHash = await argon2.hash(d.password, { type: argon2.argon2id });     // always computed: response time must not reveal a match
-    const entry = await this.prisma.rosterEntry.findFirst({ where: { regNo: { equals: regNo, mode: 'insensitive' } } });
+    const entry = await this.prisma.rosterEntry.findFirst({ where: { regNo: { equals: regNo } } });
     const emailTaken = !!(await this.prisma.user.findUnique({ where: { email }, select: { id: true } }));
     const dobOk = !!entry && entry.dateOfBirth.toISOString().slice(0, 10) === d.dateOfBirth;
     let devCode: string | undefined;
@@ -98,13 +99,13 @@ export class RegistrationService {
     if (dupes.length) throw badRequest(`The same registration number appears more than once: ${list(dupes)}`, { regNos: dupes });
     // Programme codes are matched case-insensitively ("mbbs" = "MBBS"); the canonical code is stored.
     const codes = [...new Set(rows.map((r) => r.programCode.trim().toUpperCase()))];
-    const programs = await this.prisma.program.findMany({ where: { code: { in: codes, mode: 'insensitive' } }, select: { id: true, code: true } });
+    const programs = await this.prisma.program.findMany({ where: { code: { in: codes } }, select: { id: true, code: true } });
     const byCode = new Map(programs.map((p) => [p.code.toUpperCase(), p.id])); const unknown = codes.filter((c) => !byCode.has(c));
     if (unknown.length) {
       const valid = (await this.prisma.program.findMany({ select: { code: true }, orderBy: { code: 'asc' } })).map((p) => p.code);
       throw badRequest(`Unknown programme code(s): ${list(unknown)}. Valid codes: ${list(valid, 20)}.`);
     }
-    const existing = await this.prisma.$queryRaw<{ regNo: string }[]>`SELECT "regNo" FROM roster_entries WHERE lower("regNo") = ANY(${regs}) UNION SELECT "regNo" FROM students WHERE lower("regNo") = ANY(${regs})`;
+    const existing = await this.prisma.$queryRaw<{ regNo: string }[]>`SELECT "regNo" FROM roster_entries WHERE "regNo" IN ${idList(regs)} UNION SELECT "regNo" FROM students WHERE "regNo" IN ${idList(regs)}`;
     if (existing.length) throw conflict('ROSTER_DUPLICATES', `Already on the register (nothing was imported): ${list(existing.map((e) => e.regNo))}. Remove ${existing.length === 1 ? 'it' : 'them'} and import again.`, { regNos: existing.map((e) => e.regNo) });
     await this.prisma.rosterEntry.createMany({ data: rows.map((r) => ({ institutionId, programId: byCode.get(r.programCode.trim().toUpperCase())!, regNo: r.regNo.trim(), fullName: r.fullName.trim(), dateOfBirth: new Date(r.dateOfBirth), semester: r.semester, batchYear: r.batchYear, importedBy: u.id })) });
     await this.audit.log({ actor: u, action: 'roster.import', entity: 'institution', entityId: institutionId, institutionId, meta: { count: rows.length }, ip });
@@ -118,7 +119,7 @@ export class RegistrationService {
     const where = {
       ...(inst ? { institutionId: inst } : {}),
       ...(q.status === 'claimed' ? { claimedAt: { not: null } } : q.status === 'unclaimed' ? { claimedAt: null } : {}),
-      ...(q.search ? { OR: [{ regNo: { contains: q.search, mode: 'insensitive' as const } }, { fullName: { contains: q.search, mode: 'insensitive' as const } }] } : {}),
+      ...(q.search ? { OR: [{ regNo: { contains: q.search } }, { fullName: { contains: q.search } }] } : {}),
     };
     const [items, total, claimed] = await Promise.all([
       this.prisma.rosterEntry.findMany({ where, orderBy: { regNo: 'asc' }, skip: (q.page - 1) * q.pageSize, take: q.pageSize, select: { id: true, regNo: true, fullName: true, semester: true, batchYear: true, claimedAt: true, institution: { select: { code: true } }, program: { select: { code: true } } } }),

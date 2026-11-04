@@ -85,7 +85,7 @@ export class ExamControlController {
 
   // ───────────── Server-Sent Events ─────────────
   /**
-   * Replay-then-live without gaps: subscribe first (buffering), replay committed events after the client's cursor from PostgreSQL,
+   * Replay-then-live without gaps: subscribe first (buffering), replay committed events after the client's cursor from the database,
    * drain the buffer, replay once more, then go live. Every event carries its outbox id (the SSE `id:`), so a reconnecting browser sends
    * Last-Event-ID automatically and de-duplication is by id. Losing Redis only slows delivery: the hub also reads the database.
    */

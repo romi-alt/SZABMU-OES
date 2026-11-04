@@ -79,7 +79,7 @@ export class OrgService {
   async listUsers(u: AuthUser, q: { role?: Role; staffOnly?: boolean; institutionId?: string; search?: string; page: number; pageSize: number }) {
     const where: Prisma.UserWhereInput = {
       role: q.role,
-      ...(q.search ? { OR: [{ fullName: { contains: q.search, mode: 'insensitive' } }, { email: { contains: q.search.toLowerCase() } }] } : {}),
+      ...(q.search ? { OR: [{ fullName: { contains: q.search } }, { email: { contains: q.search.toLowerCase() } }] } : {}),
     };
     if (u.institutionIds !== null) {
       where.institutions = { some: { institutionId: q.institutionId && scope.allows(u, q.institutionId) ? q.institutionId : { in: u.institutionIds } } };
@@ -152,7 +152,7 @@ export class OrgService {
       institutionId: q.institutionId ?? scope.filter(u),
       programId: q.programId,
       semester: q.semester,
-      ...(q.search ? { OR: [{ regNo: { contains: q.search, mode: 'insensitive' } }, { user: { fullName: { contains: q.search, mode: 'insensitive' } } }] } : {}),
+      ...(q.search ? { OR: [{ regNo: { contains: q.search } }, { user: { fullName: { contains: q.search } } }] } : {}),
     };
     const [items, total] = await Promise.all([
       this.prisma.student.findMany({ where, orderBy: { regNo: 'asc' }, skip: (q.page - 1) * q.pageSize, take: q.pageSize, include: { user: { select: { fullName: true, email: true, active: true } }, program: { select: { code: true } }, institution: { select: { code: true, name: true } } } }),

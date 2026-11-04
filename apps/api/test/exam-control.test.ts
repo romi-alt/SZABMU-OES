@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { idList } from '../src/infra/sql';
 import { as as login, boot, cid, save, Client, type Ctx } from './helpers';
 import { DOMAIN, TERM, asUser } from '../src/seed/seed';
 import { ExamsService } from '../src/modules/exams/exams.service';
@@ -8,7 +9,7 @@ import { JobsService } from '../src/modules/jobs.service';
 import { DeliveryService } from '../src/modules/delivery/delivery.service';
 
 /**
- * Live exam control, end to end against real PostgreSQL + Redis. Exams are built through the REAL services (create → paper → four-eyes
+ * Live exam control, end to end against real MariaDB + Redis. Exams are built through the REAL services (create → paper → four-eyes
  * approval → schedule) and driven only through the HTTP API; the database is read to prove what actually happened.
  */
 /** Sessions are memoised per account: the sign-in rate limiter (5 per identity) is itself under test elsewhere, and re-login per call would trip it. */
@@ -308,7 +309,7 @@ describe('13–15 extension', () => {
     const life = ctx.app.get(LifecycleService); const outcomes = { extended: 0, sealed: 0 };
     for (const local of locals) {
       const st = await startAs(local, x); const sid = (await ctx.prisma.attempt.findUniqueOrThrow({ where: { id: st.attemptId } })).studentId;
-      await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = clock_timestamp() - interval '3 hours', "deadlineAt" = clock_timestamp() - interval '1 minute' WHERE id = ${st.attemptId}::uuid`;       // expired beyond the grace period
+      await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = NOW(3) - INTERVAL 3 HOUR, "deadlineAt" = NOW(3) - INTERVAL 1 MINUTE WHERE id = ${st.attemptId}`;       // expired beyond the grace period
       const [ext] = await Promise.all([cce.post(ctl(x, 'extend'), { scope: 'CANDIDATES', studentIds: [sid], minutes: 10, reason: 'Verified disruption, racing the sweeper', confirm: true, idempotencyKey: key() }), life.reconcileExam(x)]);
       const row = await ctx.prisma.attempt.findUniqueOrThrow({ where: { id: st.attemptId } });
       if (row.status === 'IN_PROGRESS') { expect(ext.status).toBe(200); expect(row.extraTimeMin).toBe(10); expect(row.deadlineAt.getTime()).toBeGreaterThan(Date.now()); outcomes.extended++; }
@@ -343,7 +344,7 @@ describe('25–28 deadlines, close, scoring (MANUAL exam)', () => {
   it('26. an attempt past its deadline is auto-submitted EXACTLY once, even across repeated and concurrent reconciliation', async () => {
     const x = await makeExam(); const cce = await as(ctx, 'cce'); await cce.post(ctl(x, 'start'), {});
     const st = await startAs('student.a002', x); const q = await qids(x); await answer(st, q[0]!, 1, 'C');
-    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = clock_timestamp() - interval '3 hours', "deadlineAt" = clock_timestamp() - interval '1 minute' WHERE id = ${st.attemptId}::uuid`;
+    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = NOW(3) - INTERVAL 3 HOUR, "deadlineAt" = NOW(3) - INTERVAL 1 MINUTE WHERE id = ${st.attemptId}`;
     const late = await answer(st, q[1]!, 1, 'B'); expect(late.status).toBe(409); expect(late.body.code).toBe('TIME_EXPIRED');       // the API enforces the deadline with NO worker running
     const life = ctx.app.get(LifecycleService);
     const runs = await Promise.all([life.reconcileExam(x), life.reconcileExam(x), life.reconcileExam(x)]);
@@ -411,9 +412,9 @@ describe('21 lifecycle reconciler: ownership, multiple workers, backlog, retries
     await ctx.prisma.$executeRaw`DELETE FROM lifecycle_leases`;
     const r1 = await a.runOnce(); expect(r1.skipped).toBeUndefined();
     const lease = await ctx.prisma.lifecycleLease.findUniqueOrThrow({ where: { name: 'lifecycle' } }); expect(lease.owner).toBe(a.instance);
-    await ctx.prisma.$executeRaw`UPDATE lifecycle_leases SET owner = 'another-host:1:dead', "expiresAt" = clock_timestamp() + interval '20 seconds'`;
+    await ctx.prisma.$executeRaw`UPDATE lifecycle_leases SET owner = 'another-host:1:dead', "expiresAt" = NOW(3) + INTERVAL 20 SECOND`;
     const r2 = await a.runOnce(); expect(r2.skipped).toBe(true);                                                     // someone else owns it
-    await ctx.prisma.$executeRaw`UPDATE lifecycle_leases SET "expiresAt" = clock_timestamp() - interval '1 second'`;  // owner crashed: lease expired
+    await ctx.prisma.$executeRaw`UPDATE lifecycle_leases SET "expiresAt" = NOW(3) - INTERVAL 1 SECOND`;  // owner crashed: lease expired
     const r3 = await a.runOnce(); expect(r3.skipped).toBeUndefined();
     expect((await ctx.prisma.lifecycleLease.findUniqueOrThrow({ where: { name: 'lifecycle' } })).owner).toBe(a.instance);
     const run = await ctx.prisma.lifecycleRun.findFirstOrThrow({ orderBy: { startedAt: 'desc' } }); expect(run.finishedAt).toBeTruthy(); expect(run.error).toBeNull();
@@ -424,7 +425,7 @@ describe('21 lifecycle reconciler: ownership, multiple workers, backlog, retries
     const x = await makeExam(); const cce = await as(ctx, 'cce'); await cce.post(ctl(x, 'start'), {});
     const locals = ['student.a002', 'student.a003', 'student.a004', 'student.a005', 'student.a006', 'student.b002', 'student.b004', 'student.b005', 'student.b006'];
     const att = []; for (const l of locals) att.push((await startAs(l, x)).attemptId!);
-    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = clock_timestamp() - interval '3 hours', "deadlineAt" = clock_timestamp() - interval '10 minutes' WHERE id = ANY(${att}::uuid[])`;
+    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = NOW(3) - INTERVAL 3 HOUR, "deadlineAt" = NOW(3) - INTERVAL 10 MINUTE WHERE id IN ${idList(att)}`;
     expect((await ctx.app.get(LifecycleService).health()).expiredBacklog).toBeGreaterThanOrEqual(locals.length);
     const life = ctx.app.get(LifecycleService);
     const runs = await Promise.all([life.reconcileExam(x), life.reconcileExam(x), life.reconcileExam(x), life.reconcileExam(x)]);
@@ -449,12 +450,12 @@ describe('21 lifecycle reconciler: ownership, multiple workers, backlog, retries
   it('poison attempts stop being retried after a bounded number of failures and are reported by health()', async () => {
     const x = await makeExam(); const cce = await as(ctx, 'cce'); await cce.post(ctl(x, 'start'), {});
     const st = await startAs('student.a002', x);
-    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = clock_timestamp() - interval '3 hours', "deadlineAt" = clock_timestamp() - interval '10 minutes', "lifecycleRetries" = 5, "lifecycleError" = 'simulated' WHERE id = ${st.attemptId}::uuid`;
+    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = NOW(3) - INTERVAL 3 HOUR, "deadlineAt" = NOW(3) - INTERVAL 10 MINUTE, "lifecycleRetries" = 5, "lifecycleError" = 'simulated' WHERE id = ${st.attemptId}`;
     const r = await ctx.app.get(LifecycleService).reconcileExam(x);
     expect(r.autoSubmitted).toBe(0); expect((await ctx.prisma.attempt.findUniqueOrThrow({ where: { id: st.attemptId } })).status).toBe('IN_PROGRESS');
     expect(r.poisoned).toBeGreaterThanOrEqual(1); expect((await ctx.app.get(LifecycleService).health()).poisonedAttempts).toBeGreaterThanOrEqual(1);
     expect((await answer(st, (await qids(x))[0]!, 1)).body.code).toBe('TIME_EXPIRED');                                // still cannot write: the API enforces the deadline itself
-    await ctx.prisma.$executeRaw`UPDATE attempts SET "lifecycleRetries" = 0 WHERE id = ${st.attemptId}::uuid`;                // an operator clears the poison flag: the next pass recovers it
+    await ctx.prisma.$executeRaw`UPDATE attempts SET "lifecycleRetries" = 0 WHERE id = ${st.attemptId}`;                // an operator clears the poison flag: the next pass recovers it
     expect((await ctx.app.get(LifecycleService).reconcileExam(x)).autoSubmitted).toBe(1);
   });
 });
@@ -474,8 +475,8 @@ describe('19/22 events, outbox and audit', () => {
     expect((await ctx.prisma.exam.findUniqueOrThrow({ where: { id: x } })).stateVersion).toBe(v0 + steps.length);
     expect(au.every((a) => (a.meta as { version: number }).version >= v0 + 1)).toBe(true);
     const chain = await (await as(ctx, 'cce')).get('/audit/verify'); expect(chain.body.brokenAt).toBeNull();
-    await expect(ctx.prisma.$executeRaw`DELETE FROM exam_events WHERE "examId" = ${x}::uuid`).rejects.toThrow(/append-only/);
-    await expect(ctx.prisma.$executeRaw`UPDATE exam_events SET type = 'FORGED' WHERE "examId" = ${x}::uuid`).rejects.toThrow(/delivery fields/);
+    await expect(ctx.prisma.$executeRaw`DELETE FROM exam_events WHERE "examId" = ${x}`).rejects.toThrow(/append-only/);
+    await expect(ctx.prisma.$executeRaw`UPDATE exam_events SET type = 'FORGED' WHERE "examId" = ${x}`).rejects.toThrow(/delivery fields/);
   });
 
   it('a refused or failed command leaves nothing behind (rollback is atomic)', async () => {
@@ -507,10 +508,12 @@ describe('29 monitoring: bounded, authoritative and campus-scoped', () => {
 
   it('every number is the database’s: the snapshot equals independent counts', async () => {
     const snap = (await (await as(ctx, 'cce')).get(`/invigilation/exams/${id}/snapshot`)).body;
-    const db = await ctx.prisma.$queryRaw<{ allocated: number; eligible: number; entered: number; inprog: number; submitted: number }[]>`
-      SELECT (SELECT count(*) FROM exam_candidates WHERE "examId" = ${id}::uuid)::int AS allocated, (SELECT count(*) FROM exam_candidates WHERE "examId" = ${id}::uuid AND status = 'ADMITTED')::int AS eligible,
-             (SELECT count(*) FROM attempts WHERE "examId" = ${id}::uuid)::int AS entered, (SELECT count(*) FROM attempts WHERE "examId" = ${id}::uuid AND status = 'IN_PROGRESS')::int AS inprog,
-             (SELECT count(*) FROM attempts WHERE "examId" = ${id}::uuid AND status IN ('SUBMITTED','AUTO_SUBMITTED'))::int AS submitted`;
+    type Counts = { allocated: number; eligible: number; entered: number; inprog: number; submitted: number };
+    const db = (await ctx.prisma.$queryRaw<Record<keyof Counts, bigint>[]>`
+      SELECT (SELECT COUNT(*) FROM exam_candidates WHERE "examId" = ${id}) AS allocated, (SELECT COUNT(*) FROM exam_candidates WHERE "examId" = ${id} AND status = 'ADMITTED') AS eligible,
+             (SELECT COUNT(*) FROM attempts WHERE "examId" = ${id}) AS entered, (SELECT COUNT(*) FROM attempts WHERE "examId" = ${id} AND status = 'IN_PROGRESS') AS inprog,
+             (SELECT COUNT(*) FROM attempts WHERE "examId" = ${id} AND status IN ('SUBMITTED','AUTO_SUBMITTED')) AS submitted`)
+      .map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, Number(v)])) as Counts);   // MySQL counts are BIGINT
     expect(snap.totals).toMatchObject({ allocated: db[0]!.allocated, eligible: db[0]!.eligible, admitted: db[0]!.entered, inProgress: db[0]!.inprog });
     expect(snap.totals.submitted + snap.totals.autoSubmitted).toBe(db[0]!.submitted);
     expect(snap.totals.remaining).toBe(db[0]!.eligible - db[0]!.submitted);
@@ -567,7 +570,7 @@ describe('refused-save diagnosis never invents TIME_EXPIRED (found under load: a
     expect((await diag()).code).toBe('STATE_CHANGED');                                    // healthy attempt: the refusal was a moment ago and state has since changed (e.g. resumed)
     await cce.post(ctl(x, 'suspend'), { scope: 'EXAM', reason: 'Diagnosis scenario one', confirm: true }); expect((await diag()).code).toBe('EXAM_SUSPENDED');
     await cce.post(ctl(x, 'resume'), { confirm: true }); expect((await diag()).code).toBe('STATE_CHANGED');
-    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = clock_timestamp() - interval '3 hours', "deadlineAt" = clock_timestamp() - interval '2 minutes' WHERE id = ${st.attemptId}::uuid`;
+    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = NOW(3) - INTERVAL 3 HOUR, "deadlineAt" = NOW(3) - INTERVAL 2 MINUTE WHERE id = ${st.attemptId}`;
     expect((await diag()).code).toBe('TIME_EXPIRED');
   });
 });
