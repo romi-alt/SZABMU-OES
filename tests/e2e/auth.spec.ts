@@ -38,7 +38,7 @@ test.describe('authentication', () => {
   test('student signs in, sees the student navigation only, and signs out', async ({ page }) => {
     await login(page, 'student.a002');
     const nav = page.getByRole('navigation', { name: 'Primary' });
-    await expect(nav.getByRole('link', { name: 'Exam schedule' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'My Examinations' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Students' })).toHaveCount(0);
     await expect(nav.getByRole('link', { name: 'Audit trail' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Sign out' }).click();

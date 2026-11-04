@@ -80,15 +80,21 @@ export default function ExamPage() {
     <Shell>
       <h1>{info.title}</h1>
       <p className="muted" style={{ margin: '4px 0 16px' }}>{info.course.title} · {info.questionCount} questions · {info.totalMarks} marks · {info.durationMin} minutes</p>
+      <ul className="start-facts" aria-label="Examination summary">
+        <li><b>{info.questionCount}</b><span>Questions</span></li>
+        <li><b>{info.totalMarks}</b><span>Total marks</span></li>
+        <li><b>{info.durationMin}</b><span>Minutes</span></li>
+        <li><b>{info.negativeMarking > 0 ? `${Math.round(info.negativeMarking * 100)}%` : 'None'}</b><span>Negative marking</span></li>
+      </ul>
       <div className="card"><div className="card-h"><h2>Before you begin</h2></div><div className="card-b stack">
         {info.instructions && <p style={{ margin: 0 }}>{info.instructions}</p>}
-        <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8 }}>
+        <ol className="start-rules">
           <li>Each question has one best answer. {info.negativeMarking > 0 ? `A wrong answer loses ${info.negativeMarking * 100}% of the question's marks.` : 'There is no negative marking.'}</li>
           <li>The countdown is controlled by the server. Closing the page does not pause it.</li>
           <li>Answers save automatically. A question shows <b>Saved</b> only after the server has stored it. If your connection drops, keep working — answers are retried automatically.</li>
           <li>Do not open the examination in a second window; the newest window takes over and the older one stops saving.</li>
           <li>Review your answers and confirm before submitting. You receive a receipt code on submission.</li>
-        </ul>
+        </ol>
         {error && <Notice tone="bad">{error}</Notice>}
         {!info.canStart && !error && (() => { const p = describeExam(info, new Date(), (d) => fmtDT(d)); return <Notice tone="warn"><b>{p.label}.</b> {p.detail}</Notice>; })()}
         <div className="row"><button className="btn btn-green" disabled={!info.canStart || starting} onClick={begin}>{starting ? 'Starting…' : resuming ? 'Resume examination →' : 'Begin examination →'}</button><Link className="btn" href="/schedule">Back</Link></div>
@@ -184,7 +190,7 @@ function Player({ engine, questions, exam, attemptId, clientId, initialMsg = '',
   const low = remaining < 5 * 60_000;
   return (
     <div className="exam">
-      <header className="exam-bar">
+      <header className="exam-bar" style={{ ['--answered-pct' as string]: `${(counts.answered / Math.max(1, questions.length)) * 100}%` }}>
         <BrandLogo className="exam-logo" />
         <div className="grow exam-title"><h1 className="title">{exam.title}</h1><div className="small muted">{questions.length} questions · {exam.totalMarks} marks</div></div>
         <div className="small muted exam-answered" aria-live="polite">Answered <b className="mono" style={{ color: 'var(--ink)' }}>{counts.answered}</b> / {questions.length}</div>
@@ -312,8 +318,8 @@ function ReviewView({ engine, questions, attemptId, clientId, submitKey, onBack,
           ? <Notice tone="warn"><div data-testid="review-unconfirmed" role="status"><b>{pending.length === 1 ? '1 answer is' : `${pending.length} answers are`} not confirmed by the server yet.</b> They are kept on this device and retried automatically; until the server confirms them they are <b>not</b> counted as saved.{' '}
             {pendingNums.map((p, k) => <span key={p.id}>{k ? ', ' : ''}<button className="btn-link" onClick={() => onBack(p.i)}>Question {p.n}</button></span>)}. <button className="btn btn-sm" onClick={() => void engine.retryNow()} data-testid="review-retry">Retry saving now</button></div></Notice>
           : <p className="small muted" data-testid="review-all-confirmed" role="status">✓ Every answer on this screen is confirmed by the server.</p>}
-        {c.marked > 0 && <Notice tone="warn">{c.marked} question(s) are marked for review.</Notice>}
-        {(c.skipped + c.unanswered + c.notvisited) > 0 && <Notice tone="warn">{c.skipped + c.unanswered + c.notvisited} question(s) have no answer. Select a number to return to it.</Notice>}
+        {c.marked > 0 && <Notice tone="warn">{c.marked === 1 ? '1 question is' : `${c.marked} questions are`} marked for review.</Notice>}
+        {(c.skipped + c.unanswered + c.notvisited) > 0 && <Notice tone="warn">{(() => { const n = c.skipped + c.unanswered + c.notvisited; return n === 1 ? '1 question has' : `${n} questions have`; })()} no answer. Select a number to return to it.</Notice>}
         <ul className="pal pal-review" aria-label="All questions">{items.map((x) => <li key={x.id}><button type="button" className={`${x.kind} ${x.marked ? 'marked' : ''} ${x.unsynced ? 'unsynced' : ''}`} onClick={() => onBack(x.index)} aria-label={labelFor(x)}><span className="g" aria-hidden>{x.unsynced ? '!' : GLYPH[x.kind]}</span>{pad(x.number)}</button></li>)}</ul>
         {err && <Notice tone="bad">{err}</Notice>}
         <div className="row"><button className="btn btn-primary" onClick={() => { setAgree(false); setConfirm(true); }} disabled={busy}>Submit examination…</button><span className="small muted">You cannot change answers after submission.</span></div>

@@ -13,6 +13,12 @@ import { AuditService } from './modules/audit/audit.service';
 import { AuthService } from './modules/auth/auth.service';
 import { RegistrationService } from './modules/auth/registration.service';
 import { RegistrationController } from './modules/auth/registration.controller';
+import { OnboardingService } from './modules/auth/onboarding.service';
+import { OnboardingController } from './modules/auth/onboarding.controller';
+import { TeacherRegistrationService } from './modules/teachers/teacher-registration.service';
+import { TeacherService } from './modules/teachers/teacher.service';
+import { TeacherAdminService } from './modules/teachers/teacher-admin.service';
+import { TeacherRegistrationController, TeacherController, TeacherAdminController } from './modules/teachers/teachers.controller';
 import { AuthController } from './modules/auth/auth.controller';
 import { MfaService } from './modules/auth/mfa.service';
 import { OrgService } from './modules/org/org.service';
@@ -40,11 +46,11 @@ import { ExamControlService } from './modules/control/control.service';
 import { ExamControlController } from './modules/control/control.controller';
 
 @Module({
-  controllers: [AuthController, RegistrationController, OrgController, CourseAssignmentsController, ExamsController, DeliveryController, ResultsController, InvigilationController, ReportsController, ExamControlController, HealthController, MetricsController],
+  controllers: [AuthController, RegistrationController, OnboardingController, TeacherRegistrationController, TeacherController, TeacherAdminController, OrgController, CourseAssignmentsController, ExamsController, DeliveryController, ResultsController, InvigilationController, ReportsController, ExamControlController, HealthController, MetricsController],
   providers: [
     { provide: CONFIG, useFactory: () => loadConfig() },
     PrismaService, RedisService, QueuesService, MailService, MetricsService, AuditService, NotificationsService,
-    AuthService, RegistrationService, MfaService, OrgService, CourseAccessService, QuestionsService, ExamsService, DeliveryService, ResultsService, InvigilationService, ReportsService, ExamEventsService, MonitorService, LifecycleService, ExamControlService, JobsService,
+    AuthService, RegistrationService, OnboardingService, TeacherRegistrationService, TeacherService, TeacherAdminService, MfaService, OrgService, CourseAccessService, QuestionsService, ExamsService, DeliveryService, ResultsService, InvigilationService, ReportsService, ExamEventsService, MonitorService, LifecycleService, ExamControlService, JobsService,
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],

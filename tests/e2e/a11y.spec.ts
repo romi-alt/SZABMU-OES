@@ -28,7 +28,7 @@ test.describe('axe scans', () => {
   test('student dashboard and schedule', async ({ page }, ti) => {
     await login(page, 'student.b008');
     await expect(page.getByRole('heading', { name: /Welcome back/ })).toBeVisible(); await scan(page, 'student-dashboard', ti);
-    await page.goto('/schedule'); await expect(page.getByRole('heading', { name: 'Exam schedule' })).toBeVisible(); await scan(page, 'student-schedule', ti);
+    await page.goto('/schedule'); await expect(page.getByRole('heading', { name: 'My Examinations' })).toBeVisible(); await scan(page, 'student-schedule', ti);
   });
   test('examiner exam list', async ({ page }, ti) => {
     await login(page, 'examiner');

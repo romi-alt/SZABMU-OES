@@ -20,6 +20,7 @@ const norm = (v, type) => {
   if (type === 'datetime') return new Date(String(v).replace(' ', 'T') + 'Z').toISOString();
   if (type === 'date') return String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
   if (v instanceof Date) return v.toISOString();
+  if (Buffer.isBuffer(v)) return v.toString('hex');
   if (type === 'longtext') return JSON.stringify(canon(typeof v === 'string' ? JSON.parse(v) : v));
   if (type === 'tinyint') return Boolean(Number(v));
   if (typeof v === 'boolean') return v;

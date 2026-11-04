@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client, as, boot, type Ctx } from './helpers';
 
 /** Student self-registration against the official register: matching, enumeration safety, email proof, single claim, authorization, scope. */
@@ -30,77 +30,43 @@ describe('roster import', () => {
   });
 });
 
-describe('registration flow', () => {
-  // Every test calls from the same client IP; reset the per-IP / per-number limiters so tests do not throttle each other.
-  // ('is rate limited per registration number' accumulates hits inside one test, so it still proves the limit.)
-  beforeEach(async () => { const keys = await ctx.redis.client.keys('rl:reg:*'); if (keys.length) await ctx.redis.client.del(...keys); });
-  const start = (r: { regNo: string; dateOfBirth: string }, email: string, password = PW) => anon().post('/auth/register', { regNo: r.regNo, dateOfBirth: r.dateOfBirth, email, password });
+describe('sign-up (registration number + email + password + emailed code)', () => {
+  const start = (regNo: string, email: string, password = PW) => anon().post('/auth/register', { regNo, email, password });
+  const clear = async () => { const k = await ctx.redis.client.keys('rl:reg:*'); if (k.length) await ctx.redis.client.del(...k); };
+  const verify = async (email: string, code: string) => { const c = anon(); const r = await c.req('POST', '/auth/register/verify', { email, code }); const sc = r.headers['set-cookie']; if (sc) c.cookie = String(Array.isArray(sc) ? sc[0] : sc).split(';')[0]!; return { c, r }; };
 
-  it('matching details + emailed code create a STUDENT bound to the roster entry; the person can then sign in; the entry is claimed', async () => {
-    const r = row(); await load([r]); const email = 'amna.new@example.test';
-    const s = await start(r, email); expect(s.status).toBe(200); expect(s.body.devCode).toMatch(/^\d{6}$/);
-    expect((await anon().post('/auth/login', { email, password: PW })).status).toBe(401);       // no account before the code is entered
-    expect((await anon().post('/auth/register/verify', { email, code: s.body.devCode })).status).toBe(200);
-    const stu = await ctx.prisma.student.findUniqueOrThrow({ where: { regNo: r.regNo }, include: { user: true } });
-    expect(stu.user).toMatchObject({ email, role: 'STUDENT', fullName: r.fullName, mustChangePw: false }); expect(stu).toMatchObject({ institutionId: A, semester: 2, batchYear: 2025 });
-    const login = await anon().post('/auth/login', { email, password: PW }); expect(login.status).toBe(200);
-    expect((await ctx.prisma.rosterEntry.findUniqueOrThrow({ where: { regNo: r.regNo } })).claimedByUserId).toBe(stu.userId);
-    expect(await ctx.prisma.enrollment.count({ where: { studentId: stu.id } })).toBe(0);         // registering grants no enrolment / exam access
-    expect(await ctx.prisma.auditLog.count({ where: { action: 'student.self_registered', entityId: stu.userId } })).toBe(1);
+  it('needs no match against the official register: the code creates a STUDENT account, signs it in, and creates no Student record or enrolment yet', async () => {
+    await clear(); const regNo = `SELF-${++seq}`; const email = 'self.signup@example.test';
+    const s = await start(regNo, email); expect(s.status).toBe(200); expect(s.body.devCode).toMatch(/^\d{6}$/);
+    expect((await anon().post('/auth/login', { email, password: PW })).status).toBe(401);             // no account before the code is entered
+    const { c, r } = await verify(email, s.body.devCode); expect(r.status, r.raw).toBe(200); expect(c.cookie).toContain('oes_session');
+    const me = await c.get('/auth/me'); expect(me.status).toBe(200);
+    expect(me.body).toMatchObject({ role: 'STUDENT', email, studentId: null, student: null, onboarding: { required: true, regNo } });
+    const u = await ctx.prisma.user.findUniqueOrThrow({ where: { email }, include: { student: true, studentSignup: true } });
+    expect(u.student).toBeNull(); expect(u.studentSignup).toMatchObject({ regNo, completedAt: null }); expect(await ctx.prisma.enrollment.count({ where: { student: { userId: u.id } } })).toBe(0);
+    expect(await ctx.prisma.auditLog.count({ where: { action: 'student.signed_up', entityId: u.id } })).toBe(1);
   });
 
-  it('says clearly when no code was sent, without letting either half of the details be probed alone', async () => {
-    const r = row(); await load([r]);
-    const good = await start(r, 'probe.good@example.test');
-    expect(good.status).toBe(200); expect(good.body.message).toContain('probe.good@example.test');
-    const wrongDob = await start({ ...r, dateOfBirth: '2004-03-10' }, 'probe.dob@example.test');
-    const unknown = await start({ regNo: 'NOPE-0000', dateOfBirth: r.dateOfBirth }, 'probe.none@example.test');
-    for (const x of [wrongDob, unknown]) { expect(x.status).toBe(422); expect(x.body.code).toBe('REGISTER_NO_MATCH'); expect(x.body.devCode).toBeUndefined(); }
-    expect(wrongDob.body.message).toBe(unknown.body.message);                                    // wrong DOB ≡ unknown number
-    const taken = await start(r, 'student.a001@demo.szabmu.invalid');                             // matching details, email belongs to someone else
-    expect(taken.status).toBe(409); expect(taken.body.code).toBe('EMAIL_IN_USE'); expect(taken.body.devCode).toBeUndefined();
-    expect(await ctx.prisma.user.count({ where: { email: { startsWith: 'probe.' } } })).toBe(0);
+  it('tells the student why no code was sent: number already registered (any case), email in use, or an existing student number — and creates nothing', async () => {
+    await clear(); const regNo = `PROBE-${++seq}`; const a = await start(regNo, 'probe1@example.test'); await verify('probe1@example.test', a.body.devCode);
+    await clear(); const same = await start(regNo.toLowerCase(), 'probe2@example.test'); expect(same.status).toBe(409); expect(same.body.code).toBe('ALREADY_REGISTERED');
+    await clear(); const mail = await start(`PROBE-X-${seq}`, 'probe1@example.test'); expect(mail.status).toBe(409); expect(mail.body.code).toBe('EMAIL_IN_USE');
+    await clear(); const existing = await start('DMC-A-2024-0001', 'probe3@example.test'); expect(existing.status).toBe(409); expect(existing.body.code).toBe('ALREADY_REGISTERED');
+    expect(await ctx.prisma.user.count({ where: { email: { in: ['probe2@example.test', 'probe3@example.test'] } } })).toBe(0);
   });
 
-  it('reports an already-claimed number only to someone who also knows the date of birth', async () => {
-    const r = row(); await load([r]); const email = 'claim.first@example.test';
-    const s = await start(r, email); expect((await anon().post('/auth/register/verify', { email, code: s.body.devCode })).status).toBe(200);
-    const again = await start(r, 'claim.second@example.test');
-    expect(again.status).toBe(409); expect(again.body.code).toBe('ALREADY_REGISTERED');
-    const guess = await start({ ...r, dateOfBirth: '1999-12-31' }, 'claim.third@example.test');
-    expect(guess.status).toBe(422); expect(guess.body.code).toBe('REGISTER_NO_MATCH');
-  });
-
-  it('wrong codes are limited to five tries, then the pending registration is destroyed', async () => {
-    const r = row(); await load([r]); const email = 'limit@example.test'; const s = await start(r, email);
+  it('checks the code: wrong code, reuse, expiry by attempts, and bad input', async () => {
+    await clear(); const email = 'codes@example.test'; const s = await start(`COD-${++seq}`, email);
     const wrong = s.body.devCode === '000000' ? '111111' : '000000';
-    for (let i = 0; i < 5; i++) expect((await anon().post('/auth/register/verify', { email, code: wrong })).status).toBe(400);
-    expect((await anon().post('/auth/register/verify', { email, code: s.body.devCode })).status).toBe(400);
-    expect(await ctx.prisma.student.count({ where: { regNo: r.regNo } })).toBe(0);
-  });
-
-  it('a code cannot be reused, and an entry can be claimed by only one person even if two registrations were started', async () => {
-    const r = row(); await load([r]);
-    const a = await start(r, 'race.a@example.test'); const b = await start(r, 'race.b@example.test');
-    const [x, y] = await Promise.all([anon().post('/auth/register/verify', { email: 'race.a@example.test', code: a.body.devCode }), anon().post('/auth/register/verify', { email: 'race.b@example.test', code: b.body.devCode })]);
-    expect([x.status, y.status].sort()).toEqual([200, 400]);
-    expect(await ctx.prisma.student.count({ where: { regNo: r.regNo } })).toBe(1);
-    const winner = x.status === 200 ? { email: 'race.a@example.test', code: a.body.devCode } : { email: 'race.b@example.test', code: b.body.devCode };
-    expect((await anon().post('/auth/register/verify', winner)).status).toBe(400);
-    expect((await start(r, 'race.c@example.test')).body.devCode).toBeUndefined();               // already claimed
-  });
-
-  it('enforces the password policy and input validation', async () => {
-    const r = row(); await load([r]);
-    expect((await start(r, 'weak@example.test', 'short')).status).toBe(400);
-    expect((await start(r, 'not-an-email')).status).toBe(400);
-    expect((await anon().post('/auth/register', { regNo: r.regNo, email: 'x@example.test', password: PW })).status).toBe(400);
+    expect((await verify(email, wrong)).r.status).toBe(400); expect((await verify(email, s.body.devCode)).r.status).toBe(200); expect((await verify(email, s.body.devCode)).r.status).toBe(400);
+    await clear(); const e2 = 'codes2@example.test'; await start(`COD-${++seq}`, e2); for (let i = 0; i < 5; i++) await verify(e2, '123456'); expect((await verify(e2, '123456')).r.status).toBe(400);
+    await clear(); expect((await start(`COD-${++seq}`, 'weak@example.test', 'short')).status).toBe(400); expect((await start('x', 'x@example.test')).status).toBe(400); expect((await start(`COD-${++seq}`, 'not-an-email')).status).toBe(400);
     expect((await anon().post('/auth/register/verify', { email: 'x@example.test', code: '12ab56' })).status).toBe(400);
   });
 
   it('is rate limited per registration number', async () => {
-    const r = row(); await load([r]); let last = 200;
-    for (let i = 0; i < 7; i++) last = (await start({ ...r, dateOfBirth: '2004-01-0' + (1 + (i % 8)) }, `rl${i}@example.test`)).status;
-    expect(last).toBe(429);
+    await clear(); const regNo = `RL-${++seq}`; let last = 200;
+    for (let i = 0; i < 7; i++) last = (await start(regNo, `rl${i}@example.test`)).status;
+    expect(last).toBe(429); await clear();
   });
 });

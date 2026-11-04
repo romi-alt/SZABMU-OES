@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import argon2 from 'argon2';
 import { randomBytes, randomInt } from 'node:crypto';
+import { decodePhoto } from '../teachers/teacher-registration.service';
 import { checkPassword, permissionsFor, roleAllowedOnPortal, type Portal } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
 import { RedisService } from '../../infra/redis.service';
@@ -64,6 +65,11 @@ export class AuthService {
       throw new AppError(401, 'INVALID_CREDENTIALS', 'Incorrect email or password');
     }
 
+    return this.issueSession(user, now, ip, ua);
+  }
+
+  /** Creates the session for an already-authenticated user (login, or the moment a new student's email is verified). */
+  private async issueSession(user: { id: string; email: string; fullName: string; role: AuthUser['role']; mustChangePw: boolean; totpEnabledAt: Date | null; institutions?: { institutionId: string }[]; student?: { id: string } | null }, now: Date, ip: string, ua?: string) {
     const token = randomBytes(32).toString('base64url');
     await this.prisma.$transaction([
       this.prisma.session.create({ data: { userId: user.id, tokenHash: sha256(token), expiresAt: new Date(now.getTime() + this.cfg.SESSION_TTL_HOURS * 3600_000), ip, userAgent: ua?.slice(0, 300) } }),
@@ -75,6 +81,12 @@ export class AuthService {
     return { token, expiresAt: new Date(now.getTime() + this.cfg.SESSION_TTL_HOURS * 3600_000), user: { ...this.profile(user), mfa } };
   }
 
+  /** Signs in a user whose identity was just proven another way (verified email code). No password check, no MFA (students have none). */
+  async sessionFor(userId: string, ip: string, ua?: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, include: { institutions: true, student: { select: { id: true } } } });
+    return this.issueSession(user, new Date(), ip, ua);
+  }
+
   profile(u: { id: string; email: string; fullName: string; role: AuthUser['role']; mustChangePw: boolean; institutions?: { institutionId: string }[]; student?: { id: string } | null }) {
     return { id: u.id, email: u.email, fullName: u.fullName, role: u.role, mustChangePw: u.mustChangePw, studentId: u.student?.id ?? null, permissions: permissionsFor(u.role) };
   }
@@ -84,14 +96,21 @@ export class AuthService {
       where: { id: user.id },
       include: { institutions: { include: { institution: { select: { id: true, code: true, name: true } } } }, student: { include: { program: true, institution: { select: { id: true, name: true, code: true } } } } },
     });
-    return { ...this.profile(u), mfa: { enabled: !!u.totpEnabledAt, state: user.mfa, required: this.cfg.MFA_ENFORCE === 'true' && MFA_ROLES.includes(u.role) }, phone: u.phone, lastLoginAt: u.lastLoginAt, institutions: u.institutions.map((i) => i.institution), student: u.student && { id: u.student.id, regNo: u.student.regNo, semester: u.student.semester, program: u.student.program.code, programName: u.student.program.name, institution: u.student.institution, address: u.student.address, dateOfBirth: u.student.dateOfBirth, guardianPhone: u.student.guardianPhone } };
+    const teacher = u.role === 'TEACHER' ? await this.prisma.teacherProfile.findUnique({ where: { userId: u.id }, select: { status: true, reviewNote: true } }) : null;
+    const base = this.profile(u);
+    const signup = u.role === 'STUDENT' && !u.student ? await this.prisma.studentSignup.findUnique({ where: { userId: u.id }, select: { regNo: true, completedAt: true } }) : null;
+    // A teacher whose registration is not APPROVED holds only the permission to see their own approval status (the server re-checks on every teacher route as well).
+    const permissions = teacher && teacher.status !== 'APPROVED' ? base.permissions.filter((p) => p === 'teacher.self' || p === 'program.read') : base.permissions;
+    return { ...base, permissions, onboarding: signup ? { required: !signup.completedAt, regNo: signup.regNo } : null, teacher: teacher && { status: teacher.status, reviewNote: teacher.reviewNote }, mfa: { enabled: !!u.totpEnabledAt, state: user.mfa, required: this.cfg.MFA_ENFORCE === 'true' && MFA_ROLES.includes(u.role) }, phone: u.phone, lastLoginAt: u.lastLoginAt, institutions: u.institutions.map((i) => i.institution), student: u.student && { id: u.student.id, regNo: u.student.regNo, semester: u.student.semester, program: u.student.program.code, programName: u.student.program.name, institution: u.student.institution, address: u.student.address, dateOfBirth: u.student.dateOfBirth, guardianPhone: u.student.guardianPhone, fatherName: u.student.fatherName, gender: u.student.gender, selfDeclared: u.student.selfDeclared, hasPhoto: !!u.student.photoMime } };
   }
 
   /** Self-service profile edit. Identity fields (name, email, DOB, registration number) are institution-managed and not editable here. */
-  async updateProfile(user: AuthUser, d: { phone?: string; address?: string; guardianPhone?: string }, ip?: string) {
+  async updateProfile(user: AuthUser, d: { phone?: string; address?: string; guardianPhone?: string; fatherName?: string; gender?: 'MALE' | 'FEMALE' | 'OTHER'; photo?: string | null }, ip?: string) {
+    const photo = d.photo ? decodePhoto(d.photo) : undefined;
     await this.prisma.$transaction(async (tx) => {
       if (d.phone !== undefined) await tx.user.update({ where: { id: user.id }, data: { phone: d.phone } });
-      if (user.studentId && (d.address !== undefined || d.guardianPhone !== undefined)) await tx.student.update({ where: { id: user.studentId }, data: { address: d.address, guardianPhone: d.guardianPhone } });
+      const personal = { address: d.address, guardianPhone: d.guardianPhone, fatherName: d.fatherName?.trim(), gender: d.gender, ...(d.photo === null ? { photo: null, photoMime: null } : photo ? { photo: Buffer.from(photo.b64, 'base64'), photoMime: photo.mime } : {}) };
+      if (user.studentId && Object.values(personal).some((v) => v !== undefined)) await tx.student.update({ where: { id: user.studentId }, data: personal });
     });
     await this.audit.log({ actor: user, action: 'auth.profile_updated', entity: 'user', entityId: user.id, meta: { fields: Object.keys(d) }, ip });
     return this.me(user);
