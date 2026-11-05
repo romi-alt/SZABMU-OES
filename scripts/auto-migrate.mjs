@@ -4,9 +4,9 @@
  * Safe by construction:
  *  - `prisma migrate deploy` only runs migration files already committed to the repository, in order, once each; it never resets, drops or "fixes" data.
  *    (Every migration in this repository is additive; `migrate dev` / `migrate reset` are never used here.)
- *  - It is a no-op when nothing is pending, and Prisma holds an advisory lock so two starting processes cannot apply a migration twice.
- *  - Managed PostgreSQL (Neon) offers a pooled endpoint ("-pooler" in the host name) that cannot hold the advisory lock; the migration is run on the DIRECT
- *    endpoint, derived by removing "-pooler" (or taken from MIGRATE_DATABASE_URL when set).
+ *  - It is a no-op when nothing is pending, and Prisma holds a database lock (GET_LOCK on MySQL/MariaDB) so two starting processes cannot apply a migration twice.
+ *  - Hostinger MariaDB has a single endpoint, so DATABASE_URL is used as is. (Managed PostgreSQL such as Neon offered a pooled endpoint ("-pooler" in the host name) that cannot hold the advisory lock; the migration is run on the DIRECT
+ *    endpoint, derived by removing "-pooler"); MIGRATE_DATABASE_URL overrides it when set.
  *  - A failure is logged loudly and does NOT crash the launcher (the health endpoint stays reachable so the cause can be read from the logs).
  *  - Disable with AUTO_MIGRATE=false.
  */

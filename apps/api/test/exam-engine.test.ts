@@ -113,7 +113,7 @@ describe('answer saving', () => {
     const { attemptId, clientId, questions } = await startExam(ctx, s);
     const q = questions[0]!.id;
     // make this one question a 4-option item so label E is invalid for it
-    await ctx.prisma.$executeRaw`UPDATE exam_questions SET snapshot = jsonb_set(snapshot, '{options}', (snapshot->'options') - 4) WHERE id = ${q}::uuid`;
+    await ctx.prisma.$executeRaw`UPDATE exam_questions SET snapshot = JSON_REMOVE(snapshot, '$.options[4]') WHERE id = ${q}`;
     expect((await save(s, attemptId, q, clientId, 1, 'E')).status).toBe(400); // label E does not exist on a 4-option question
     expect((await s.put(`/attempts/${attemptId}/answers/${q}`, { clientId, revision: 1, selectedLabel: 'A', state: 'SKIPPED', markedForReview: false, visited: true })).status).toBe(400);
     expect((await s.put(`/attempts/${attemptId}/answers/${q}`, { clientId, revision: 1, selectedLabel: null, state: 'ANSWERED', markedForReview: false, visited: true })).status).toBe(400);
@@ -175,8 +175,8 @@ describe('submission', () => {
     expect(r.status).toBe(409);
     expect(r.body.code).toBe('ATTEMPT_CLOSED');
     // Bypass the API entirely: the trigger must still block writes to a sealed sheet.
-    await expect(ctx.prisma.$executeRaw`UPDATE attempt_answers SET "selectedLabel" = 'D', state = 'ANSWERED' WHERE "attemptId" = ${a.id}::uuid`).rejects.toThrow(/immutable|finalised/);
-    await expect(ctx.prisma.$executeRaw`INSERT INTO attempt_answers ("attemptId","examQuestionId","selectedLabel",state,"markedForReview",visited,revision) VALUES (${a.id}::uuid, ${eq.id}::uuid, 'A', 'ANSWERED', false, true, 500)`).rejects.toThrow(/immutable|finalised/);
+    await expect(ctx.prisma.$executeRaw`UPDATE attempt_answers SET "selectedLabel" = 'D', state = 'ANSWERED' WHERE "attemptId" = ${a.id}`).rejects.toThrow(/immutable|finalised/);
+    await expect(ctx.prisma.$executeRaw`INSERT INTO attempt_answers ("attemptId","examQuestionId","selectedLabel",state,"markedForReview",visited,revision) VALUES (${a.id}, ${eq.id}, 'A', 'ANSWERED', false, true, 500)`).rejects.toThrow(/immutable|finalised/);
     expect((await s.post('/attempts/start', { examId: ctx.seeded.examId, clientId: cid() })).body.code).toBe('ALREADY_SUBMITTED');
   });
 
@@ -228,7 +228,7 @@ describe('server-controlled time', () => {
     const eq = await ctx.prisma.examQuestion.findFirstOrThrow({ where: { examId: a.examId } });
     expect((await save(s, a.id, eq.id, a.activeClientId!, 1, 'A')).status).toBe(200);
     // Simulate the clock passing the deadline by moving the deadline into the past (DB clock is the authority).
-    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = now() - interval '2 hours', "deadlineAt" = now() - interval '1 minute' WHERE id = ${a.id}::uuid`;
+    await ctx.prisma.$executeRaw`UPDATE attempts SET "startedAt" = NOW(3) - INTERVAL 2 HOUR, "deadlineAt" = NOW(3) - INTERVAL 1 MINUTE WHERE id = ${a.id}`;
     const late = await save(s, a.id, eq.id, a.activeClientId!, 2, 'B');
     expect(late.status).toBe(409);
     expect(late.body.code).toBe('TIME_EXPIRED');

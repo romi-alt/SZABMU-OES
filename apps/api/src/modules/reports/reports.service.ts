@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma.service';
+import { idList, int } from '../../infra/sql';
 import { scope, type AuthUser } from '../../common/auth';
 import { notFound } from '../../common/errors';
 
@@ -123,8 +124,8 @@ export class ReportsService {
   async institutionSummary(u: AuthUser, institutionId?: string) {
     if (institutionId) scope.assert(u, institutionId);
     const ids = institutionId ? [institutionId] : u.institutionIds;       // null = university-wide
-    return this.prisma.$queryRaw<{ code: string; name: string; students: number; users: number }[]>`
-      SELECT i.code, i.name, (SELECT count(*)::int FROM students s WHERE s."institutionId" = i.id) AS students, (SELECT count(*)::int FROM user_institutions ui WHERE ui."institutionId" = i.id) AS users
-      FROM institutions i WHERE (${ids === null ? 1 : 0}::int = 1 OR i.id = ANY(${ids ?? []}::uuid[])) ORDER BY i.name`;
+    return (await this.prisma.$queryRaw<{ code: string; name: string; students: bigint; users: bigint }[]>`
+      SELECT i.code, i.name, (SELECT COUNT(*) FROM students s WHERE s."institutionId" = i.id) AS students, (SELECT COUNT(*) FROM user_institutions ui WHERE ui."institutionId" = i.id) AS users
+      FROM institutions i WHERE (${ids === null ? 1 : 0} = 1 OR i.id IN ${idList(ids ?? [])}) ORDER BY i.name`).map((r) => ({ ...r, students: int(r.students), users: int(r.users) }));
   }
 }

@@ -15,7 +15,7 @@ let ctx: Ctx;
 const CANDIDATES = 80;
 beforeAll(async () => { process.env.DB_POOL_MAX = '3'; ctx = await boot({ studentsPerCampus: CANDIDATES / 2 + 1 }); });
 afterAll(async () => {
-  await ctx.prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS slow_seal_t ON attempts`).catch(() => undefined);
+  await ctx.prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS slow_seal_t`).catch(() => undefined);
   await ctx.app.close(); delete process.env.DB_POOL_MAX;
 });
 
@@ -32,8 +32,7 @@ describe('submit wave under connection pressure', () => {
       return { s, t };
     }));
     // every seal now takes ≥ 80 ms inside its transaction (stands in for a loaded database)
-    await ctx.prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION slow_seal() RETURNS trigger AS $$ BEGIN PERFORM pg_sleep(0.08); RETURN NEW; END $$ LANGUAGE plpgsql`);
-    await ctx.prisma.$executeRawUnsafe(`CREATE TRIGGER slow_seal_t BEFORE UPDATE ON attempts FOR EACH ROW WHEN (OLD.status = 'IN_PROGRESS' AND NEW.status <> OLD.status) EXECUTE FUNCTION slow_seal()`);
+    await ctx.prisma.$executeRawUnsafe(`CREATE TRIGGER slow_seal_t BEFORE UPDATE ON attempts FOR EACH ROW BEGIN IF OLD.status = 'IN_PROGRESS' AND NEW.status <> OLD.status THEN DO SLEEP(0.08); END IF; END`);
     const t0 = Date.now();
     const res = await Promise.all(sessions.map(({ s, t }, i) => s.post(`/attempts/${t.attemptId}/submit`, { clientId: t.clientId, submitKey: `contention-${i}-xxxx` })));
     const ms = Date.now() - t0;

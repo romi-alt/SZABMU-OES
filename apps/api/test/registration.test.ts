@@ -32,7 +32,7 @@ describe('roster import', () => {
 
 describe('sign-up (registration number + email + password + emailed code)', () => {
   const start = (regNo: string, email: string, password = PW) => anon().post('/auth/register', { regNo, email, password });
-  const clear = async () => { const k = await ctx.redis.client.keys('rl:reg:*'); if (k.length) await ctx.redis.client.del(...k); };
+  const clear = () => ctx.kv.clearPrefix('rl:reg:');
   const verify = async (email: string, code: string) => { const c = anon(); const r = await c.req('POST', '/auth/register/verify', { email, code }); const sc = r.headers['set-cookie']; if (sc) c.cookie = String(Array.isArray(sc) ? sc[0] : sc).split(';')[0]!; return { c, r }; };
 
   it('needs no match against the official register: the code creates a STUDENT account, signs it in, and creates no Student record or enrolment yet', async () => {
