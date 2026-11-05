@@ -4,7 +4,8 @@ import type { Prisma } from '../../generated/prisma/client';
 import { CONFIG, type Config } from '../../config';
 import { MetricsService } from '../../infra/metrics.service';
 import { PrismaService } from '../../infra/prisma.service';
-import { RedisService } from '../../infra/redis.service';
+import { int, json } from '../../infra/sql';
+import { KvService } from '../../infra/kv.service';
 
 export interface ExamEvent { id: number; eventId: string; examId: string; institutionId: string | null; studentId: string | null; version: number; type: string; payload: Record<string, any>; at: string }
 export interface EmitSpec { examId: string; version: number; type: string; institutionId?: string | null; studentId?: string | null; payload?: Record<string, unknown> }
@@ -29,12 +30,13 @@ export interface Subscriber { id: number; examId: string; viewer: Viewer; lastId
 interface Stream { subs: Map<number, Subscriber>; polledUpTo: number; nextPoll: number }
 
 const row = (r: { id: bigint; eventId: string; examId: string; institutionId: string | null; studentId: string | null; aggregateVersion: number; type: string; payload: unknown; createdAt: Date }): ExamEvent =>
-  ({ id: Number(r.id), eventId: r.eventId, examId: r.examId, institutionId: r.institutionId, studentId: r.studentId, version: r.aggregateVersion, type: r.type, payload: (r.payload ?? {}) as Record<string, any>, at: r.createdAt.toISOString() });
+  ({ id: Number(r.id), eventId: r.eventId, examId: r.examId, institutionId: r.institutionId, studentId: r.studentId, version: r.aggregateVersion, type: r.type, payload: json<Record<string, any>>(r.payload ?? {}), at: r.createdAt.toISOString() });
 
 /**
  * Durable event delivery.
  *  • WRITE: `emit(tx, …)` inserts into `exam_events` in the SAME transaction as the state change (transactional outbox).
  *  • PUBLISH: committed PENDING rows are pushed to Redis pub/sub by `publishPending` (retried, bounded). Duplicates are harmless.
+ *    Without Redis (REDIS_URL unset) `publishPending` hands rows straight to this process's streams; other processes see them through the poll.
  *  • READ: SSE subscribers receive Redis messages for low latency AND a database catch-up poll for the exam (slow when Redis is healthy,
  *    fast when it is not), de-duplicated by event id — so losing Redis degrades latency only, never correctness. `replay` serves Last-Event-ID.
  */
@@ -45,13 +47,13 @@ export class ExamEventsService implements OnModuleDestroy {
   private sub?: Redis; private subReady = false; private seq = 0; private timer?: NodeJS.Timeout;
   /** Hook for the monitor: called each second for exams with subscribers. */
   onTick?: (examId: string, subs: Subscriber[]) => Promise<void>;
-  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly metrics: MetricsService, @Inject(CONFIG) private readonly cfg: Config) {}
+  constructor(private readonly prisma: PrismaService, private readonly kv: KvService, private readonly metrics: MetricsService, @Inject(CONFIG) private readonly cfg: Config) {}
 
   // ───────────── write side ─────────────
   async emit(tx: Prisma.TransactionClient, e: EmitSpec): Promise<number> {
     const r = await tx.$queryRaw<{ id: bigint }[]>`
       INSERT INTO exam_events ("eventId", "examId", "institutionId", "studentId", "aggregateVersion", type, payload)
-      VALUES (gen_random_uuid(), ${e.examId}::uuid, ${e.institutionId ?? null}::uuid, ${e.studentId ?? null}::uuid, ${e.version}::int, ${e.type}, ${JSON.stringify(e.payload ?? {})}::jsonb) RETURNING id`;
+      VALUES (UUID(), ${e.examId}, ${e.institutionId ?? null}, ${e.studentId ?? null}, ${e.version}, ${e.type}, ${JSON.stringify(e.payload ?? {})}) RETURNING id`;
     return Number(r[0]!.id);
   }
 
@@ -60,7 +62,7 @@ export class ExamEventsService implements OnModuleDestroy {
 
   /** Pushes PENDING rows to Redis. Claims rows with SKIP LOCKED so several workers never publish the same row concurrently. */
   async publishPending(limit = 200): Promise<{ published: number; failed: number; pending: number }> {
-    if (!this.redis.available) return { published: 0, failed: 0, pending: await this.pendingCount() };
+    if (!this.kv.available) return { published: 0, failed: 0, pending: await this.pendingCount() };
     let published = 0; let failed = 0;
     await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ id: bigint; eventId: string; examId: string; institutionId: string | null; studentId: string | null; aggregateVersion: number; type: string; payload: unknown; createdAt: Date; retryCount: number }[]>`
@@ -68,13 +70,14 @@ export class ExamEventsService implements OnModuleDestroy {
         FROM exam_events WHERE "deliveryStatus" = 'PENDING' ORDER BY id LIMIT ${limit} FOR UPDATE SKIP LOCKED`;
       for (const r of rows) {
         try {
-          await this.redis.client.publish(CHANNEL(r.examId), JSON.stringify(row(r)));
-          await tx.$executeRaw`UPDATE exam_events SET "deliveryStatus" = 'DELIVERED', "deliveredAt" = clock_timestamp() WHERE id = ${r.id}`;
+          if (this.cfg.REDIS_URL) await this.kv.publish(CHANNEL(r.examId), JSON.stringify(row(r)));
+          else this.dispatch(row(r));                         // no Redis: hand to this process's streams; other processes pick it up in their catch-up poll
+          await tx.$executeRaw`UPDATE exam_events SET "deliveryStatus" = 'DELIVERED', "deliveredAt" = NOW(3) WHERE id = ${r.id}`;
           published++;
         } catch {
           failed++;
           const exhausted = r.retryCount + 1 >= MAX_RETRIES;
-          await tx.$executeRaw`UPDATE exam_events SET "retryCount" = "retryCount" + 1, "deliveryStatus" = ${exhausted ? 'FAILED' : 'PENDING'}::"EventDelivery" WHERE id = ${r.id}`;
+          await tx.$executeRaw`UPDATE exam_events SET "retryCount" = "retryCount" + 1, "deliveryStatus" = ${exhausted ? 'FAILED' : 'PENDING'} WHERE id = ${r.id}`;
         }
       }
     }, { maxWait: 5000, timeout: 20000 });
@@ -84,14 +87,14 @@ export class ExamEventsService implements OnModuleDestroy {
   }
 
   async pendingCount(): Promise<number> {
-    return (await this.prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM exam_events WHERE "deliveryStatus" = 'PENDING'`)[0]!.n;
+    return int((await this.prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*) AS n FROM exam_events WHERE "deliveryStatus" = 'PENDING'`)[0]!.n);
   }
   async outboxStats(): Promise<{ pending: number; failed: number; oldestPendingSeconds: number | null }> {
-    const r = (await this.prisma.$queryRaw<{ pending: number; failed: number; oldest: number | null }[]>`
-      SELECT count(*) FILTER (WHERE "deliveryStatus" = 'PENDING')::int AS pending, count(*) FILTER (WHERE "deliveryStatus" = 'FAILED')::int AS failed,
-             extract(epoch FROM clock_timestamp() - min("createdAt") FILTER (WHERE "deliveryStatus" = 'PENDING'))::float AS oldest
+    const r = (await this.prisma.$queryRaw<{ pending: bigint; failed: bigint; oldest: number | null }[]>`
+      SELECT COUNT(CASE WHEN "deliveryStatus" = 'PENDING' THEN 1 END) AS pending, COUNT(CASE WHEN "deliveryStatus" = 'FAILED' THEN 1 END) AS failed,
+             TIMESTAMPDIFF(MICROSECOND, MIN(CASE WHEN "deliveryStatus" = 'PENDING' THEN "createdAt" END), NOW(3)) / 1e6 AS oldest
       FROM exam_events WHERE "deliveryStatus" <> 'DELIVERED'`)[0]!;
-    return { pending: r.pending, failed: r.failed, oldestPendingSeconds: r.oldest };
+    return { pending: int(r.pending), failed: int(r.failed), oldestPendingSeconds: r.oldest === null ? null : Number(r.oldest) };
   }
 
   // ───────────── read side ─────────────
@@ -102,11 +105,12 @@ export class ExamEventsService implements OnModuleDestroy {
     return { events: rows.slice(0, limit).map(row).filter((e) => visibleTo(e, viewer)), gap };
   }
   async latestId(examId: string): Promise<number> {
-    const r = await this.prisma.$queryRaw<{ id: bigint | null }[]>`SELECT max(id) AS id FROM exam_events WHERE "examId" = ${examId}::uuid`;
+    const r = await this.prisma.$queryRaw<{ id: bigint | null }[]>`SELECT max(id) AS id FROM exam_events WHERE "examId" = ${examId}`;
     return Number(r[0]?.id ?? 0);
   }
 
-  get redisSubscriberUp() { return this.subReady; }
+  /** Redis: the pattern subscription is connected. Without Redis there is no channel to lose (in-process dispatch + database poll). */
+  get liveChannelUp() { return this.cfg.REDIS_URL ? this.subReady : true; }
   get subscriberCount() { let n = 0; for (const s of this.streams.values()) n += s.subs.size; return n; }
   subscribersOf(examId: string): Subscriber[] { return [...(this.streams.get(examId)?.subs.values() ?? [])]; }
 
@@ -135,7 +139,7 @@ export class ExamEventsService implements OnModuleDestroy {
   }
 
   private ensureRedisSubscriber() {
-    if (this.sub) return;
+    if (this.sub || !this.cfg.REDIS_URL) return;
     const sub = this.sub = new Redis(this.cfg.REDIS_URL, { maxRetriesPerRequest: null, retryStrategy: (n) => Math.min(n * 500, 5000), lazyConnect: false });
     sub.on('error', () => undefined);
     sub.on('ready', () => { this.subReady = true; sub.psubscribe('oes:exam:*').catch(() => undefined); });
@@ -151,10 +155,12 @@ export class ExamEventsService implements OnModuleDestroy {
   private async tick() {
     if (this.ticking) return; this.ticking = true;
     try {
-      const healthy = this.subReady && this.redis.available;
+      const healthy = this.subReady && this.kv.available;
+      // Redis healthy: the poll is only a safety net (10 s). No Redis: it is how events emitted by OTHER processes arrive (2 s). Degraded: 1 s.
+      const every = this.cfg.REDIS_URL ? (healthy ? 10_000 : 1_000) : this.kv.available ? 2_000 : 1_000;
       for (const [examId, st] of [...this.streams]) {
         if (Date.now() >= st.nextPoll) {                       // safety-net catch-up from the database (the authority)
-          st.nextPoll = Date.now() + (healthy ? 10_000 : 1_000);
+          st.nextPoll = Date.now() + every;
           try {
             const rows = await this.prisma.examEvent.findMany({ where: { examId, id: { gt: BigInt(st.polledUpTo) } }, orderBy: { id: 'asc' }, take: 500 });
             for (const r of rows) this.dispatch(row(r));

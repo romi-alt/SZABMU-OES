@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { LINKS } from '@oes/shared';
 import type { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../infra/prisma.service';
-import { RedisService } from '../../infra/redis.service';
+import { KvService } from '../../infra/kv.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { dropUserSessions, scope, type AuthUser } from '../../common/auth';
@@ -15,7 +15,7 @@ import { paginate } from '../../common/validate';
  */
 @Injectable()
 export class TeacherAdminService {
-  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly audit: AuditService, private readonly notifications: NotificationsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly kv: KvService, private readonly audit: AuditService, private readonly notifications: NotificationsService) {}
 
   /** Prisma filter: assignment rows this administrator may see. */
   private aWhere(u: AuthUser): Prisma.CourseAssignmentWhereInput { return { user: { role: 'TEACHER' }, institutionId: scope.filter(u) }; }
@@ -32,7 +32,7 @@ export class TeacherAdminService {
     const where: Prisma.TeacherProfileWhereInput = {
       ...(f.status ? { status: f.status as never } : {}),
       ...(u.institutionIds === null ? {} : { user: { courseAssignments: { some: this.aWhere(u) } } }),
-      ...(f.search ? { OR: [{ employeeId: { contains: f.search, mode: 'insensitive' } }, { department: { contains: f.search, mode: 'insensitive' } }, { user: { fullName: { contains: f.search, mode: 'insensitive' } } }, { user: { email: { contains: f.search, mode: 'insensitive' } } }] } : {}),
+      ...(f.search ? { OR: [{ employeeId: { contains: f.search } }, { department: { contains: f.search } }, { user: { fullName: { contains: f.search } } }, { user: { email: { contains: f.search } } }] } : {}),
     };
     const [rows, total, pending] = await Promise.all([
       this.prisma.teacherProfile.findMany({ where, orderBy: [{ status: 'asc' }, { submittedAt: 'desc' }], ...paginate(f), include: { user: { select: { id: true, fullName: true, email: true } } } }),
@@ -69,7 +69,7 @@ export class TeacherAdminService {
       await tx.teacherProfile.update({ where: { userId }, data: { status, reviewedById: u.id, reviewedAt: new Date(), reviewNote: note?.trim() || null } });
       await this.audit.append(tx, { actor: u, action: `teacher.${decision.toLowerCase()}`, entity: 'teacher', entityId: userId, meta: { from: p.status, note: note?.trim() || null }, ip });
     });
-    await dropUserSessions(this.redis, userId);
+    await dropUserSessions(this.kv, userId);
     await this.notifications.notify([userId], status === 'APPROVED' ? 'Registration approved' : 'Registration not approved', status === 'APPROVED' ? 'Your teacher registration was approved. Access to each class and subject starts when it is approved.' : (note ?? 'Your teacher registration was not approved.'), LINKS.classes);
     return { status };
   }
@@ -93,7 +93,7 @@ export class TeacherAdminService {
       await tx.teacherProfile.update({ where: { userId }, data: { status: 'APPROVED', suspendedAt: null, reviewedById: u.id, reviewedAt: new Date(), reviewNote: note?.trim() || null } });
       await this.audit.append(tx, { actor: u, action: 'teacher.reinstate', entity: 'teacher', entityId: userId, meta: { note: note?.trim() || null }, ip });
     });
-    await dropUserSessions(this.redis, userId);
+    await dropUserSessions(this.kv, userId);
     return { status: 'APPROVED' };
   }
 
@@ -108,7 +108,7 @@ export class TeacherAdminService {
       if (status === 'APPROVED') await tx.userInstitution.upsert({ where: { userId_institutionId: { userId: a.userId, institutionId: a.institutionId } }, create: { userId: a.userId, institutionId: a.institutionId }, update: {} });
       await this.audit.append(tx, { actor: u, action: `teacher.assignment_${decision.toLowerCase()}`, entity: 'course_assignment', entityId: id, institutionId: a.institutionId, meta: { teacherId: a.userId, courseId: a.courseId, term: a.term, note: note?.trim() || null }, ip });
     });
-    await dropUserSessions(this.redis, a.userId);
+    await dropUserSessions(this.kv, a.userId);
     await this.notifications.notify([a.userId], status === 'APPROVED' ? 'Class and subject approved' : 'Class and subject not approved', `${a.course.code} (${a.term ?? 'session'}): ${status === 'APPROVED' ? 'approved. You can now work with this subject.' : note ?? 'not approved.'}`, LINKS.classes);
     return { status };
   }
@@ -123,7 +123,7 @@ export class TeacherAdminService {
       if (!stillThere) await tx.userInstitution.deleteMany({ where: { userId: a.userId, institutionId: a.institutionId } });
       await this.audit.append(tx, { actor: u, action: 'teacher.assignment_revoke', entity: 'course_assignment', entityId: id, institutionId: a.institutionId, meta: { teacherId: a.userId, courseId: a.courseId, term: a.term, note: note.trim() }, ip });
     });
-    await dropUserSessions(this.redis, a.userId);
+    await dropUserSessions(this.kv, a.userId);
     await this.notifications.notify([a.userId], 'Class and subject removed', `${a.course.code} (${a.term ?? 'session'}) was removed from your assignments. ${note.trim()}`, LINKS.classes);
     return { status: 'REVOKED' };
   }
@@ -148,6 +148,6 @@ export class TeacherAdminService {
   /** Sign-in sessions end now (the cached profile is dropped as well), so a suspended teacher is signed out on the next request. */
   private async revokeSessionsNow(userId: string) {
     await this.prisma.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
-    await dropUserSessions(this.redis, userId);
+    await dropUserSessions(this.kv, userId);
   }
 }

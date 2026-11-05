@@ -8,17 +8,18 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     services:
-      postgres:
-        image: postgres:16-alpine
-        env: { POSTGRES_USER: oes, POSTGRES_PASSWORD: oes_dev_password, POSTGRES_DB: szabmu_oes_test }
-        ports: ["5433:5432"]
-        options: --health-cmd "pg_isready -U oes" --health-interval 5s --health-timeout 3s --health-retries 20
+      # Same engine and major version as production (Hostinger managed MariaDB 11.8), READ COMMITTED like production.
+      mariadb:
+        image: mariadb:11.8
+        env: { MARIADB_USER: oes, MARIADB_PASSWORD: oes_dev_password, MARIADB_DATABASE: szabmu_oes_test, MARIADB_ROOT_PASSWORD: ci_root_password }
+        ports: ["3307:3306"]
+        options: --health-cmd "healthcheck.sh --connect --innodb_initialized" --health-interval 5s --health-timeout 3s --health-retries 30
       redis:
         image: redis:7-alpine
         ports: ["6390:6379"]
     env:
-      TEST_DATABASE_URL: postgresql://oes:oes_dev_password@localhost:5433/szabmu_oes_test
-      DATABASE_URL: postgresql://oes:oes_dev_password@localhost:5433/szabmu_oes_test
+      TEST_DATABASE_URL: mysql://oes:oes_dev_password@127.0.0.1:3307/szabmu_oes_test
+      DATABASE_URL: mysql://oes:oes_dev_password@127.0.0.1:3307/szabmu_oes_test
       REDIS_URL: redis://localhost:6390
       COOKIE_SECRET: ci-only-cookie-secret-0123456789abcdef0123
       RECEIPT_SECRET: ci-only-receipt-secret-0123456789abcdef0123
@@ -26,6 +27,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 26, cache: npm }
+      - name: Match production MariaDB settings (READ COMMITTED, stored routines allowed)
+        run: |
+          for i in $(seq 1 30); do docker exec "$(docker ps -qf ancestor=mariadb:11.8)" mariadb -uroot -pci_root_password -e "SET GLOBAL transaction_isolation='READ-COMMITTED'; SET GLOBAL max_connections=500; GRANT ALL ON *.* TO 'oes'@'%'" && break; sleep 2; done
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
@@ -38,21 +42,20 @@ jobs:
 
   # Hostinger managed Node.js hosting offers Node 18 / 20 / 22 / 24 only; the repo declares engines >=26. This job is the evidence for
   # whether the application builds and passes its tests on the version it will actually run on (24). No e2e here: that runs on `verify`.
+  # It also runs WITHOUT Redis (like Hostinger), so both coordination backends are tested on every push: Redis on `verify`, database here.
   node24:
     runs-on: ubuntu-latest
     services:
-      postgres:
-        image: postgres:16-alpine
-        env: { POSTGRES_USER: oes, POSTGRES_PASSWORD: oes_dev_password, POSTGRES_DB: szabmu_oes_test }
-        ports: ["5433:5432"]
-        options: --health-cmd "pg_isready -U oes" --health-interval 5s --health-timeout 3s --health-retries 20
-      redis:
-        image: redis:7-alpine
-        ports: ["6390:6379"]
+      # Same engine and major version as production (Hostinger managed MariaDB 11.8), READ COMMITTED like production.
+      mariadb:
+        image: mariadb:11.8
+        env: { MARIADB_USER: oes, MARIADB_PASSWORD: oes_dev_password, MARIADB_DATABASE: szabmu_oes_test, MARIADB_ROOT_PASSWORD: ci_root_password }
+        ports: ["3307:3306"]
+        options: --health-cmd "healthcheck.sh --connect --innodb_initialized" --health-interval 5s --health-timeout 3s --health-retries 30
     env:
-      TEST_DATABASE_URL: postgresql://oes:oes_dev_password@localhost:5433/szabmu_oes_test
-      DATABASE_URL: postgresql://oes:oes_dev_password@localhost:5433/szabmu_oes_test
-      REDIS_URL: redis://localhost:6390
+      TEST_DATABASE_URL: mysql://oes:oes_dev_password@127.0.0.1:3307/szabmu_oes_test
+      DATABASE_URL: mysql://oes:oes_dev_password@127.0.0.1:3307/szabmu_oes_test
+      OES_TEST_KV: database   # no Redis at all, exactly like the Hostinger deployment: coordination state in MariaDB, jobs in process
       COOKIE_SECRET: ci-only-cookie-secret-0123456789abcdef0123
       RECEIPT_SECRET: ci-only-receipt-secret-0123456789abcdef0123
     steps:
@@ -60,6 +63,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm }
       - run: node --version
+      - name: Match production MariaDB settings (READ COMMITTED, stored routines allowed)
+        run: |
+          for i in $(seq 1 30); do docker exec "$(docker ps -qf ancestor=mariadb:11.8)" mariadb -uroot -pci_root_password -e "SET GLOBAL transaction_isolation='READ-COMMITTED'; SET GLOBAL max_connections=500; GRANT ALL ON *.* TO 'oes'@'%'" && break; sleep 2; done
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint

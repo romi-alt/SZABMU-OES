@@ -37,7 +37,7 @@ async function approveAll(t: Awaited<ReturnType<typeof register>>, admin = 'admi
   return a;
 }
 /** The suite registers dozens of teachers from one address; real limits are exercised in their own test below. */
-const clearLimits = async () => { const k = await ctx.redis.client.keys('rl:treg:*'); if (k.length) await ctx.redis.client.del(...k); };
+const clearLimits = () => ctx.kv.clearPrefix('rl:treg:');
 const mcq = (extra: Record<string, unknown> = {}) => ({ stem: 'Which organ produces insulin in the human body?', options: ['Liver', 'Pancreas', 'Kidney', 'Spleen'], correctIndex: 1, explanation: 'Beta cells of the pancreatic islets.', difficulty: 'EASY', topic: 'Endocrine', marks: 1, ...extra });
 
 describe('public catalog and validation', () => {
