@@ -1,142 +1,137 @@
-# PROJECT.md — SZABMU Online Examination Center (handoff)
+# PROJECT.md — SZABMU Online Examination Center (handoff, 2026-11-06)
 
-Start here when continuing this project in a new Claude Code session. Written 2026-11-05 at the end of the previous session.
-Everything below was checked against the repository and the live site at that time; re-verify anything time-sensitive.
+Read this first when continuing the project in a new session. Everything here was verified at the end of the previous session
+(commit `1bf723f` on `main`, deployed and live). Re-check anything time-sensitive (`git log origin/main`, `/api/health`).
 
-## 1. What this is
+## 1. What it is, and its status
 
-An online examination platform for Shaheed Zulfiqar Ali Bhutto Medical University (SZABMU) and its affiliated colleges.
-Students sign up, complete a profile, and sit MCQ papers in a browser exam player; staff (administrators, examination controllers,
-examiners, lecturers, teachers, invigilators) build question banks and papers, schedule exams, run live exams, grade and publish results.
+Online examination platform for Shaheed Zulfiqar Ali Bhutto Medical University (SZABMU) and its affiliated colleges: student sign-up and
+profile, MCQ question banks with four-eyes review, paper approval, scheduling, a live exam player, live exam control, grading, moderation,
+publication and certificates; plus a restricted teacher workspace.
 
-- **Product status: INTERNAL_TESTING_READY.** Not certified for a pilot or production. Do not claim production readiness.
-- **Live demo (synthetic data only):** student portal **https://szabmu.site** (also `www.`, `oes.szabmu.site`), staff portal **https://dashboard.szabmu.site**.
-  Health: `GET https://szabmu.site/api/health` → `{"status":"ok","db":true,"redis":null,"coordination":"database"}` (as of 2026-11-05).
+- **Classification: INTERNAL_TESTING_READY.** The live site is a demo with synthetic data. Do not claim pilot or production readiness.
+- **Live:** student portal **https://szabmu.site** (also `oes.szabmu.site`), staff portal **https://dashboard.szabmu.site**.
+  Health `GET /api/health` → `{"status":"ok","db":true,"redis":null,"coordination":"database"}`.
+- **Repository:** GitHub `romi-alt/SZABMU-OES`. `main` is deployed (Hostinger auto-deploys every push to `main`).
+  Working branch `claude/oes-platform-foundation` = `main` + this file.
 
-## 2. Repository and branches
+## 2. Stack and layout (verified)
 
-- GitHub: **`romi-alt/SZABMU-OES`**. `main` is what is deployed (Hostinger auto-deploys every push to `main`).
-- `claude/oes-platform-foundation`: the UI/UX + features branch used by the previous session. At handoff it equals `main` plus the
-  student-guide video tooling (`tests/tutorial/`, `playwright.tutorial.config.ts`) and this file — open a PR from it to land those.
-- Other sessions have worked in parallel (hosting track: PostgreSQL→MariaDB, Redis removal). **Read `docs/COORDINATION.md` before working**:
-  sync with `main` first, merge (never rebase/force-push shared branches), announce migrations, no new Redis/queue usage.
-- If the new account cannot see the GitHub repo, unpack this zip, `git init`, and push to a repo the new account can access
-  (the zip contains the source but not the git history — see §11).
-
-## 3. Stack and layout
-
-npm workspaces monorepo, Node **>= 24**, TypeScript everywhere.
+npm workspaces, Node ≥ 24, TypeScript.
 
 | Path | What |
 |---|---|
-| `apps/api` | NestJS 11 on Fastify, Prisma 7 (**MySQL/MariaDB** provider), argon2id auth, cookie sessions, audit log (hash-chained), exam engine, grading, results |
-| `apps/web` | Next.js 16 (App Router), one app serving both portals; `src/proxy.ts` resolves the portal from the host and forwards a portal header |
-| `packages/shared` | Roles, the central **permission matrix** (`src/permissions.ts`), DTOs, exam rules, portal page lists, links |
-| `apps/api/prisma` | `schema.prisma`, `migrations/` (MySQL, from `20261104000000_mysql_baseline`), `migrations-postgres-archive/` (old) |
-| `scripts/` | `hostinger-single-site.mjs` (production launcher), `auto-migrate.mjs`, `demo-papers.mjs`, `pg-to-mysql.mjs`, `db-backup.mjs` |
-| `tests/e2e` | Playwright browser tests against the real stack (global setup reseeds the dev DB) |
-| `apps/api/test` | Vitest API/integration tests (real DB) |
-| `tests/tutorial` | Narrated student-guide video generator (see §9) |
-| `docs/` | Architecture, security, permissions (`route-permissions.md` is generated), deployment, audits, teacher registration |
+| `apps/api` | NestJS 11 on Fastify, Prisma 7 on **MariaDB/MySQL**, argon2id, cookie sessions, hash-chained audit log, exam engine |
+| `apps/web` | Next.js 16 (App Router), one app for both portals (host decides the portal, `src/proxy.ts`) |
+| `packages/shared` | roles, the central permission matrix (`permissions.ts`), exam rules, `psychometrics.ts`, `similarity.ts`, `item-writing.ts` |
+| `apps/api/test` | Vitest API/integration tests (35 files) — real database |
+| `apps/api/test-fault` | durability fault-injection suite (process kills, DB crash, backup/restore) — disposable MariaDB per run |
+| `tests/e2e` | Playwright browser tests (32 specs), axe accessibility scans included |
+| `tests/load/exam-load.mjs` | load + integrity test (MariaDB) |
+| `tests/tutorial` | narrated student-guide video generator |
+| `scripts/` | `hostinger-single-site.mjs` (launcher), `auto-migrate.mjs`, `db-backup.mjs`, `demo-papers.mjs` |
+| `docs/` | see §8 |
 
-Key rules baked into the code:
-- **Every API route declares exactly one `@Perm(...)`**; deny by default. `route-inventory` test + `docs/route-permissions.md`
-  (regenerate with `UPDATE_ROUTE_MANIFEST=1`). Never weaken authorization.
-- Roles: SUPER_ADMIN, CCE, EXAMINER, CAMPUS_ADMIN, LECTURER, **TEACHER** (new, restricted: `program.read`, `teacher.self`, `teacher.work` only — no results/grading/student records), INVIGILATOR, STUDENT.
-- Two portals: staff roles sign in only on the dashboard host, students only on the student host.
+Rules baked in: every API route has exactly one `@Perm` (deny by default; route manifest `docs/route-permissions.md`, regenerate with
+`UPDATE_ROUTE_MANIFEST=1`); campus scoping in queries; the database clock decides all exam timing; approved papers are frozen snapshots.
 
-## 4. Features in place (high level)
+## 3. Hosting (Hostinger, no VPS)
+One managed Node.js website runs the launcher: applies pending migrations (`auto-migrate.mjs`, additive, non-fatal), then serves both portals
+and the API in one process. Database: Hostinger managed **MariaDB 11.8** on the same server (150 connections, 500 new connections/hour).
+No Redis (coordination in MariaDB). Environment variables live only in hPanel. Details: `docs/deployment/hostinger-demo/README.md`,
+`docs/deployment/HOSTINGER_DEPLOYMENT_AUDIT.md`. The Hostinger connector must be authorised in claude.ai connector settings to manage the site from Claude.
 
-- Student sign-up: registration number + email + password + emailed 6-digit code → signed in → one-time **Complete your profile**
-  (name, father's name, gender, mobile, college → programme → semester, academic year) → **My Examinations** (Available / Upcoming / Completed).
-  Self-declared students are flagged `selfDeclared` and are **not** enrolled, rostered or admitted until an administrator verifies them (`PATCH /api/students/:id {verify:true}`).
-- Teacher registration (3 steps) on the student host `/register/teacher`; admin approves identity and each class-subject separately;
-  teacher workspace on the dashboard: Overview, My Classes & Subjects, MCQ Pool (CSV import/export), Students (names only), My Profile. Details: `docs/teacher-registration/README.md`.
-- Exam engine: four-eyes question and paper approval, frozen paper snapshots, roster versions, eligibility overrides, server-side timer,
-  autosave with offline recovery, review screen, submission receipt codes, live exam control/monitoring.
-- UI: SZABMU branding ("SZABMU Online Examination Center"), redesigned sign-in, polished exam player, responsive shell. Audit: `docs/ui-ux-audit/`.
+## 4. What the previous session did (all merged to `main` as PR #27 and deployed)
 
-## 5. Hosting and deployment (live demo)
+**Audit (Phases 0–2, 10–14):** baseline, full audit, benchmark against Inspera/ExamSoft/Questionmark/TAO/SEB, truthful tracker — `docs/audits/`.
 
-Full detail: **`docs/deployment/hostinger-demo/README.md`** (and the production plan in `docs/deployment/hostinger-managed/`).
+**Security fixes, each proven by a test that failed on the old code** (`apps/api/test/audit-hardening.test.ts`):
+- SEC-07 (High) MFA brute-force via parallel requests → atomic per-account cap + atomic failure counter.
+- SEC-06 (High) sign-up code brute-force (student + teacher) → atomic guess counter.
+- SEC-03/04 reset-code guess race; unlimited codes via rotating IPs → fixed. SEC-05 wrong role in reset audit → fixed.
+- SEC-01 session cookie without `Secure` on the HTTPS demo → fixed in code (Secure when origins are https).
+- SEC-02 unbounded integrity-event data → bounded and rate-limited.
+- SEC-08 forgeable client IP → `TRUST_PROXY` now accepts a hop count; **live value not yet set** (see §6).
 
-- Hostinger Cloud Enterprise, **one managed Node.js website** (no Docker, no root, no permanent workers). Node 24.
-- **Database: Hostinger managed MariaDB 11.8** (since 2026-11-04; previously Neon PostgreSQL, kept read-only). Limits: 150 connections, 500 new connections/hour.
-- **Redis: optional; the live site runs without it** (coordination state in MariaDB, jobs in process).
-- Launcher `scripts/hostinger-single-site.mjs`: runs `auto-migrate.mjs` (`prisma migrate deploy`, additive only, idempotent, never fatal, `AUTO_MIGRATE=false` disables), then serves Next.js and the NestJS API in one process (`/api/*` → API).
-- **Deploy = merge to `main`.** Hostinger rebuilds automatically (~2 min). Verify afterwards: `/api/health`, a new route, sign-in.
-- Environment variables live only in hPanel (never in git): `DATABASE_URL`, `COOKIE_SECRET`, `RECEIPT_SECRET`, `MFA_KEY`, `METRICS_TOKEN`,
-  `WEB_ORIGIN`, `TRUST_PROXY`, portal URLs (`NEXT_PUBLIC_*`, build-time), SMTP (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`, `MAIL_FROM`), `DEV_EXPOSE_CODES=false`.
-- The Hostinger connector (MCP) needs to be authorized in the new account's claude.ai connector settings if you want to manage the site from Claude.
+**Assurance:** fault-injection suite ported from PostgreSQL to MariaDB (`npm run test:fault`: 17 passed, 1 skipped opt-in benchmark);
+backup tool's restore server fixed (`--no-defaults`); load test ported; four untested failure scenarios now tested (`failure-scenarios.test.ts`).
 
-## 6. Demo accounts (synthetic, demo only)
+**Performance (local 4-vCPU machine, one API process — not Hostinger):** realistic pace 1 000 / 3 000 / 5 000 candidates: 0 errors, 0 lost
+answers (5 000: start p95 20 ms, save p95 15 ms). The limit is a **start burst**: ≈200 starts/s per process (5 000 starts in 10 s → median wait ≈10 s).
+Start path made ~9 % faster. Details: `docs/audits/IMPLEMENTATION_TRACKER.md` §2/§2b.
 
-Password for all: `Demo-Passw0rd-2026!` — email `<local>@demo.szabmu.invalid`. Staff sign in at dashboard.szabmu.site, students at szabmu.site.
+**Features (deterministic — no AI provider, nothing leaves the system):**
+- Item statistics on the exam's item analysis: difficulty, discrimination (27 %), corrected item–rest r, KR-20/SEM, sample-size warning.
+- "Possible duplicates…" in the question bank (`GET /questions/duplicates`, scoped like the list).
+- Item-writing advice in the question editor and review view (7 rules; 4/127 seeded questions flagged).
+- Enrolment term chosen from terms in use (`GET /courses/:id/terms`) — prevents typo terms.
 
-| Local part | Role |
-|---|---|
-| `super.admin` | Super administrator |
-| `cce` | Controller of Examinations |
-| `examiner`, `examiner2` | Examiners |
-| `admin.a`, `admin.b` | Campus administrators (college A / B) |
-| `lecturer.a`, `lecturer.a2`, `lecturer.b` | Lecturers |
-| `invigilator.a`, `invigilator.b` | Invigilators |
-| `student.a001`… / `student.b001`… | Students (college A / B) |
+**UI/accessibility:** axe scans now actually run (they were silently skipped — missing dev dependency `@axe-core/playwright`, now added);
+exam palette Label-in-Name fix; confirmations for deactivate / reset password; explained sign-in and change-password buttons; plain-language
+audit filters; live monitor tidy-up. Remaining UI findings listed in `docs/audits/UI_UX_FINDINGS.md`.
 
-`scripts/demo-papers.mjs` adds demo papers for a student on the live demo (used for `student.a001`).
+**Earlier in the same project:** teacher registration + MCQ pools, student onboarding, auto-migrate, sign-in redesign, branding,
+narrated student guide video (`tests/tutorial`).
 
-## 7. Running locally
+## 5. Test status at handoff (executed, disposable MariaDB 10.11, no Redis)
+
+| Gate | Command | Result |
+|---|---|---|
+| Lint / typecheck / build / migrate | `npm run lint`, `npm run typecheck`, `NODE_ENV=production npm run build`, `npm run db:migrate` | pass |
+| Shared unit | `cd packages/shared && npx vitest run` | 77/77 |
+| API integration | `cd apps/api && npx vitest run` | 352/352 |
+| Browser | `npx playwright test` | 135 passed, 0 failed |
+| Fault suite | `npm run test:fault` (needs `mariadb-install-db`/`mariadbd` on PATH) | 17 passed, 1 skipped |
+
+Live after deploy (2026-11-06, no sign-in): health ok, both portals 200, new routes answer 401 (exist), signed-out `/auth/me` 401.
+
+## 6. Open items (in priority order)
+
+Blocked on the owner / Hostinger access:
+1. **SMTP** on the live site (sign-up and reset codes are not emailed without it) — verify end to end.
+2. **`TRUST_PROXY`**: measure Hostinger's proxy hop count (send a known `X-Forwarded-For`, observe what arrives) and set it in hPanel.
+3. **Production mode:** API `NODE_ENV=production`, `MFA_ENFORCE=true`; confirm `WEB_ORIGIN` lists only `https://` origins (Secure cookie).
+4. **Backup restore drill and rollback rehearsal** on production data (`docs/deployment/ROLLBACK_AND_RECOVERY.md`).
+5. **Capacity on Hostinger** (staging copy of the plan); decide how to handle a synchronized start of thousands (stagger per campus, earlier lobby, more processes).
+6. **AI features with an LLM** (drafting, AI review, Bloom): off until a provider and data handling are approved (`docs/ai/AI_GOVERNANCE_AND_PRIVACY.md`).
+7. Policy: Safe Exam Browser for on-site exams; answer-key encryption at rest; university authorisation for a live exam.
+
+Can be done in code without approval:
+8. Remaining UI findings A-03, A-04, A-05, A-09, A-13…A-18 (`docs/audits/UI_UX_FINDINGS.md`).
+9. Manual screen-reader pass of the exam journey (NVDA/VoiceOver) — automated scans pass but are not a WCAG claim.
+10. Add the fault suite to CI (needs MariaDB binaries on the runner; `.github/workflows/ci.yml` is a shared file — see `docs/COORDINATION.md`).
+11. Option shuffling (where safe), images in question stems, blueprint/coverage report (deterministic), a dedicated teacher-registration brute-force test.
+
+The full checklist for a real examination: `docs/deployment/PRODUCTION_READINESS_CHECKLIST.md`.
+
+## 7. Running it locally
 
 ```bash
 npm ci
-cp .env.example .env            # development values only
-docker compose up -d mariadb    # MariaDB 11.8 on :3307 (also redis/minio/mailpit available, all optional)
-npm run build                   # shared → api → web
-npm run db:migrate
-npm run db:seed                 # synthetic data; refuses to run in production
-npm run dev:api & npm run dev:web   # http://localhost:3000 (API :4000)
+cp .env.example .env                      # development values only
+# MariaDB: docker compose up -d mariadb   (port 3307)  — or a local MariaDB 10.11+/11.x on 3307 with user oes / oes_dev_password
+npm run build && npm run db:migrate && npm run db:seed
+npm run dev:api & npm run dev:web         # http://localhost:3000
 ```
-No Docker? Install MariaDB 11.x locally and point `DATABASE_URL` at it (CI uses `mariadb:11.8`, see `.github/workflows/ci.yml`).
+Test environment used by the previous session (no Redis, like Hostinger):
+`DATABASE_URL=mysql://oes:oes_dev_password@127.0.0.1:3307/szabmu_oes TEST_DATABASE_URL=mysql://oes:oes_dev_password@127.0.0.1:3307/szabmu_oes_test REDIS_URL= OES_TEST_KV=database`
+plus `COOKIE_SECRET`/`RECEIPT_SECRET` (any ≥ 36-char dev values). Playwright's global setup re-seeds the dev database each run.
+A Redis on 6390 only needs to exist for `redis-cli flushall` in the e2e setup. Stop stale API/web servers before reruns (Playwright reuses them).
 
-## 8. Quality gates (run before merging)
+Demo accounts (synthetic): password `Demo-Passw0rd-2026!`, email `<local>@demo.szabmu.invalid` — `super.admin`, `cce`, `examiner`, `examiner2`,
+`admin.a`, `admin.b`, `lecturer.a`, `lecturer.a2`, `lecturer.b`, `invigilator.a`, `invigilator.b`, `student.a001…`, `student.b001…`.
 
-```bash
-npm run lint && npm run typecheck && npm run build
-npm test                         # shared + API (needs TEST_DATABASE_URL)
-npx playwright test              # browser suite; reseeds the dev database
-```
-Last full results on the previous stack: shared 58/58, API 324/324 and Playwright ~116 passing. The MariaDB port was verified by the hosting session (see its PRs #24–#26 and CI).
-Recurring flake sources: specs sharing an account, strict-mode ambiguous locators, stale servers reused by Playwright (`reuseExistingServer`) — stop old `node` servers before reruns.
+## 8. Documents to read
+- `docs/audits/FULL_SYSTEM_AUDIT.md` (overview), `IMPLEMENTATION_TRACKER.md` (every task with evidence and status), `SECURITY_FINDINGS.md`,
+  `DATA_INTEGRITY_FINDINGS.md` (20 failure scenarios), `UI_UX_FINDINGS.md`, `GLOBAL_EXAM_PLATFORM_BENCHMARK.md`.
+- `docs/deployment/HOSTINGER_DEPLOYMENT_AUDIT.md`, `PRODUCTION_READINESS_CHECKLIST.md`, `ROLLBACK_AND_RECOVERY.md`, `hostinger-demo/README.md`.
+- `docs/ai/AI_FEATURE_ASSESSMENT.md`, `AI_GOVERNANCE_AND_PRIVACY.md`, `AI_IMPLEMENTATION_STATUS.md`.
+- `docs/COORDINATION.md` (other sessions may work here: sync with `main`, announce migrations, no new Redis usage).
 
-## 9. Student guide video
-
-`tests/tutorial/` produces a narrated, subtitled MP4 (one student: sign up → profile → verified/assigned via the real staff API → sit and submit).
-Voice: Kokoro neural TTS (offline, `tts.py`, text in `narration.json`). Recording: `playwright.tutorial.config.ts`. Build: `build-video.mjs` (ffmpeg).
-Steps in `tests/tutorial/README.md`. **It was written for the earlier PostgreSQL test stack**; it uses only HTTP/UI so it should run on MariaDB,
-but has not been re-run since the database move. Never run it against the live site. The last rendered video is in `extras/` of the handoff zip.
-
-## 10. Open items and known limits
-
-1. **SMTP must be configured on the live site** — without it, student and teacher sign-up codes are never delivered (`DEV_EXPOSE_CODES=false` there).
-2. Spot-check on the live site after any deploy: a seeded student opens My Examinations; an admin opens Teachers/Students.
-3. No class/section model (a "class" = college + programme + semester + session). XLSX import not supported (CSV only).
-4. Existing `LECTURER` accounts unchanged (still see results); `TEACHER` is the new restricted role.
-5. Self-declared students need admin verification before any exam access (by design).
-6. `defaultMarks` on questions is stored but the paper builder does not default to it.
-7. Production blockers and the full production plan: `docs/deployment/hostinger-managed/release-blockers.md`.
-
-## 11. Working rules the owner set (keep following them)
-
-- Implement only verified issues; don't rewrite the backend or exam engine; API changes additive; migrations additive and reviewed.
-- Never reset or delete data; never touch real student attempts/results; test only on disposable databases.
-- Don't deploy or change production data without the owner's explicit approval (merging to `main` deploys).
-- Don't claim full WCAG compliance from automated checks; no production-readiness claims.
-- Logical commits after reviewing the diff; never commit secrets. Don't create PRs unless asked.
-- Communicate plainly; report test failures honestly.
-
-## 12. First steps for the new session
-
-1. Clone `romi-alt/SZABMU-OES` (or push this zip's contents to a repo you can access), read this file, `docs/COORDINATION.md`, `docs/deployment/hostinger-demo/README.md`.
-2. `git fetch && git log origin/main -5` — check whether others have moved `main` since 2026-11-05.
-3. `curl https://szabmu.site/api/health`.
-4. Ask the owner what to do next; candidates: configure SMTP, merge the student-guide tooling PR, re-run the guide on MariaDB, teacher/admin guide videos.
+## 9. Working rules the owner set
+- Merging to `main` deploys: **only deploy with the owner's explicit approval.** Never change or delete live/production data; test only on disposable databases.
+- Implement only verified issues; prove fixes with tests that fail first; report test results honestly with commands and output.
+- Don't rewrite the backend or exam engine; API changes additive; migrations additive and reviewed.
+- Never weaken authorization; every route keeps exactly one `@Perm`.
+- AI never changes marks, results, eligibility or exam state; no external AI provider without approval.
+- Small logical commits after reviewing the diff, no secrets; no pull request unless asked; plain language to the owner.
