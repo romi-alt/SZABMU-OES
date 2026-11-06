@@ -70,13 +70,13 @@ test('teacher workspace: five pages only; real counts; MCQ pool lifecycle; names
   // pool
   await nav.getByRole('link', { name: 'MCQ Question Banks' }).click(); await page.getByRole('button', { name: '+ New question bank' }).click(); await page.getByLabel('Bank title').fill('Endocrine basics'); await page.getByRole('button', { name: 'Create question bank' }).click();
   await expect(page.getByRole('heading', { name: 'Endocrine basics' })).toBeVisible(); await page.getByRole('button', { name: '+ Add MCQ' }).click();
-  await page.getByRole('button', { name: 'Add question' }).click(); await expect(page.getByText('Enter the question.')).toBeVisible();
+  await page.getByRole('button', { name: 'Save draft' }).click(); await expect(page.getByText('Enter the question.')).toBeVisible();
   await page.getByLabel('Question statement').fill('Which organ produces insulin?'); for (const [i, t] of ['Liver', 'Pancreas', 'Kidney', 'Spleen'].entries()) await page.getByLabel(`Option ${'ABCD'[i]}`, { exact: true }).fill(t);
-  await page.getByLabel('Option B is correct').check(); await page.getByRole('dialog').getByLabel('Topic').fill('Endocrine'); await page.getByRole('button', { name: 'Add question' }).click();
+  await page.getByLabel('Option B is correct').check(); await page.getByRole('dialog').getByLabel('Topic', { exact: true }).fill('Endocrine'); await page.getByRole('button', { name: 'Save draft' }).click();
   const list = page.getByTestId('question-list'); await expect(list.locator('tbody tr')).toHaveCount(1); await list.getByRole('button', { name: 'Preview' }).click(); await expect(page.getByTestId('question-preview')).toContainText('correct'); await page.getByRole('button', { name: 'Close' }).click();
   await list.getByRole('button', { name: 'Duplicate' }).click(); await expect(list.locator('tbody tr')).toHaveCount(2);
   await page.getByLabel('Search').fill('insulin'); await expect(list.locator('tbody tr')).toHaveCount(2); await page.getByLabel('Search').fill('zzzz'); await expect(page.getByTestId('question-empty')).toBeVisible(); await page.getByLabel('Search').fill('');
-  await page.getByRole('button', { name: 'Import CSV' }).click(); await page.getByLabel('CSV content').fill('statement,option_a,option_b,option_c,option_d,option_e,correct,explanation,difficulty,topic,marks\nNormal resting heart rate?,20-30,60-100,150-200,300-400,,B,,easy,Cardio,1\n');
+  await page.getByRole('button', { name: 'Import from CSV or Excel' }).click(); await page.getByLabel('CSV content').fill('statement,option_a,option_b,option_c,option_d,option_e,correct,explanation,difficulty,topic,marks\nNormal resting heart rate?,20-30,60-100,150-200,300-400,,B,,easy,Cardio,1\n');
   await page.getByRole('button', { name: /Import 1 question/ }).click(); await expect(list.locator('tbody tr')).toHaveCount(3);
   const dl = page.waitForEvent('download'); await page.getByRole('button', { name: 'Export CSV' }).click(); expect((await dl).suggestedFilename()).toBe('Endocrine-basics.csv');
   await page.getByRole('button', { name: /Submit question bank for review/ }).click(); await page.getByRole('button', { name: 'Submit for review' }).click(); await expect(list.getByText('Submitted').first()).toBeVisible();

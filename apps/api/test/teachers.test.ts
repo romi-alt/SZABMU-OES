@@ -193,7 +193,7 @@ describe('MCQ pools', () => {
     const bad = await t.c.post(`/teacher/pools/${pool}/import`, { rows: [good, { ...good, correct: 'Z' }] }); expect(bad.status).toBe(400); expect(bad.body.message).toMatch(/Row 3/);
     expect((await t.c.get(`/teacher/questions?poolId=${pool}`)).body.total).toBe(0);                                                  // nothing created
     expect((await t.c.post(`/teacher/pools/${pool}/import`, { rows: [good, evil] })).body.created).toBe(2);
-    const ex = (await t.c.get(`/teacher/pools/${pool}/export`)).body; expect(ex.rows).toBe(2); expect(ex.filename).toBe('Import-me.csv'); expect(ex.csv.split('\r\n')[0]).toBe('statement,option_a,option_b,option_c,option_d,option_e,correct,explanation,difficulty,topic,marks,status');
+    const ex = (await t.c.get(`/teacher/pools/${pool}/export`)).body; expect(ex.rows).toBe(2); expect(ex.filename).toBe('Import-me.csv'); expect(ex.csv.split('\r\n')[0]).toBe('statement,option_a,option_b,option_c,option_d,option_e,correct,explanation,difficulty,topic,subtopic,bloom,marks,status');
     expect(ex.csv).toContain(`"'=HYPERLINK(""http://x"",""click"")"`); expect(ex.csv).toContain("'@cmd"); expect(ex.csv).toContain(",'+1,");
     expect(await ctx.prisma.auditLog.count({ where: { action: 'pool.export', entityId: pool } })).toBe(1);
   });

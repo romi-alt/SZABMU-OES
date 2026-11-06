@@ -10,8 +10,25 @@ import type { AuthUser } from '../../common/auth';
 import { AppError, badRequest, forbidden, notFound } from '../../common/errors';
 import { paginate } from '../../common/validate';
 import { decodePhoto } from './teacher-registration.service';
+import { createHash } from 'node:crypto';
+import { versionSnapshot } from '../exams/questions.service';
 
-export interface McqInput { stem: string; options: string[]; correctIndex: number; explanation?: string; difficulty: 'EASY' | 'MEDIUM' | 'HARD'; topic?: string; marks: number }
+export const BLOOM = ['REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYZE', 'EVALUATE', 'CREATE'] as const;
+export type Bloom = (typeof BLOOM)[number];
+export const MAX_IMAGE_BYTES = 1_000_000;
+export interface McqInput { stem: string; options: string[]; correctIndex: number; explanation?: string; difficulty: 'EASY' | 'MEDIUM' | 'HARD'; topic?: string; subtopic?: string | null; bloom?: Bloom | null; imageId?: string | null; marks: number }
+
+/** Decodes a `data:image/…;base64,…` URL for a question image: PNG, JPEG or WebP only (never SVG), size-capped, and the real bytes must match the declared type. */
+export function decodeQuestionImage(dataUrl: string): { mime: string; bytes: Buffer } {
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!m) throw badRequest('The image must be a PNG, JPEG or WebP file.');
+  const buf = Buffer.from(m[2]!, 'base64');
+  if (!buf.length) throw badRequest('The image file is empty.');
+  if (buf.length > MAX_IMAGE_BYTES) throw badRequest('The image is too large. Choose one under 1 MB.');
+  const ok = (m[1] === 'image/jpeg' && buf[0] === 0xff && buf[1] === 0xd8) || (m[1] === 'image/png' && buf.subarray(1, 4).toString() === 'PNG') || (m[1] === 'image/webp' && buf.subarray(0, 4).toString() === 'RIFF' && buf.subarray(8, 12).toString() === 'WEBP');
+  if (!ok) throw badRequest('The image file is not a valid image of the declared type.');
+  return { mime: m[1]!, bytes: buf };
+}
 export type AssignmentEffect = 'ACTIVE' | 'WAITS_FOR_ACCOUNT' | 'ACCOUNT_NOT_APPROVED' | 'PENDING_REVIEW' | 'REJECTED' | 'REVOKED';
 export type BankState = 'EMPTY' | 'DRAFT' | 'SUBMITTED' | 'REJECTED' | 'APPROVED';
 /** A bank has no status of its own yet; its state is derived from its questions: anything under review → SUBMITTED, else anything returned → REJECTED, else any draft → DRAFT, else all APPROVED. */
@@ -239,11 +256,11 @@ export class TeacherService {
   private toInput(poolId: string, p: { courseId: string; institutionId: string }, d: McqInput): QuestionInput {
     if (d.options.length < 4 || d.options.length > 5) throw badRequest('A question needs four or five options');
     if (d.correctIndex < 0 || d.correctIndex >= d.options.length) throw badRequest('Select the correct answer');
-    return { courseId: p.courseId, institutionId: p.institutionId, type: 'MCQ', stem: d.stem.trim(), explanation: d.explanation?.trim() || undefined, difficulty: d.difficulty, topic: d.topic?.trim() || undefined, defaultMarks: d.marks, poolId,
+    return { courseId: p.courseId, institutionId: p.institutionId, type: 'MCQ', stem: d.stem.trim(), explanation: d.explanation?.trim() || undefined, difficulty: d.difficulty, topic: d.topic?.trim() || undefined, subtopic: d.subtopic === undefined ? undefined : d.subtopic?.trim() || null, bloom: d.bloom === undefined ? undefined : d.bloom ?? null, imageId: d.imageId === undefined ? undefined : d.imageId ?? null, defaultMarks: d.marks, poolId,
       options: d.options.map((text, i) => ({ label: LABELS[i]!, text: text.trim(), isCorrect: i === d.correctIndex })) };
   }
-  private view(q: { id: string; poolId: string | null; stem: string; explanation: string | null; difficulty: string; topic: string | null; defaultMarks: number; status: string; version: number; reviewNote: string | null; updatedAt: Date; options: { label: string; text: string; isCorrect: boolean }[] }) {
-    return { id: q.id, poolId: q.poolId, stem: q.stem, explanation: q.explanation, difficulty: q.difficulty, topic: q.topic, marks: q.defaultMarks, status: q.status, version: q.version, reviewNote: q.reviewNote, updatedAt: q.updatedAt,
+  private view(q: { id: string; poolId: string | null; stem: string; explanation: string | null; difficulty: string; topic: string | null; subtopic: string | null; bloom: string | null; imageId: string | null; defaultMarks: number; status: string; version: number; reviewNote: string | null; updatedAt: Date; options: { label: string; text: string; isCorrect: boolean }[] }) {
+    return { id: q.id, poolId: q.poolId, stem: q.stem, explanation: q.explanation, difficulty: q.difficulty, topic: q.topic, subtopic: q.subtopic, bloom: q.bloom, imageId: q.imageId, marks: q.defaultMarks, status: q.status, version: q.version, reviewNote: q.reviewNote, updatedAt: q.updatedAt,
       options: [...q.options].sort((a, b) => a.label.localeCompare(b.label)).map((o) => ({ label: o.label, text: o.text, isCorrect: o.isCorrect })) };
   }
   private async ownQuestion(u: AuthUser, id: string) {
@@ -261,7 +278,7 @@ export class TeacherService {
     if (f.assignmentId) { const a = await this.myAssignment(u, f.assignmentId); and.push({ courseId: a.courseId, institutionId: a.institutionId }); }
     if (f.topic) and.push({ topic: { equals: f.topic } });
     if (f.difficulty) and.push({ difficulty: f.difficulty as never });
-    if (f.search) and.push({ OR: [{ stem: { contains: f.search } }, { topic: { contains: f.search } }] });
+    if (f.search) and.push({ OR: [{ stem: { contains: f.search } }, { topic: { contains: f.search } }, { subtopic: { contains: f.search } }] });
     const where = { AND: and };
     const [rows, total, topics] = await Promise.all([
       this.prisma.question.findMany({ where, include: { options: true, course: { select: { code: true } } }, orderBy: { createdAt: 'desc' }, ...paginate(f) }),
@@ -275,6 +292,7 @@ export class TeacherService {
 
   async createQuestion(u: AuthUser, poolId: string, d: McqInput, ip?: string) {
     const p = await this.ownPool(u, poolId);
+    await this.imageOwned(u, d.imageId);
     const input = this.toInput(poolId, p, d); validateQuestion(input);
     const q = await this.questions.create(u, input, ip);
     return this.view(q);
@@ -282,14 +300,42 @@ export class TeacherService {
 
   async updateQuestion(u: AuthUser, id: string, d: McqInput, ip?: string) {
     const q = await this.ownQuestion(u, id);
+    await this.imageOwned(u, d.imageId);
     const input = this.toInput(q.poolId!, q, d);
     return this.view(await this.questions.update(u, id, input, ip));
+  }
+
+  /** The image must be one this teacher uploaded; anything else reads as "not found" so ids cannot be probed. */
+  private async imageOwned(u: AuthUser, imageId?: string | null) {
+    if (!imageId) return;
+    if (!(await this.prisma.questionImage.findFirst({ where: { id: imageId, uploadedById: u.id }, select: { id: true } }))) throw badRequest('That image was not found. Upload it again.');
+  }
+
+  async uploadImage(u: AuthUser, dataUrl: string, ip?: string) {
+    await this.pairs(u);
+    const { mime, bytes } = decodeQuestionImage(dataUrl);
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const same = await this.prisma.questionImage.findFirst({ where: { uploadedById: u.id, sha256 }, select: { id: true } });   // the same file is stored once per teacher
+    if (same) return { id: same.id };
+    const img = await this.prisma.$transaction(async (tx) => {
+      const made = await tx.questionImage.create({ data: { uploadedById: u.id, mime, sizeBytes: bytes.length, sha256, data: new Uint8Array(bytes) } });
+      await this.audit.append(tx, { actor: u, action: 'question_image.upload', entity: 'question_image', entityId: made.id, meta: { mime, bytes: bytes.length }, ip });
+      return made;
+    });
+    return { id: img.id };
+  }
+
+  async getImage(u: AuthUser, id: string) {
+    await this.pairs(u);
+    const img = await this.prisma.questionImage.findFirst({ where: { id, uploadedById: u.id } });
+    if (!img) throw notFound('Image');
+    return { id: img.id, mime: img.mime, data: `data:${img.mime};base64,${Buffer.from(img.data).toString('base64')}` };
   }
 
   async duplicateQuestion(u: AuthUser, id: string, ip?: string) {
     const q = await this.ownQuestion(u, id);
     const sorted = [...q.options].sort((a, b) => a.label.localeCompare(b.label));
-    const copy = await this.questions.create(u, this.toInput(q.poolId!, q, { stem: q.stem, options: sorted.map((o) => o.text), correctIndex: sorted.findIndex((o) => o.isCorrect), explanation: q.explanation ?? undefined, difficulty: q.difficulty, topic: q.topic ?? undefined, marks: q.defaultMarks }), ip);
+    const copy = await this.questions.create(u, this.toInput(q.poolId!, q, { stem: q.stem, options: sorted.map((o) => o.text), correctIndex: sorted.findIndex((o) => o.isCorrect), explanation: q.explanation ?? undefined, difficulty: q.difficulty, topic: q.topic ?? undefined, subtopic: q.subtopic, bloom: q.bloom, imageId: q.imageId, marks: q.defaultMarks }), ip);
     return this.view(copy);
   }
 
@@ -301,23 +347,26 @@ export class TeacherService {
   async submitQuestion(u: AuthUser, id: string, ip?: string) { await this.ownQuestion(u, id); return this.questions.submit(u, id, ip); }
 
   /** All-or-nothing import. Rows are validated with exactly the rules used for manual entry; the first problem is reported with its row number. */
-  async importQuestions(u: AuthUser, poolId: string, rows: { statement: string; options: string[]; correct: string; explanation?: string; difficulty?: string; topic?: string; marks?: number }[], ip?: string) {
+  async importQuestions(u: AuthUser, poolId: string, rows: { statement: string; options: string[]; correct: string; explanation?: string; difficulty?: string; topic?: string; subtopic?: string; bloom?: string; marks?: number }[], ip?: string) {
     const p = await this.ownPool(u, poolId);
     const prepared = rows.map((r, i) => {
       const where = `Row ${i + 2}`;
       const idx = LABELS.indexOf(String(r.correct ?? '').trim().toUpperCase());
       const difficulty = (String(r.difficulty ?? 'MEDIUM').trim().toUpperCase() || 'MEDIUM') as 'EASY' | 'MEDIUM' | 'HARD';
       if (!['EASY', 'MEDIUM', 'HARD'].includes(difficulty)) throw badRequest(`${where}: difficulty must be Easy, Medium or Hard`);
+      const bloomRaw = String(r.bloom ?? '').trim().toUpperCase(); if (bloomRaw && !(BLOOM as readonly string[]).includes(bloomRaw)) throw badRequest(`${where}: Bloom level must be one of Remember, Understand, Apply, Analyze, Evaluate or Create`);
+      if ((r.subtopic ?? '').length > 120) throw badRequest(`${where}: the subtopic is too long (120 characters at most)`);
       const opts = r.options.map((o) => (o ?? '').trim()).filter(Boolean);
       if ((r.statement ?? '').trim().length < 3) throw badRequest(`${where}: the question statement is missing`);
       if (idx < 0 || idx >= opts.length) throw badRequest(`${where}: the correct answer must be a letter that matches one of the options`);
       const marks = r.marks === undefined || Number.isNaN(r.marks) ? 1 : r.marks; if (!(marks > 0 && marks <= 100)) throw badRequest(`${where}: marks must be between 0 and 100`);
-      try { const input = this.toInput(poolId, p, { stem: r.statement, options: opts, correctIndex: idx, explanation: r.explanation, difficulty, topic: r.topic, marks }); validateQuestion(input); return input; }
+      try { const input = this.toInput(poolId, p, { stem: r.statement, options: opts, correctIndex: idx, explanation: r.explanation, difficulty, topic: r.topic, subtopic: r.subtopic, bloom: (bloomRaw || null) as Bloom | null, marks }); validateQuestion(input); return input; }
       catch (e) { throw badRequest(`${where}: ${(e as Error).message}`); }
     });
     await this.prisma.$transaction(async (tx) => {
       for (const input of prepared) {
-        const q = await tx.question.create({ data: { courseId: input.courseId, institutionId: input.institutionId!, authorId: u.id, type: 'MCQ', tags: [], stem: input.stem, explanation: input.explanation, difficulty: input.difficulty, poolId, topic: input.topic, defaultMarks: input.defaultMarks ?? 1, options: { create: input.options } } });
+        const q = await tx.question.create({ data: { courseId: input.courseId, institutionId: input.institutionId!, authorId: u.id, type: 'MCQ', tags: [], stem: input.stem, explanation: input.explanation, difficulty: input.difficulty, poolId, topic: input.topic, subtopic: input.subtopic ?? null, bloom: input.bloom ?? null, defaultMarks: input.defaultMarks ?? 1, options: { create: input.options } }, include: { options: true } });
+        await tx.questionVersion.create({ data: { questionId: q.id, version: q.version, changedById: u.id, snapshot: versionSnapshot(q) } });
         await this.audit.append(tx, { actor: u, action: 'question.create', entity: 'question', entityId: q.id, institutionId: p.institutionId, meta: { import: true, pool: poolId }, ip });
       }
     }, { timeout: 60_000 });
@@ -328,9 +377,10 @@ export class TeacherService {
   async exportPool(u: AuthUser, poolId: string, ip?: string) {
     const p = await this.ownPool(u, poolId);
     const qs = await this.prisma.question.findMany({ where: { poolId, authorId: u.id, status: { not: 'RETIRED' } }, include: { options: true }, orderBy: { createdAt: 'asc' } });
-    const head = ['statement', 'option_a', 'option_b', 'option_c', 'option_d', 'option_e', 'correct', 'explanation', 'difficulty', 'topic', 'marks', 'status'];
-    const lines = qs.map((q) => { const o = [...q.options].sort((a, b) => a.label.localeCompare(b.label)); return [q.stem, ...LABELS.map((_, i) => o[i]?.text ?? ''), o.find((x) => x.isCorrect)?.label ?? '', q.explanation ?? '', q.difficulty.toLowerCase(), q.topic ?? '', q.defaultMarks, q.status.toLowerCase()].map(safeCell).join(','); });
+    const head = ['statement', 'option_a', 'option_b', 'option_c', 'option_d', 'option_e', 'correct', 'explanation', 'difficulty', 'topic', 'subtopic', 'bloom', 'marks', 'status'];
+    const rows = qs.map((q) => { const o = [...q.options].sort((a, b) => a.label.localeCompare(b.label)); return [q.stem, ...LABELS.map((_, i) => o[i]?.text ?? ''), o.find((x) => x.isCorrect)?.label ?? '', q.explanation ?? '', q.difficulty.toLowerCase(), q.topic ?? '', q.subtopic ?? '', q.bloom?.toLowerCase() ?? '', q.defaultMarks, q.status.toLowerCase()]; });
+    const lines = rows.map((r) => r.map(safeCell).join(','));
     await this.audit.log({ actor: u, action: 'pool.export', entity: 'question_pool', entityId: poolId, institutionId: p.institutionId, meta: { rows: qs.length }, ip });
-    return { filename: `${p.name.replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 60) || 'pool'}.csv`, csv: [head.join(','), ...lines].join('\r\n') + '\r\n', rows: qs.length };
+    return { filename: `${p.name.replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 60) || 'pool'}.csv`, csv: [head.join(','), ...lines].join('\r\n') + '\r\n', table: { head, rows }, rows: qs.length };
   }
 }

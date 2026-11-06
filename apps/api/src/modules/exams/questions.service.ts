@@ -19,8 +19,18 @@ export interface QuestionInput {
   tags?: string[];
   poolId?: string;
   topic?: string;
+  /** undefined = leave unchanged on update; null = clear. */
+  subtopic?: string | null;
+  bloom?: 'REMEMBER' | 'UNDERSTAND' | 'APPLY' | 'ANALYZE' | 'EVALUATE' | 'CREATE' | null;
+  imageId?: string | null;
   defaultMarks?: number;
   options: { label: string; text: string; isCorrect: boolean }[];
+}
+
+/** Everything an author can change, as stored in the append-only question_versions history. */
+export function versionSnapshot(q: { type: string; vignette: string | null; stem: string; explanation: string | null; difficulty: string; topic: string | null; subtopic: string | null; bloom: string | null; imageId: string | null; defaultMarks: number; tags: unknown; options: { label: string; text: string; isCorrect: boolean }[] }): Prisma.InputJsonValue {
+  return { type: q.type, vignette: q.vignette, stem: q.stem, explanation: q.explanation, difficulty: q.difficulty, topic: q.topic, subtopic: q.subtopic, bloom: q.bloom, imageId: q.imageId, marks: q.defaultMarks, tags: q.tags as Prisma.InputJsonValue,
+    options: [...q.options].sort((a, b) => a.label.localeCompare(b.label)).map((o) => ({ label: o.label, text: o.text, isCorrect: o.isCorrect })) } as Prisma.InputJsonValue;
 }
 
 /** Roles that may only touch questions they wrote themselves. */
@@ -86,8 +96,13 @@ export class QuestionsService {
     scope.assert(u, institutionId);
     if (!(await this.prisma.course.findUnique({ where: { id: d.courseId }, select: { id: true } }))) throw badRequest('Unknown course');
     await this.access.assert(u, d.courseId, institutionId);
-    const q = await this.prisma.question.create({
-      data: { courseId: d.courseId, institutionId, authorId: u.id, type: d.type, vignette: d.vignette, stem: d.stem, explanation: d.explanation, difficulty: d.difficulty, tags: d.tags ?? [], poolId: d.poolId, topic: d.topic, defaultMarks: d.defaultMarks ?? 1, options: { create: d.options } },
+    const q = await this.prisma.$transaction(async (tx) => {
+      const made = await tx.question.create({
+        data: { courseId: d.courseId, institutionId, authorId: u.id, type: d.type, vignette: d.vignette, stem: d.stem, explanation: d.explanation, difficulty: d.difficulty, tags: d.tags ?? [], poolId: d.poolId, topic: d.topic, subtopic: d.subtopic ?? null, bloom: d.bloom ?? null, imageId: d.imageId ?? null, defaultMarks: d.defaultMarks ?? 1, options: { create: d.options } },
+        include: { options: true },
+      });
+      await tx.questionVersion.create({ data: { questionId: made.id, version: made.version, changedById: u.id, snapshot: versionSnapshot(made) } });
+      return made;
     });
     await this.audit.log({ actor: u, action: 'question.create', entity: 'question', entityId: q.id, institutionId, ip });
     return this.load(u, q.id);
@@ -98,14 +113,21 @@ export class QuestionsService {
     if (authorOnly(u) && q.authorId !== u.id) throw forbidden('Only the author may edit this question');
     if (['SUBMITTED'].includes(q.status)) throw conflict('LOCKED', 'A question under review cannot be edited; ask the reviewer to reject it first');
     validateQuestion(d);
-    await this.prisma.$transaction([
-      this.prisma.questionOption.deleteMany({ where: { questionId: id } }),
-      this.prisma.question.update({
+    await this.prisma.$transaction(async (tx) => {
+      // A question that predates the history table has its earlier content captured now, so version N-1 is never missing.
+      if (!(await tx.questionVersion.findUnique({ where: { questionId_version: { questionId: id, version: q.version } }, select: { id: true } })))
+        await tx.questionVersion.create({ data: { questionId: id, version: q.version, changedById: q.authorId, snapshot: versionSnapshot(q) } });
+      await tx.questionOption.deleteMany({ where: { questionId: id } });
+      const nq = await tx.question.update({
         where: { id },
-        data: { type: d.type, vignette: d.vignette ?? null, stem: d.stem, explanation: d.explanation ?? null, difficulty: d.difficulty, tags: d.tags ?? [], topic: d.topic ?? null, defaultMarks: d.defaultMarks ?? q.defaultMarks, // editing approved content returns it to draft; approved papers keep their frozen snapshot
+        data: { type: d.type, vignette: d.vignette ?? null, stem: d.stem, explanation: d.explanation ?? null, difficulty: d.difficulty, tags: d.tags ?? [], topic: d.topic ?? null,
+          ...(d.subtopic !== undefined ? { subtopic: d.subtopic } : {}), ...(d.bloom !== undefined ? { bloom: d.bloom } : {}), ...(d.imageId !== undefined ? { imageId: d.imageId } : {}),
+          defaultMarks: d.defaultMarks ?? q.defaultMarks, // editing approved content returns it to draft; approved papers keep their frozen snapshot
           status: 'DRAFT', version: { increment: 1 }, options: { create: d.options } },
-      }),
-    ]);
+        include: { options: true },
+      });
+      await tx.questionVersion.create({ data: { questionId: id, version: nq.version, changedById: u.id, snapshot: versionSnapshot(nq) } });
+    });
     await this.audit.log({ actor: u, action: 'question.update', entity: 'question', entityId: id, institutionId: q.institutionId, meta: { fromStatus: q.status }, ip });
     return this.load(u, id);
   }
