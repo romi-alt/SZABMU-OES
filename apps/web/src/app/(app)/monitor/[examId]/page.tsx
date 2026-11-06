@@ -33,11 +33,11 @@ export default function MonitorExam() {
             <div className="filters"><Field label="Find candidate"><input className="in" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Reg. no. or name" /></Field></div>
             <Table rowKey={(r: any) => r.studentId} rows={rows} empty={q ? <ListEmpty noun="candidates" filters={[`“${q}”`]} onClear={url.reset} /> : 'No candidates.'} cols={[
               { h: 'Reg. no.', cell: (r: any) => <span className="code">{r.regNo}</span> }, { h: 'Name', cell: (r: any) => r.fullName }, { h: 'Campus', cell: (r: any) => r.institution },
-              { h: 'Status', cell: (r: any) => <Status s={r.suspended ? 'SUSPENDED' : r.status} /> }, { h: 'Connection', cell: (r: any) => <Status s={r.connection} /> },
+              { h: 'Status', cell: (r: any) => <Status s={r.suspended ? 'SUSPENDED' : r.status} /> }, { h: 'Connection', cell: (r: any) => r.attemptId ? <Status s={r.connection} /> : <span className="faint" aria-label="No connection yet">—</span> },   // audit A-08: "Not started" is said once, in Status
               { h: 'Answered', num: true, cell: (r: any) => r.attemptId ? r.answered : '—' }, { h: 'Deadline', cell: (r: any) => fmtTime(r.deadlineAt) }, { h: 'Flags', num: true, cell: (r: any) => r.integrityFlags || '' },
               { h: '', cell: (r: any) => <div className="row">
                 {can('invigilation.intervene') && r.status === 'IN_PROGRESS' && <><button className="btn btn-sm" aria-label={`Add time for ${r.regNo}`} onClick={() => setAct({ kind: 'extend', row: r })}>Add time</button><button className="btn btn-sm btn-danger" aria-label={`End attempt for ${r.regNo}`} onClick={() => setAct({ kind: 'force', row: r })}>End attempt…</button></>}
-                {can('incident.report') && <button className="btn btn-sm" aria-label={`Report incident for ${r.regNo}`} onClick={() => setAct({ kind: 'incident', row: r })}>Report incident</button>}</div> },
+                {can('incident.report') && <button className="btn-link small" aria-label={`Report incident for ${r.regNo}`} onClick={() => setAct({ kind: 'incident', row: r })}>Incident…</button>}</div> },
             ]} />
             <div className="row between" style={{ padding: '8px 16px' }}><span className="small muted">Page {d.page} of {Math.max(1, Math.ceil(d.total / d.pageSize))} · {d.total} candidates</span><span className="row"><button className="btn btn-sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button><button className="btn btn-sm" disabled={page * d.pageSize >= d.total} onClick={() => setPage(page + 1)}>Next</button></span></div>
           </Card>
