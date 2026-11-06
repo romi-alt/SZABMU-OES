@@ -50,8 +50,9 @@ export class AuthService {
     const ok = user ? await argon2.verify(user.passwordHash, password).catch(() => false) : await argon2.verify(await this.dummy(), password).catch(() => false) && false;
     if (!user || !ok || !user.active) {
       if (user) {
-        const failed = user.failedLogins + 1;
-        await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: failed, lockedUntil: failed >= MAX_FAILED ? new Date(now.getTime() + LOCK_MIN * 60000) : null } });
+        // atomic increment (a read-then-write lost concurrent failures and delayed the lockout)
+        const { failedLogins: failed } = await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: { increment: 1 } }, select: { failedLogins: true } });
+        if (failed >= MAX_FAILED) await this.prisma.user.update({ where: { id: user.id }, data: { lockedUntil: new Date(now.getTime() + LOCK_MIN * 60000) } });
       }
       await this.audit.log({ actor: user ? { id: user.id, role: user.role } : null, action: 'auth.login_failed', entity: 'user', entityId: user?.id, meta: { email }, ip });
       this.metrics.authFailures.inc({ kind: 'login_invalid' });
