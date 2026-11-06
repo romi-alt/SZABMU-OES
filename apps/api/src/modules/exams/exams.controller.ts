@@ -28,6 +28,10 @@ export class ExamsController {
   listQ(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) {
     return this.questions.list(u, parse(page.extend({ courseId: uuid.optional(), institutionId: uuid.optional(), status: z.string().max(20).optional(), difficulty: z.string().max(10).optional(), type: z.string().max(20).optional(), search: z.string().max(100).optional() }), q));
   }
+  /** Possible duplicate questions within the caller's scope (deterministic similarity; review prompt only). */
+  @Perm('question.read') @Get('questions/duplicates') duplicates(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) {
+    return this.questions.duplicates(u, parse(z.object({ courseId: uuid.optional(), threshold: z.coerce.number().min(0.3).max(1).default(0.6) }), q));
+  }
   @Perm('question.read') @Get('questions/:id') getQ(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.questions.get(u, id); }
   @Perm('question.write') @Post('questions') createQ(@CurrentUser() u: AuthUser, @Body() b: unknown, @Ip() ip: string) { return this.questions.create(u, parse(questionDto, b), ip); }
   @Perm('question.write') @Put('questions/:id') updateQ(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.questions.update(u, id, parse(questionDto, b), ip); }

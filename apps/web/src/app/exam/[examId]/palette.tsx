@@ -4,10 +4,10 @@ import type { PaletteKind } from '@/exam-engine';
 
 export type Filter = 'all' | PaletteKind | 'marked';
 export interface PalItem { id: string; number: number; index: number; kind: PaletteKind; marked: boolean; unsynced: boolean }
-const pad = (n: number) => String(n).padStart(2, '0');
 /** Non-colour cue for every state (WCAG 1.4.1): a glyph in the corner of the button, repeated in the legend. */
 export const GLYPH: Record<PaletteKind, string> = { answered: '✓', skipped: '»', unanswered: '?', notvisited: '' };
 const WORD: Record<PaletteKind, string> = { answered: 'answered', skipped: 'not answered', unanswered: 'not answered', notvisited: 'not visited' };
+/** The visible number is part of the name (WCAG 2.5.3 Label in Name: a voice user saying "click 12" must hit button 12). */
 export const labelFor = (i: PalItem) => `Question ${i.number}, ${WORD[i.kind]}${i.marked ? ', marked for review' : ''}${i.unsynced ? ', not yet confirmed by the server' : ''}`;
 
 /**
@@ -50,7 +50,7 @@ export function QuestionPalette({ items, all, total, current, inView, counts, fi
             <li key={x.id}>
               <button type="button" tabIndex={(focusIdx ?? tabbable) === at ? 0 : -1} className={`${x.kind} ${x.index === current && inView ? 'current' : ''} ${x.marked ? 'marked' : ''} ${x.unsynced ? 'unsynced' : ''}`}
                 aria-label={labelFor(x)} aria-current={x.index === current ? 'true' : undefined} onFocus={() => setFocusIdx(at)} onKeyDown={(e) => onKey(e, at)} onClick={() => onGo(x.index)}>
-                <span className="g" aria-hidden>{x.unsynced ? '!' : GLYPH[x.kind]}</span>{pad(x.number)}
+                <span className="g" aria-hidden>{x.unsynced ? '!' : GLYPH[x.kind]}</span>{x.number}
               </button>
             </li>))}
         </ul>

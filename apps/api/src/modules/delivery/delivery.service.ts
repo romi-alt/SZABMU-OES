@@ -39,18 +39,26 @@ export class DeliveryService {
     return u.studentId;
   }
 
-  /** The approved paper is immutable, so the candidate-facing view is safe to cache. Never contains the key. */
+  /**
+   * The approved paper is immutable (it can only be edited while the exam is a DRAFT, and this is only reached for approved papers: at start
+   * and at seal), so the candidate-facing view is safe to cache. Never contains the key. A per-process copy comes first: without Redis the
+   * shared cache is a database table, and a start burst would otherwise pay one extra round trip per candidate (T-PERF-02).
+   */
+  private readonly localPapers = new Map<string, { paper: PaperQuestion[]; until: number }>();
   async paperFor(examId: string): Promise<PaperQuestion[]> {
+    const local = this.localPapers.get(examId);
+    if (local && local.until > Date.now()) return local.paper;
+    const remember = (paper: PaperQuestion[]) => { if (this.localPapers.size > 200) this.localPapers.clear(); this.localPapers.set(examId, { paper, until: Date.now() + 10 * 60_000 }); return paper; };
     const key = `paper:${examId}`;
     const hit = await this.kv.getJson<PaperQuestion[]>(key);
-    if (hit) return hit;
+    if (hit) return remember(hit);
     const rows = await this.prisma.examQuestion.findMany({ where: { examId }, orderBy: { position: 'asc' } });
     const paper = rows.map((r) => {
       const s = r.snapshot as { type: string; vignette: string | null; stem: string; options: { label: string; text: string }[] };
       return { id: r.id, position: r.position, marks: r.marks, type: s.type, vignette: s.vignette, stem: s.stem, options: s.options };
     });
     await this.kv.setJson(key, paper, 3600);
-    return paper;
+    return remember(paper);
   }
 
   // ───────────── student: exam list ─────────────
@@ -121,6 +129,7 @@ export class DeliveryService {
     const now = await this.prisma.dbNow();
 
     let attempt = await this.prisma.attempt.findUnique({ where: { examId_studentId: { examId, studentId } } });
+    let created = false;   // a brand-new attempt has no answers yet: no need to read them back
     if (attempt && attempt.status !== 'IN_PROGRESS') throw conflict('ALREADY_SUBMITTED', 'You have already submitted this examination', { receiptCode: attempt.receiptCode, submittedAt: attempt.submittedAt });
     if (attempt && (await this.isExpired(attempt, now))) {
       await this.finalize(attempt.id, { mode: 'AUTO' });
@@ -149,6 +158,7 @@ export class DeliveryService {
         // Per-candidate lifecycle lives in `attempts`/`attempt_events` (authoritative); the globally
         // serialised hash-chained audit log is reserved for staff/administrative actions.
         attempt = await this.prisma.attempt.create({ data: { id, examId, studentId, startedAt: now, deadlineAt: deadline, extraTimeMin: cand.extraTimeMin, questionOrder: order, activeClientId: clientId, clientEpoch: 1, admission, ip, userAgent: ua?.slice(0, 300), events: { create: [{ kind: 'STARTED', detail: { clientId } }] } } });
+        created = true;
       } catch (e) {
         if (e.code !== 'P2002') throw e; // concurrent double-start: fall through and resume the winner
         attempt = await this.prisma.attempt.findUniqueOrThrow({ where: { examId_studentId: { examId, studentId } } });
@@ -168,7 +178,7 @@ export class DeliveryService {
 
     const paper = await this.paperFor(examId);
     const byId = new Map(paper.map((q) => [q.id, q]));
-    const answers = await this.prisma.attemptAnswer.findMany({ where: { attemptId: fresh.id } });
+    const answers = created ? [] : await this.prisma.attemptAnswer.findMany({ where: { attemptId: fresh.id } });
     return {
       attempt: { id: fresh.id, status: fresh.status, startedAt: fresh.startedAt, deadlineAt: fresh.deadlineAt, clientEpoch: fresh.clientEpoch },
       control: { examStatus: exam.status, suspended: !!fresh.suspendedAt, timingPolicy: exam.timingPolicy },

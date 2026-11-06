@@ -1,8 +1,8 @@
 /**
  * Connection-error policy for the fault harness.
  *
- * When a test deliberately crashes the disposable PostgreSQL, every idle client in the harness's own pg.Pool is disconnected and
- * pg emits 'error'. That is EXPECTED — but only while an outage that the test itself declared is in progress, and only for
+ * When a test deliberately crashes the disposable database, every idle client in the harness's own pool is disconnected and
+ * the driver emits 'error'. That is EXPECTED — but only while an outage that the test itself declared is in progress, and only for
  * connection-loss errors. Everything else (a connection error with no declared outage, or any non-connection error) is recorded
  * and fails the suite via `assertClean()`. Nothing is swallowed silently.
  */
@@ -19,7 +19,7 @@ export class PoolErrorPolicy {
   static isConnectionLoss(e: unknown): boolean {
     const x = e as { code?: string; message?: string } | null;
     if (!x) return false;
-    return ['57P01', '57P02', '57P03', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE'].includes(x.code ?? '') || /Connection terminated|terminating connection|server closed the connection|the database system is (starting up|in recovery|shutting down)/i.test(x.message ?? '');
+    return ['57P01', '57P02', '57P03', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ER_SOCKET_UNEXPECTED_CLOSE', 'ER_CONNECTION_KILLED', 'ER_CONNECTION_ALREADY_CLOSED', 'ER_GET_CONNECTION_TIMEOUT', 'ER_SERVER_SHUTDOWN'].includes(x.code ?? '') || /Connection terminated|terminating connection|server closed the connection|the database system is (starting up|in recovery|shutting down)|socket has unexpectedly been closed|Connection killed|connection closed|Server shutdown/i.test(x.message ?? '');
   }
 
   /** Attach as `pool.on('error', policy.handler)` (also usable for a Client). */

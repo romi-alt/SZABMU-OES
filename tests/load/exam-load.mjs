@@ -3,15 +3,16 @@
 //   multiple API processes (round-robin per candidate):  --api http://localhost:4000,http://localhost:4001,http://localhost:4002
 //   server-side cross-check from /api/metrics:            --metrics-token <METRICS_TOKEN>
 // Provisions SYNTHETIC candidates directly in the database (bypassing argon2 login), drives the real HTTP API,
-// then verifies against PostgreSQL that every answer the server acknowledged is stored, and every submit is sealed.
-import pg from 'pg';
+// then verifies against the database (MariaDB/MySQL, as in production) that every answer the server acknowledged is stored, and every submit is sealed.
+// Ported from PostgreSQL in the 2026-11 audit (T-PERF-01): same scenario and checks; placeholders `$n` are translated to `?`.
+import mariadb from 'mariadb';
 import { Pool as HttpPool, Agent, setGlobalDispatcher, request } from 'undici';
 import { createHash, randomUUID } from 'node:crypto';
 
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
 const N = +arg('candidates', 2000), M = +arg('questions', 50), THINK = +arg('think', 3000), RAMP = +arg('ramp', 20), APIS = arg('api', 'http://localhost:4000').split(','), CONC = +arg('concurrency', 512), MTOKEN = arg('metrics-token', ''), START_ONLY = process.argv.includes('--start-only');
 const API_OF = new Map(); // session token -> API base URL (round-robin per candidate)
-const DB = process.env.DATABASE_URL ?? 'postgresql://oes:oes_dev_password@localhost:5433/szabmu_oes';
+const DB = process.env.DATABASE_URL ?? 'mysql://oes:oes_dev_password@127.0.0.1:3307/szabmu_oes';
 const sha = (s) => createHash('sha256').update(s).digest('hex');
 setGlobalDispatcher(new Agent({ connections: CONC, pipelining: 1, keepAliveTimeout: 30_000, headersTimeout: 30_000, bodyTimeout: 30_000 }));
 
@@ -25,7 +26,7 @@ async function provision(db) {
   const prog = (await db.query(`INSERT INTO programs (id, code, name) VALUES ($1, $2, 'Load test programme') RETURNING id`, [randomUUID(), `LP-${tag}`.toUpperCase()])).rows[0].id;
   const course = (await db.query(`INSERT INTO courses (id, "programId", code, title, semester) VALUES ($1, $2, $3, 'Load test course', 1) RETURNING id`, [randomUUID(), prog, `LC-${tag}`.toUpperCase()])).rows[0].id;
   const admin = (await db.query(`SELECT id FROM users WHERE role = 'SUPER_ADMIN' LIMIT 1`)).rows[0]?.id ?? (await db.query(`INSERT INTO users (id,email,"fullName",role,"passwordHash","updatedAt") VALUES ($1,$2,'Load admin','SUPER_ADMIN','x',now()) RETURNING id`, [randomUUID(), `load.admin.${tag}@load.invalid`])).rows[0].id;
-  const exam = (await db.query(`INSERT INTO exams (id, code, title, "courseId", "createdBy", status, "paperStatus", "opensAt", "closesAt", "durationMin", "totalMarks", "updatedAt") VALUES ($1,$2,$3,$4,$5,'LIVE','APPROVED', now() - interval '1 minute', now() + interval '3 hours', 120, $6, now()) RETURNING id`, [randomUUID(), `LOAD-${tag}`.toUpperCase(), `Load test exam ${tag} (synthetic)`, course, admin, M])).rows[0].id;
+  const exam = (await db.query(`INSERT INTO exams (id, code, title, "courseId", "createdBy", status, "paperStatus", "opensAt", "closesAt", "durationMin", "totalMarks", "updatedAt") VALUES ($1,$2,$3,$4,$5,'LIVE','APPROVED', NOW() - INTERVAL 1 MINUTE, NOW() + INTERVAL 3 HOUR, 120, $6, now()) RETURNING id`, [randomUUID(), `LOAD-${tag}`.toUpperCase(), `Load test exam ${tag} (synthetic)`, course, admin, M])).rows[0].id;
   await db.query(`INSERT INTO exam_institutions ("examId","institutionId") VALUES ($1,$2)`, [exam, inst]);
   const eqs = [];
   for (let i = 1; i <= M; i++) {
@@ -45,15 +46,15 @@ async function provision(db) {
       up.push(`($${pu++},$${pu++},$${pu++},'STUDENT','x',now())`); uv.push(uid, `load.${tag}.${i}@load.invalid`, `Load Candidate ${i}`);
       sp.push(`($${ps++},$${ps++},$${ps++},$${ps++},$${ps++},1,2026)`); sv.push(sid, uid, inst, prog, `LT-${tag}-${i}`);
       cp.push(`($${pc++},$${pc++},$${pc++},$${pc++})`); cv.push(randomUUID(), exam, sid, inst);
-      ssp.push(`($${pss++},$${pss++},$${pss++}, now() + interval '5 hours')`); sess.push(randomUUID(), uid, sha(token));
+      ssp.push(`($${pss++},$${pss++},$${pss++}, NOW() + INTERVAL 5 HOUR)`); sess.push(randomUUID(), uid, sha(token));
       cands.push({ i, token, studentId: sid, userId: uid });
     }
     await db.query(`INSERT INTO users (id,email,"fullName",role,"passwordHash","updatedAt") VALUES ${up.join(',')}`, uv);
-    await db.query(`INSERT INTO user_institutions ("userId","institutionId") SELECT u, $1::uuid FROM unnest($2::uuid[]) u`, [inst, uids]);
+    await db.query(`INSERT INTO user_institutions ("userId","institutionId") VALUES ${uids.map(() => '(?,?)').join(',')}`, uids.flatMap((u) => [u, inst]));
     await db.query(`INSERT INTO students (id,"userId","institutionId","programId","regNo",semester,"batchYear") VALUES ${sp.join(',')}`, sv);
     await db.query(`INSERT INTO exam_candidates (id,"examId","studentId","institutionId") VALUES ${cp.join(',')}`, cv);
     // admission re-validates local enrolment at start (policy P-26), so synthetic candidates need a real enrolment
-    await db.query(`INSERT INTO enrollments (id,"studentId","courseId",term,status,eligibility) SELECT gen_random_uuid(), x, $1::uuid, '2026-SPRING', 'ENROLLED', 'ELIGIBLE' FROM unnest($2::uuid[]) x`, [course, sids]);
+    await db.query(`INSERT INTO enrollments (id,"studentId","courseId",term,status,eligibility) VALUES ${sids.map(() => "(UUID(),?,?,'2026-SPRING','ENROLLED','ELIGIBLE')").join(',')}`, sids.flatMap((x) => [x, course]));
     await db.query(`INSERT INTO sessions (id,"userId","tokenHash","expiresAt") VALUES ${ssp.join(',')}`, sess);
   }
   return { exam, inst, cands, eqs };
@@ -95,13 +96,17 @@ async function candidate(c, startDelay) {
 }
 
 const ctx = {};
-const db = new pg.Client({ connectionString: DB }); await db.connect();
+// Same session settings as the API (apps/api/src/infra/db-url.ts): UTC clock, ANSI_QUOTES for the "camelCase" identifiers, strict mode.
+const u = new URL(DB);
+const pool = mariadb.createPool({ host: u.hostname, port: +(u.port || 3306), user: decodeURIComponent(u.username), password: decodeURIComponent(u.password), database: u.pathname.slice(1),
+  connectionLimit: 4, initSql: ["SET time_zone = '+00:00'", "SET SESSION sql_mode = CONCAT_WS(',', @@SESSION.sql_mode, 'ANSI_QUOTES', 'STRICT_TRANS_TABLES')"] });
+const db = { query: async (sql, params = []) => { const r = await pool.query(sql.replace(/\$\d+/g, '?'), params); return { rows: Array.isArray(r) ? r : [] }; }, end: () => pool.end() };
 console.log(`Provisioning ${N} synthetic candidates × ${M} questions…`);
 Object.assign(ctx, await provision(db));
 for (const c of ctx.cands) API_OF.set(c.token, APIS[c.i % APIS.length]);
 if (arg('exam-file')) (await import('node:fs')).writeFileSync(arg('exam-file'), JSON.stringify({ examId: ctx.exam, institutionId: ctx.inst, at: Date.now() }));   // lets tests/load/control-load.mjs attach to THIS exam
 console.log(`Running: ramp ${RAMP}s, think ≈${THINK}ms/question, max ${CONC} connections, ${APIS.length} API process(es)`);
-// host CPU sampler (whole machine, shared with PostgreSQL/Redis/APIs/this generator)
+// host CPU sampler (whole machine, shared with the database/APIs/this generator)
 import { readFileSync } from 'node:fs';
 const cpuSnap = () => { const [, ...f] = readFileSync('/proc/stat', 'utf8').split('\n')[0].trim().split(/\s+/).map(Number); const idle = f[3] + f[4]; return { idle, total: f.reduce((a, b) => a + b, 0) }; };
 const cpuSamples = []; let prevCpu = cpuSnap();
@@ -110,7 +115,7 @@ const t0 = Date.now();
 await Promise.all(ctx.cands.map((c) => candidate(c, (c.i / N) * RAMP * 1000)));
 const secs = (Date.now() - t0) / 1000; clearInterval(cpuTimer);
 
-console.log('\nVerifying against PostgreSQL…');
+console.log('\nVerifying against the database…');
 const rows = (await db.query(`SELECT a.id, a.status, a."receiptCode", aa."examQuestionId", aa."selectedLabel", aa.revision FROM attempts a LEFT JOIN attempt_answers aa ON aa."attemptId" = a.id WHERE a."examId" = $1`, [ctx.exam])).rows;
 const dbAns = new Map(); const attemptRow = new Map();
 for (const r of rows) { attemptRow.set(r.id, r); if (r.examQuestionId) { if (!dbAns.has(r.id)) dbAns.set(r.id, new Map()); dbAns.get(r.id).set(r.examQuestionId, r); } }

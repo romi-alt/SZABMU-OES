@@ -144,12 +144,26 @@ function Results({ exam, reload }: { exam: any; reload: () => void }) {
         <Card title="Candidate results" flush><Table rowKey={(r: any) => r.id} empty="No results are visible to you yet." rows={d.rows} cols={[
           { h: 'Reg. no.', cell: (r: any) => <span className="code">{r.regNo}</span> }, { h: 'Name', cell: (r: any) => r.fullName }, { h: 'Campus', cell: (r: any) => r.institution }, { h: 'Score', num: true, cell: (r: any) => `${r.rawScore} / ${r.totalMarks}` }, { h: '%', num: true, cell: (r: any) => r.percent.toFixed(1) }, { h: 'Result', cell: (r: any) => <Status s={r.status} /> }, { h: 'Certificate', cell: (r: any) => <span className="code">{r.certificate ?? '—'}</span> },
         ]} /></Card></>)}</Async>
-      {ana.data && <Card title="Item analysis" flush><Table rowKey={(r: any) => r.examQuestionId} rows={ana.data.questions} cols={[
+      {ana.data && <Card title="Item analysis" flush>
+        {ana.data.statistics && <div className="stack" style={{ padding: '12px 16px' }}>
+          <div className="small" data-testid="item-stats-summary">{ana.data.statistics.candidates === 0 ? <>No submitted attempts yet · {ana.data.statistics.items} scored questions on the paper.</> : <>
+            {ana.data.statistics.candidates} candidate{ana.data.statistics.candidates === 1 ? '' : 's'} · {ana.data.statistics.items} scored questions · mean {ana.data.statistics.mean} correct (SD {ana.data.statistics.sd})
+            {' · '}KR-20 reliability {ana.data.statistics.kr20 ?? '—'}{ana.data.statistics.sem != null ? ` (SEM ${ana.data.statistics.sem})` : ''}</>}
+          </div>
+          {!ana.data.statistics.reliable && ana.data.statistics.candidates > 0 && <Notice tone="warn">Based on {ana.data.statistics.candidates} candidate{ana.data.statistics.candidates === 1 ? '' : 's'}. Below {ana.data.statistics.minCandidates} the statistics are unstable and no question is flagged; read them as a rough guide only.</Notice>}
+        </div>}
+        <Table rowKey={(r: any) => r.examQuestionId} rows={ana.data.questions} cols={[
         { h: '#', num: true, cell: (r: any) => r.position }, { h: 'Question', cell: (r: any) => (r.stem.length > 80 ? r.stem.slice(0, 80) + '…' : r.stem) }, { h: 'Key', cell: (r: any) => <b className="mono">{r.key}</b> },
-        { h: 'Answers', cell: (r: any) => <span className="mono small">{Object.entries(r.distribution).map(([k, v]) => `${k}:${v}`).join('  ')}</span> }, { h: '% correct', num: true, cell: (r: any) => r.pCorrect },
-        { h: 'Flag', cell: (r: any) => r.actions.length ? <Badge tone="amber">{r.actions.map((a: any) => a.kind === 'VOID' ? 'voided' : `key→${a.newLabel}`).join(', ')}</Badge> : r.flag ? <Badge tone="red">{r.flag.replace(/_/g, ' ').toLowerCase()}</Badge> : null },
+        { h: 'Answers', cell: (r: any) => <span className="mono small">{Object.entries(r.distribution).map(([k, v]) => `${k}:${v}`).join('  ')}</span> }, { h: '% correct', num: true, cell: (r: any) => (ana.data.candidates ? r.pCorrect : '—') },
+        { h: 'Difficulty p', num: true, cell: (r: any) => r.stats ? r.stats.p.toFixed(2) : '—' }, { h: 'Discrimination D', num: true, cell: (r: any) => r.stats?.d != null ? r.stats.d.toFixed(2) : '—' }, { h: 'Item–rest r', num: true, cell: (r: any) => r.stats?.rpb != null ? r.stats.rpb.toFixed(2) : '—' },
+        { h: 'Flag', cell: (r: any) => r.actions.length ? <Badge tone="amber">{r.actions.map((a: any) => a.kind === 'VOID' ? 'voided' : `key→${a.newLabel}`).join(', ')}</Badge> : r.stats?.flags?.length ? <Badge tone="red">{r.stats.flags.map((f: string) => f.replace(/_/g, ' ').toLowerCase()).join(', ')}</Badge> : r.flag ? <Badge tone="red">{r.flag.replace(/_/g, ' ').toLowerCase()}</Badge> : null },
         { h: '', cell: (r: any) => can('grading.keyaction') && ['RESULT_PENDING'].includes(exam.status) && res.data?.batch?.status !== 'EXAMINER_APPROVED' ? <button className="btn btn-sm" onClick={() => { setKey(r); setReason(''); }}>Correct…</button> : null },
-      ]} /></Card>}
+      ]} />
+        <div className="small muted" style={{ padding: '10px 16px' }} data-testid="item-stats-legend">
+          <b>How to read this.</b> Difficulty p: share of candidates who chose the key (0–1). Discrimination D: p among the top 27 % of candidates minus p among the bottom 27 % — near 0 or negative means strong candidates do no better than weak ones.
+          Item–rest r: correlation between the question and the rest of the paper; negative values often mean a wrong key or an ambiguous stem. KR-20: consistency of the whole paper (0–1).
+          All values use the corrected key and leave voided questions out. They describe this sitting only and are prompts for academic review — nothing is changed automatically.
+        </div></Card>}
       {key && <Confirm title={`Correct question ${key.position}`} yes="Apply and regrade" danger onNo={() => setKey(null)} onYes={() => run(async () => { await post(`/grading/exams/${exam.id}/key-actions`, { examQuestionId: key.examQuestionId, kind, newLabel: kind === 'CHANGE_KEY' ? newLabel : undefined, reason }); setKey(null); refresh(); }, 'Regraded')} body={<div className="stack">
         <Notice tone="warn">This regrades every candidate and returns results to lecturer review.</Notice>
         <Field label="Action"><select className="in" value={kind} onChange={(e) => setKind(e.target.value as never)}><option value="VOID">Void question (full marks to all)</option><option value="CHANGE_KEY">Change answer key</option></select></Field>

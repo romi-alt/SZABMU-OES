@@ -52,6 +52,7 @@ export class RegistrationService {
       const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
       const pending: Pending = { regNo, passwordHash, codeHash: sha256(`${email}:${code}`), attempts: 0 };
       await this.kv.setText(`reg:${email}`, JSON.stringify(pending), TTL_SEC);
+      await this.kv.del(`reg:tries:${email}`);   // a new code gets a fresh set of guesses
       const m = await this.mail.enqueue(email, 'SZABMU Examinations — confirm your registration', `Your 6-digit registration code is ${code}. It expires in ${TTL_SEC / 60} minutes.\nIf you did not try to register, ignore this message.`, 'student_registration');
       // The first delivery attempt is made here (time-limited) so registration does not depend on a queue worker staying alive; the outbox row remains the retry path.
       await Promise.race([this.mail.deliver(m.id), new Promise((r) => setTimeout(r, 8000))]).catch(() => undefined);
@@ -67,8 +68,10 @@ export class RegistrationService {
     if ((await this.kv.hit(`rl:reg:verify:${ip}`, 3600)) > 30) throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again later.');
     const raw = await this.kv.getText(`reg:${email}`); if (!raw) throw bad;
     const p = JSON.parse(raw) as Pending;
-    if (p.attempts >= MAX_ATTEMPTS) { await this.kv.del(`reg:${email}`); throw bad; }
-    if (p.codeHash !== sha256(`${email}:${code}`)) { p.attempts++; const ttl = await this.kv.ttl(`reg:${email}`); if (ttl > 0) await this.kv.setText(`reg:${email}`, JSON.stringify(p), ttl); throw bad; }
+    // Count the guess ATOMICALLY before comparing (kv.hit is an atomic increment). The previous read-modify-write of `attempts` inside the
+    // pending JSON let a burst of parallel guesses all be evaluated; with rotating addresses that bypassed the per-IP limit.
+    if ((await this.kv.hit(`reg:tries:${email}`, TTL_SEC)) > MAX_ATTEMPTS) { await this.kv.del(`reg:${email}`); throw bad; }
+    if (p.codeHash !== sha256(`${email}:${code}`)) throw bad;
     let userId: string;
     try {
       userId = await this.prisma.$transaction(async (tx) => {

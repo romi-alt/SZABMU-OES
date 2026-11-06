@@ -320,7 +320,7 @@ function ReviewView({ engine, questions, attemptId, clientId, submitKey, onBack,
           : <p className="small muted" data-testid="review-all-confirmed" role="status">✓ Every answer on this screen is confirmed by the server.</p>}
         {c.marked > 0 && <Notice tone="warn">{c.marked === 1 ? '1 question is' : `${c.marked} questions are`} marked for review.</Notice>}
         {(c.skipped + c.unanswered + c.notvisited) > 0 && <Notice tone="warn">{(() => { const n = c.skipped + c.unanswered + c.notvisited; return n === 1 ? '1 question has' : `${n} questions have`; })()} no answer. Select a number to return to it.</Notice>}
-        <ul className="pal pal-review" aria-label="All questions">{items.map((x) => <li key={x.id}><button type="button" className={`${x.kind} ${x.marked ? 'marked' : ''} ${x.unsynced ? 'unsynced' : ''}`} onClick={() => onBack(x.index)} aria-label={labelFor(x)}><span className="g" aria-hidden>{x.unsynced ? '!' : GLYPH[x.kind]}</span>{pad(x.number)}</button></li>)}</ul>
+        <ul className="pal pal-review" aria-label="All questions">{items.map((x) => <li key={x.id}><button type="button" className={`${x.kind} ${x.marked ? 'marked' : ''} ${x.unsynced ? 'unsynced' : ''}`} onClick={() => onBack(x.index)} aria-label={labelFor(x)}><span className="g" aria-hidden>{x.unsynced ? '!' : GLYPH[x.kind]}</span>{x.number}</button></li>)}</ul>
         {err && <Notice tone="bad">{err}</Notice>}
         <div className="row"><button className="btn btn-primary" onClick={() => { setAgree(false); setConfirm(true); }} disabled={busy}>Submit examination…</button><span className="small muted">You cannot change answers after submission.</span></div>
       </div>

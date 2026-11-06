@@ -4,12 +4,12 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import fastifyCookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import { AppModule } from './app.module';
-import { loadConfig } from './config';
+import { loadConfig, trustProxySetting } from './config';
 import { MetricsService } from './infra/metrics.service';
 
 export async function createApp(): Promise<NestFastifyApplication> {
   const cfg = loadConfig();
-  const adapter = new FastifyAdapter({ trustProxy: cfg.TRUST_PROXY === 'true', bodyLimit: 2 * 1024 * 1024 });
+  const adapter = new FastifyAdapter({ trustProxy: trustProxySetting(cfg.TRUST_PROXY), bodyLimit: 2 * 1024 * 1024 });
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, { logger: cfg.NODE_ENV === 'test' ? ['error'] : ['log', 'warn', 'error'] });
   app.setGlobalPrefix('api');
   await app.register(fastifyCookie as never, { secret: cfg.COOKIE_SECRET });

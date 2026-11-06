@@ -11,7 +11,7 @@ import { open, seal } from '../../common/secretbox';
 import { newTotpSecret, otpauthUrl, verifyTotp } from '../../common/totp';
 import { CONFIG, type Config } from '../../config';
 
-const MAX_FAILED = 5, LOCK_MIN = 15, RECOVERY_CODES = 10;
+const MAX_FAILED = 5, LOCK_MIN = 15, RECOVERY_CODES = 10, MAX_MFA_TRIES = 10;
 const normRecovery = (c: string) => c.replace(/[\s-]/g, '').toUpperCase();
 
 /** TOTP second factor for privileged staff. Secrets encrypted at rest; recovery codes hashed and single-use; codes cannot be replayed. */
@@ -33,14 +33,17 @@ export class MfaService {
   }
 
   private async failure(userId: string, actor: AuthUser, why: string, ip?: string): Promise<never> {
-    const cur = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { failedLogins: true } });
-    const failed = cur.failedLogins + 1;
-    await this.prisma.user.update({ where: { id: userId }, data: { failedLogins: failed, lockedUntil: failed >= MAX_FAILED ? new Date(Date.now() + LOCK_MIN * 60000) : null } });
+    // Atomic increment: a read-then-write lost concurrent failures, so parallel guesses never reached the lockout.
+    const { failedLogins: failed } = await this.prisma.user.update({ where: { id: userId }, data: { failedLogins: { increment: 1 } }, select: { failedLogins: true } });
+    if (failed >= MAX_FAILED) await this.prisma.user.update({ where: { id: userId }, data: { lockedUntil: new Date(Date.now() + LOCK_MIN * 60000) } });
     await this.audit.log({ actor, action: 'mfa.verify_failed', entity: 'user', entityId: userId, meta: { why, failed }, ip });
     this.metrics.authFailures.inc({ kind: 'mfa_invalid' });
     throw new AppError(401, 'INVALID_MFA_CODE', 'That code is not valid');
   }
   private async assertNotLocked(userId: string) {
+    // Atomic per-account cap on second-factor attempts, taken BEFORE any code is checked, so a burst of parallel guesses is refused up front
+    // (the lockout below is only reached after failures are recorded). 10 per 15 minutes is far above what a person needs.
+    if ((await this.kv.hit(`rl:mfa:${userId}`, LOCK_MIN * 60)) > MAX_MFA_TRIES) { this.metrics.authFailures.inc({ kind: 'mfa_rate_limited' }); throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again in a few minutes.'); }
     const r = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { lockedUntil: true } });
     if (r.lockedUntil && r.lockedUntil > new Date()) { this.metrics.authFailures.inc({ kind: 'mfa_locked' }); throw new AppError(423, 'ACCOUNT_LOCKED', 'Too many failed attempts. Try again later or contact the helpdesk.'); }
   }
@@ -121,5 +124,6 @@ export class MfaService {
       this.prisma.user.update({ where: { id: userId }, data: { totpSecretEnc: null, totpEnabledAt: null, totpLastStep: null } }),
       this.prisma.mfaRecoveryCode.deleteMany({ where: { userId } }),
     ]);
+    await this.kv.del(`rl:mfa:${userId}`).catch(() => undefined);   // a deliberate reset also lifts the attempt cap
   }
 }

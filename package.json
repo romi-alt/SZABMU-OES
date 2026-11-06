@@ -34,6 +34,7 @@
     "start:hostinger": "node scripts/hostinger-single-site.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@eslint/js": "^9.0.0",
     "@playwright/test": "^1.64.1",
     "eslint": "^9.0.0",
