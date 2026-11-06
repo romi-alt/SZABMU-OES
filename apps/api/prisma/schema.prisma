@@ -30,6 +30,104 @@ enum InstitutionType {
   ALLIED_HEALTH
   TEACHING_HOSPITAL
   AFFILIATED_INSTITUTE
+  NURSING_SCHOOL
+  HOSPITAL
+  REHABILITATION_INSTITUTE
+  HEALTH_SCIENCES_INSTITUTE
+  MEDICAL_DENTAL_COLLEGE
+  COLLEGE
+  INSTITUTE
+}
+
+/// Public/private sector of an institution. NULL = not established by a source.
+enum InstitutionSector {
+  PUBLIC
+  PRIVATE
+}
+
+/// INSTITUTION = a college, school, institute or hospital; ACADEMIC_UNIT = a verified university department/faculty/institute that runs programmes itself.
+enum InstitutionKind {
+  INSTITUTION
+  ACADEMIC_UNIT
+}
+
+/// Whether the directory shows the entry (listing) — independent of whether it operates, admits, or may examine.
+enum ListingStatus {
+  LISTED
+  NEEDS_VERIFICATION
+  HIDDEN
+}
+
+enum OperationalStatus {
+  OPERATING
+  UNKNOWN
+  CLOSED
+}
+
+/// Verification state of a programme or an institution-programme offering. LEGACY_UNVERIFIED = a relationship that existed in the data before the directory import.
+enum Verification {
+  VERIFIED
+  NEEDS_VERIFICATION
+  LEGACY_UNVERIFIED
+  UNLISTED
+}
+
+/// New-intake restriction on an offering. STOPPED never removes existing cohorts' academic or examination rights.
+enum IntakeStatus {
+  UNRESTRICTED
+  STOPPED
+}
+
+enum ShiftKind {
+  UNSPECIFIED
+  MORNING
+  EVENING
+}
+
+enum AdmissionsStatus {
+  OPEN
+  CLOSED
+}
+
+enum ClaimStatus {
+  VERIFIED
+  UNRESOLVED
+  DISCREPANCY
+}
+
+enum ClaimEntity {
+  INSTITUTION
+  PROGRAM
+  OFFERING
+  ALLOCATION
+  RESTRICTION
+  RELATIONSHIP
+  CURRICULUM
+}
+
+enum AwardingBodyKind {
+  UNIVERSITY
+  REGULATOR
+  PROFESSIONAL_COLLEGE
+  OTHER
+}
+
+/// AFFILIATION = offered through affiliated/constituent institutions; UNIVERSITY_CATALOGUE = a university-level catalogue entry with no institution offering yet.
+enum CatalogScope {
+  AFFILIATION
+  UNIVERSITY_CATALOGUE
+}
+
+enum ImportMode {
+  DRY_RUN
+  APPLY
+  ROLLBACK
+}
+
+enum ImportStatus {
+  RUNNING
+  COMPLETED
+  FAILED
 }
 
 enum Affiliation {
@@ -212,15 +310,33 @@ enum MessageStatus {
 // ───────────────────────── Organisation ─────────────────────────
 
 model Institution {
-  id          String          @id @default(uuid()) @db.Char(36)
-  code        String          @unique
-  name        String          @db.VarChar(255)
-  type        InstitutionType
-  affiliation Affiliation     @default(CONSTITUENT)
-  city        String?
-  active      Boolean         @default(true)
-  createdAt   DateTime        @default(now()) @db.DateTime(3)
-  updatedAt   DateTime        @updatedAt @db.DateTime(3)
+  id                String                       @id @default(uuid()) @db.Char(36)
+  code              String                       @unique
+  name              String                       @db.VarChar(255)
+  type              InstitutionType
+  affiliation       Affiliation                  @default(CONSTITUENT)
+  city              String?
+  active            Boolean                      @default(true)
+  createdAt         DateTime                     @default(now()) @db.DateTime(3)
+  updatedAt         DateTime                     @updatedAt @db.DateTime(3)
+  /// Directory fields (all nullable/defaulted: existing rows are valid unchanged).
+  abbreviation      String?                      @db.VarChar(40)
+  sector            InstitutionSector?
+  kind              InstitutionKind              @default(INSTITUTION)
+  region            String?                      @db.VarChar(100)
+  campusLabel       String?                      @db.VarChar(150)
+  listingStatus     ListingStatus                @default(LISTED)
+  operationalStatus OperationalStatus            @default(UNKNOWN)
+  /// Explicit flag for synthetic/demo records; excluded from real registration and production totals.
+  isDemo            Boolean                      @default(false)
+  /// Stable key used by the directory import (never derived from the name).
+  directoryKey      String?                      @unique @db.VarChar(80)
+  /// The name exactly as the official source publishes it.
+  sourceName        String?                      @db.VarChar(255)
+  lastVerifiedAt    DateTime?                    @db.DateTime(3)
+  /// Names of fields an administrator has edited; the import will not overwrite them.
+  lockedFields      Json?
+  offerings         InstitutionProgramOffering[]
 
   departments       Department[]
   users             UserInstitution[]
@@ -232,6 +348,8 @@ model Institution {
   incidents         Incident[]
   courseAssignments CourseAssignment[]
 
+  @@index([isDemo, kind])
+  @@index([sector, affiliation])
   @@map("institutions")
 }
 
@@ -248,16 +366,28 @@ model Department {
 }
 
 model Program {
-  id          String        @id @default(uuid()) @db.Char(36)
-  code        String        @unique
-  name        String        @db.VarChar(255)
-  level       String        @default("UNDERGRADUATE")
-  durationYrs Int           @default(5)
-  active      Boolean       @default(true)
-  courses     Course[]
-  students    Student[]
-  roster      RosterEntry[]
-  createdAt   DateTime      @default(now()) @db.DateTime(3)
+  id                 String                       @id @default(uuid()) @db.Char(36)
+  code               String                       @unique
+  name               String                       @db.VarChar(255)
+  level              String                       @default("UNDERGRADUATE")
+  durationYrs        Int                          @default(5)
+  active             Boolean                      @default(true)
+  /// Directory fields. `key` is a stable internal key (not an official code).
+  directoryKey       String?                      @unique @db.VarChar(60)
+  sourceTitle        String?                      @db.VarChar(255)
+  durationMonths     Int?
+  structure          String?                      @db.VarChar(20)
+  catalogScope       CatalogScope                 @default(AFFILIATION)
+  verificationStatus Verification                 @default(LEGACY_UNVERIFIED)
+  isDemo             Boolean                      @default(false)
+  lockedFields       Json?
+  offerings          InstitutionProgramOffering[]
+  aliases            ProgramAlias[]
+  curriculumDocs     CurriculumDocument[]
+  courses            Course[]
+  students           Student[]
+  roster             RosterEntry[]
+  createdAt          DateTime                     @default(now()) @db.DateTime(3)
 
   @@map("programs")
 }
@@ -270,6 +400,8 @@ model Course {
   title             String             @db.VarChar(255)
   semester          Int
   credits           Int                @default(3)
+  /// Synthetic course from the demo seed: never offered to real teachers/students.
+  isDemo            Boolean            @default(false)
   program           Program            @relation(fields: [programId], references: [id])
   questions         Question[]
   exams             Exam[]
@@ -416,6 +548,8 @@ model Student {
   profileCompletedAt   DateTime?             @db.DateTime(3)
   /// TRUE for students who chose their own institution/programme/semester. They cannot be enrolled or admitted to an examination until an administrator verifies them (sets it false).
   selfDeclared         Boolean               @default(false)
+  /// Only set where the offering has separate morning/evening allocations.
+  shift                ShiftKind?
   user                 User                  @relation(fields: [userId], references: [id])
   institution          Institution           @relation(fields: [institutionId], references: [id])
   program              Program               @relation(fields: [programId], references: [id])
@@ -1226,4 +1360,182 @@ model AttemptHeartbeat {
   @@index([examId, institutionId, t])
   @@index([t])
   @@map("attempt_heartbeats")
+}
+
+// ───────────────────────── Institution & programme directory ─────────────────────────
+// The directory separates: institution listing/operational status, programme verification, intake status, per-session admissions,
+// existing cohorts (students) and examination eligibility. A listed offering never opens admissions by itself.
+
+/// Who awards the qualification. Offerings awarded by anyone other than SZABMU are outside SZABMU examination eligibility.
+model AwardingBody {
+  id        String                       @id @default(uuid()) @db.Char(36)
+  key       String                       @unique @db.VarChar(40)
+  name      String                       @db.VarChar(255)
+  kind      AwardingBodyKind
+  /// TRUE only for SZABMU itself: the only awarding body whose offerings may sit SZABMU examinations.
+  isSzabmu  Boolean                      @default(false)
+  createdAt DateTime                     @default(now()) @db.DateTime(3)
+  offerings InstitutionProgramOffering[]
+
+  @@map("awarding_bodies")
+}
+
+/// A programme offered by an institution (or academic unit). Unique per pair; students reference the pair through institutionId + programId.
+model InstitutionProgramOffering {
+  id                         String               @id @default(uuid()) @db.Char(36)
+  institutionId              String               @db.Char(36)
+  programId                  String               @db.Char(36)
+  awardingBodyId             String               @db.Char(36)
+  verificationStatus         Verification         @default(NEEDS_VERIFICATION)
+  intakeStatus               IntakeStatus         @default(UNRESTRICTED)
+  /// First batch year the stop applies to, when a source establishes it. NULL = unknown (a retrieval date is not an effective date).
+  intakeStoppedFromBatchYear Int?
+  /// The programme title exactly as published for this institution.
+  sourceTitle                String?              @db.VarChar(255)
+  lockedFields               Json?
+  createdByRunId             String?              @db.Char(36)
+  createdAt                  DateTime             @default(now()) @db.DateTime(3)
+  updatedAt                  DateTime             @updatedAt @db.DateTime(3)
+  institution                Institution          @relation(fields: [institutionId], references: [id], onUpdate: Restrict)
+  program                    Program              @relation(fields: [programId], references: [id], onUpdate: Restrict)
+  awardingBody               AwardingBody         @relation(fields: [awardingBodyId], references: [id], onUpdate: Restrict)
+  allocations                OfferingAllocation[]
+  sessions                   OfferingSession[]
+
+  @@unique([institutionId, programId])
+  @@index([programId])
+  @@index([verificationStatus, intakeStatus])
+  @@map("institution_program_offerings")
+}
+
+/// Published annual seats for an offering, optionally per shift. Reference data only — never an enrolment limit.
+model OfferingAllocation {
+  id          String                     @id @default(uuid()) @db.Char(36)
+  offeringId  String                     @db.Char(36)
+  shift       ShiftKind                  @default(UNSPECIFIED)
+  /// NULL = unknown (distinct from zero).
+  annualSeats Int?
+  sourceId    String?                    @db.Char(36)
+  offering    InstitutionProgramOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([offeringId, shift])
+  @@map("offering_allocations")
+}
+
+/// Session-specific admissions configuration. Without a row nothing is open or limited; with one, CLOSED blocks new enrolment into that batch and seatLimit caps it.
+model OfferingSession {
+  id               String                     @id @default(uuid()) @db.Char(36)
+  offeringId       String                     @db.Char(36)
+  batchYear        Int
+  label            String?                    @db.VarChar(100)
+  admissionsStatus AdmissionsStatus           @default(CLOSED)
+  seatLimit        Int?
+  note             String?                    @db.Text
+  configuredById   String?                    @db.Char(36)
+  createdAt        DateTime                   @default(now()) @db.DateTime(3)
+  updatedAt        DateTime                   @updatedAt @db.DateTime(3)
+  offering         InstitutionProgramOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([offeringId, batchYear])
+  @@map("offering_sessions")
+}
+
+model DirectorySource {
+  id            String           @id @default(uuid()) @db.Char(36)
+  key           String           @unique @db.VarChar(80)
+  url           String           @db.VarChar(500)
+  title         String           @db.VarChar(255)
+  retrievedAt   DateTime         @db.DateTime(3)
+  /// SHA-256 of the normalised text that was checked, so a later re-check can tell whether the page changed.
+  contentSha256 String?          @db.Char(64)
+  note          String?          @db.Text
+  claims        DirectoryClaim[]
+
+  @@map("directory_sources")
+}
+
+/// A statement taken from a source about an institution, programme, offering, restriction or relationship, with its status. Claims are never inferred.
+model DirectoryClaim {
+  id            String          @id @default(uuid()) @db.Char(36)
+  claimKey      String          @unique @db.VarChar(191)
+  entityType    ClaimEntity
+  entityId      String?         @db.Char(36)
+  entityKey     String          @db.VarChar(191)
+  claimType     String          @db.VarChar(60)
+  text          String          @db.Text
+  status        ClaimStatus     @default(VERIFIED)
+  sourceId      String          @db.Char(36)
+  /// The session the claim applies to, when stated (e.g. a court order for 2026-27). NULL = not stated.
+  sessionLabel  String?         @db.VarChar(100)
+  /// When the claim takes effect, if a source says so. A retrieval date does not establish this.
+  effectiveFrom DateTime?       @db.Date
+  retrievedAt   DateTime        @db.DateTime(3)
+  importRunId   String?         @db.Char(36)
+  source        DirectorySource @relation(fields: [sourceId], references: [id], onUpdate: Restrict)
+
+  @@index([entityType, entityId])
+  @@index([status])
+  @@map("directory_claims")
+}
+
+model ProgramAlias {
+  id        String  @id @default(uuid()) @db.Char(36)
+  programId String  @db.Char(36)
+  alias     String  @db.VarChar(255)
+  note      String? @db.Text
+  sourceId  String? @db.Char(36)
+  program   Program @relation(fields: [programId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([programId, alias])
+  @@map("program_aliases")
+}
+
+/// An official curriculum document located for a programme. A located document does not mean subjects have been entered.
+model CurriculumDocument {
+  id           String   @id @default(uuid()) @db.Char(36)
+  programId    String?  @db.Char(36)
+  title        String   @db.VarChar(255)
+  url          String   @db.VarChar(500)
+  appliesTo    String?  @db.VarChar(150)
+  versionLabel String?  @db.VarChar(100)
+  sourceId     String   @db.Char(36)
+  retrievedAt  DateTime @db.DateTime(3)
+  program      Program? @relation(fields: [programId], references: [id], onUpdate: Restrict)
+
+  @@unique([url])
+  @@index([programId])
+  @@map("curriculum_documents")
+}
+
+model DirectoryImportRun {
+  id            String                  @id @default(uuid()) @db.Char(36)
+  version       String                  @db.VarChar(40)
+  mode          ImportMode
+  status        ImportStatus            @default(RUNNING)
+  actor         String                  @db.VarChar(120)
+  datasetSha256 String?                 @db.Char(64)
+  summary       Json?
+  error         String?                 @db.Text
+  startedAt     DateTime                @default(now()) @db.DateTime(3)
+  finishedAt    DateTime?               @db.DateTime(3)
+  changes       DirectoryImportChange[]
+
+  @@index([version, startedAt])
+  @@map("directory_import_runs")
+}
+
+/// What an applied import created or changed, with the previous values, so a rollback can undo exactly that and nothing created afterwards.
+model DirectoryImportChange {
+  id       String             @id @default(uuid()) @db.Char(36)
+  runId    String             @db.Char(36)
+  entity   String             @db.VarChar(40)
+  entityId String             @db.Char(36)
+  action   String             @db.VarChar(20)
+  before   Json?
+  after    Json?
+  run      DirectoryImportRun @relation(fields: [runId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@index([runId])
+  @@index([entity, entityId])
+  @@map("directory_import_changes")
 }
