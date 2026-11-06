@@ -6,6 +6,7 @@ import { page, parse, uuid } from '../../common/validate';
 import { TeacherRegistrationService } from './teacher-registration.service';
 import { TeacherService } from './teacher.service';
 import { TeacherAdminService } from './teacher-admin.service';
+import { BankReviewService } from './bank-review.service';
 
 const phone = z.string().trim().min(7).max(20);
 const assignmentReq = z.object({ institutionId: uuid, programId: uuid, semester: z.number().int().min(1).max(12), term: z.string().trim().regex(/^[A-Za-z0-9 _-]{3,30}$/), courseId: uuid });
@@ -61,6 +62,7 @@ export class TeacherController {
   @Perm('teacher.work') @Get('questions') listQ(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) {
     return this.t.listQuestions(u, parse(page.extend({ poolId: uuid.optional(), assignmentId: uuid.optional(), topic: z.string().max(120).optional(), difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(), status: z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED']).optional(), search: z.string().trim().max(100).optional() }), q));
   }
+  @Perm('teacher.work') @Get('questions/:id/versions') versionsQ(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.t.versions(u, id); }
   @Perm('teacher.work') @Get('questions/:id') getQ(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.t.getQuestion(u, id); }
   @Perm('teacher.work') @Put('questions/:id') updateQ(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.t.updateQuestion(u, id, parse(mcq, b), ip); }
   @Perm('teacher.work') @Delete('questions/:id') deleteQ(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Ip() ip: string) { return this.t.deleteQuestion(u, id, ip); }
@@ -80,4 +82,18 @@ export class TeacherAdminController {
   @Perm('teacher.manage') @Post(':userId/reinstate') @HttpCode(200) reinstate(@CurrentUser() u: AuthUser, @Param('userId', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.a.reinstate(u, id, parse(z.object({ note: z.string().trim().max(1000).optional() }), b).note, ip); }
   @Perm('teacher.manage') @Post('assignments/:id/decision') @HttpCode(200) decideA(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { const d = parse(decision, b); return this.a.decideAssignment(u, id, d.decision, d.note, ip); }
   @Perm('teacher.manage') @Post('assignments/:id/revoke') @HttpCode(200) revokeA(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.a.revokeAssignment(u, id, parse(reason, b).note, ip); }
+}
+
+const bankDecision = z.enum(['APPROVE', 'REJECT']);
+const bankReview = z.object({ decision: bankDecision.optional(), note: z.string().trim().max(2000).optional(), items: z.array(z.object({ questionId: uuid, decision: bankDecision, note: z.string().trim().max(2000).optional() })).min(1).max(500).optional() })
+  .refine((d) => !!d.decision !== !!d.items, { message: 'Send either a decision for the whole bank or a decision for each question' });
+
+/** Examiner / administrator side of teacher question banks (question.approve): queue, detail with answer keys, decisions. */
+@Controller('question-banks')
+export class QuestionBanksController {
+  constructor(private readonly b: BankReviewService) {}
+  @Perm('question.approve') @Get() list(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) { return this.b.list(u, parse(page.extend({ status: z.enum(['SUBMITTED', 'APPROVED', 'REJECTED']).optional(), search: z.string().trim().max(100).optional() }), q)); }
+  @Perm('question.approve') @Get(':id') detail(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.b.detail(u, id); }
+  @Perm('question.approve') @Get(':id/images/:imageId') image(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Param('imageId', ParseUUIDPipe) imageId: string) { return this.b.image(u, id, imageId); }
+  @Perm('question.approve') @Post(':id/review') @HttpCode(200) review(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.b.review(u, id, parse(bankReview, b), ip); }
 }

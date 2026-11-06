@@ -7,6 +7,7 @@ import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import type { Prisma } from '../../generated/prisma/client';
 import { CourseAccessService } from '../org/course-access.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { refreshBankStatus } from '../teachers/bank-status';
 
 export interface QuestionInput {
   courseId: string;
@@ -102,6 +103,7 @@ export class QuestionsService {
         include: { options: true },
       });
       await tx.questionVersion.create({ data: { questionId: made.id, version: made.version, changedById: u.id, snapshot: versionSnapshot(made) } });
+      if (made.poolId) await refreshBankStatus(tx, made.poolId);
       return made;
     });
     await this.audit.log({ actor: u, action: 'question.create', entity: 'question', entityId: q.id, institutionId, ip });
@@ -127,6 +129,7 @@ export class QuestionsService {
         include: { options: true },
       });
       await tx.questionVersion.create({ data: { questionId: id, version: nq.version, changedById: u.id, snapshot: versionSnapshot(nq) } });
+      if (nq.poolId) await refreshBankStatus(tx, nq.poolId);
     });
     await this.audit.log({ actor: u, action: 'question.update', entity: 'question', entityId: id, institutionId: q.institutionId, meta: { fromStatus: q.status }, ip });
     return this.load(u, id);
@@ -136,7 +139,7 @@ export class QuestionsService {
     const q = await this.load(u, id);
     if (authorOnly(u) && q.authorId !== u.id) throw forbidden('Only the author may submit this question');
     if (!['DRAFT', 'REJECTED'].includes(q.status)) throw conflict('BAD_STATE', `Cannot submit a ${q.status} question`);
-    await this.prisma.question.update({ where: { id }, data: { status: 'SUBMITTED', reviewNote: null } });
+    await this.prisma.$transaction(async (tx) => { await tx.question.update({ where: { id }, data: { status: 'SUBMITTED', reviewNote: null } }); if (q.poolId) await refreshBankStatus(tx, q.poolId); });
     await this.audit.log({ actor: u, action: 'question.submit', entity: 'question', entityId: id, institutionId: q.institutionId, ip });
     await this.notifications.notifyRole('EXAMINER', 'Question awaiting review', `${q.course.code}: a new question was submitted for approval.`, LINKS.questions);
     return { status: 'SUBMITTED' };
@@ -148,7 +151,7 @@ export class QuestionsService {
     if (q.authorId === u.id) throw forbidden('You cannot review your own question (four-eyes principle)');
     if (decision === 'REJECT' && !note) throw badRequest('A reason is required when rejecting');
     const status = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
-    await this.prisma.question.update({ where: { id }, data: { status, reviewNote: note, reviewedBy: u.id, reviewedAt: new Date() } });
+    await this.prisma.$transaction(async (tx) => { await tx.question.update({ where: { id }, data: { status, reviewNote: note, reviewedBy: u.id, reviewedAt: new Date() } }); if (q.poolId) await refreshBankStatus(tx, q.poolId, { by: u.id }); });
     await this.audit.log({ actor: u, action: `question.${decision.toLowerCase()}`, entity: 'question', entityId: id, institutionId: q.institutionId, meta: { note }, ip });
     await this.notifications.notify([q.authorId], `Question ${status.toLowerCase()}`, note ?? `Your ${q.course.code} question was ${status.toLowerCase()}.`, LINKS.questions);
     return { status };
@@ -157,7 +160,7 @@ export class QuestionsService {
   async retire(u: AuthUser, id: string, ip?: string) {
     const q = await this.load(u, id);
     if (authorOnly(u) && q.authorId !== u.id) throw forbidden();
-    await this.prisma.question.update({ where: { id }, data: { status: 'RETIRED' } });
+    await this.prisma.$transaction(async (tx) => { await tx.question.update({ where: { id }, data: { status: 'RETIRED' } }); if (q.poolId) await refreshBankStatus(tx, q.poolId); });
     await this.audit.log({ actor: u, action: 'question.retire', entity: 'question', entityId: id, institutionId: q.institutionId, ip });
     return { status: 'RETIRED' };
   }
