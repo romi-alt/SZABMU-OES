@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Inject, Post, Query, Req, Res } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { CurrentUser, Perm, Public, SESSION_COOKIE, type AuthUser } from '../../common/auth';
+import { CurrentUser, Perm, Public, SESSION_COOKIE, sessionCookieOptions, type AuthUser } from '../../common/auth';
 import { CONFIG, type Config } from '../../config';
 import { AuthService } from './auth.service';
 import { page, parse, uuid } from '../../common/validate';
@@ -25,7 +25,7 @@ export class RegistrationController {
     const d = parse(verifyDto, body); const r = await this.reg.verify(d.email, d.code, req.ip);
     // The student is signed in at once so they can complete the one-time profile without a second sign-in.
     const s = await this.auth.sessionFor(r.userId, req.ip, req.headers['user-agent']);
-    reply.setCookie(SESSION_COOKIE, s.token, { httpOnly: true, sameSite: 'lax', secure: this.cfg.NODE_ENV === 'production', path: '/', expires: s.expiresAt });
+    reply.setCookie(SESSION_COOKIE, s.token, sessionCookieOptions(this.cfg, req, s.expiresAt));
     return { ok: true, user: s.user };
   }
 
