@@ -219,6 +219,21 @@ export class OrgService {
     return { eligibleCohort: students.length, newlyEnrolled: r.count };
   }
 
+  /**
+   * Terms already in use for a course (from its examinations and from enrolments in the caller's scope), so staff choose an existing term
+   * instead of typing one (a typo silently creates an unrelated term — audit A-11). Counts are scoped like the enrolment list.
+   */
+  async courseTerms(u: AuthUser, courseId: string) {
+    const [exams, enr] = await Promise.all([
+      this.prisma.exam.groupBy({ by: ['term'], where: { courseId }, _count: { _all: true } }),
+      this.prisma.enrollment.groupBy({ by: ['term'], where: { courseId, student: { institutionId: scope.filter(u) } }, _count: { _all: true } }),
+    ]);
+    const terms = new Map<string, { term: string; exams: number; enrolled: number }>();
+    for (const e of exams) terms.set(e.term, { term: e.term, exams: e._count._all, enrolled: 0 });
+    for (const e of enr) terms.set(e.term, { ...(terms.get(e.term) ?? { term: e.term, exams: 0 }), enrolled: e._count._all });
+    return [...terms.values()].sort((a, b) => b.term.localeCompare(a.term));
+  }
+
   listEnrollments(u: AuthUser, q: { courseId: string; term: string; institutionId?: string }) {
     if (q.institutionId) scope.assert(u, q.institutionId);
     return this.prisma.enrollment.findMany({

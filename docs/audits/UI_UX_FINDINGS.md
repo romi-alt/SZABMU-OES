@@ -29,7 +29,7 @@ Severity: P1 misleads or blocks a core task / excludes users · P2 friction with
 | A-08 | P2 | Live monitor repeats "Report incident" per row; duplicate "Not started" | Open |
 | A-09 | P2 | "Withdraw…" on every roster row with equal weight | Open (the action itself is confirmed with a reason) |
 | A-10 | P2 | Audit trail labels are developer terms | Open |
-| A-11 | P2 | Enrolment: arbitrary default course, free-text term | Open |
+| A-11 | P2 | Enrolment: arbitrary default course, free-text term | **Fixed (term)**: term chosen from terms in use with exam/enrolment counts (`GET /courses/:id/terms`, campus-scoped); a typed new term is upper-cased and warned about when no exam uses it. Tests: `course-terms.test.ts`, `enrolment.spec.ts`. Default course still the first in the list |
 | A-13…A-18 | P3 | Breadcrumb repetition, duplicate links, cryptic headers, empty pages, sign-out icon only, sidebar height | Open |
 
 ## What was verified to work well (evidence)

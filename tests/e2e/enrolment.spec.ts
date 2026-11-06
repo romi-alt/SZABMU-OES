@@ -49,6 +49,18 @@ test.describe('Enrolment & eligibility', () => {
     }
   });
 
+  test('the term is chosen from terms in use (with counts); a typed term no exam uses is warned about (audit A-11)', async ({ page }) => {
+    await login(page, 'admin.a'); await page.goto('/enrolment');
+    await page.getByLabel('Course').selectOption({ label: 'MBBS-PATH-4 — Pathology' });
+    const term = page.getByRole('combobox', { name: /^Term/ }); await expect(term).toContainText(/2026-SPRING — 1 exam, \d+ enrolled/);
+    await expect(page.getByText(/No examination of this course uses the term/)).toHaveCount(0);
+    await term.selectOption('__other'); await page.getByLabel('New term').fill('2026-sprng');
+    await expect(page.getByLabel('New term')).toHaveValue('2026-SPRNG');
+    await expect(page.getByText('No examination of this course uses the term “2026-SPRNG” yet.', { exact: false })).toBeVisible();
+    await term.selectOption('2026-SPRING'); await expect(page.getByLabel('New term')).toHaveCount(0);
+    await expect(page.getByText(/No examination of this course uses the term/)).toHaveCount(0);
+  });
+
   test('a role without access gets a permission message, not a crash', async ({ page }) => {
     await login(page, 'student.a007'); await page.goto('/enrolment');
     await expect(page.getByTestId('error-forbidden')).toBeVisible(); await expect(page.getByText('This page hit a problem')).toHaveCount(0);
@@ -57,7 +69,7 @@ test.describe('Enrolment & eligibility', () => {
   test('API failure shows an actionable error and recovers after "Try again"', async ({ page }) => {
     await login(page, 'admin.a'); await open(page);
     await page.route('**/api/enrollments?*', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ code: 'INTERNAL', message: 'x' }) }));
-    await page.getByLabel('Term').fill('2026-SPRING '); await page.getByLabel('Term').fill('2026-SPRING');          // force a new request
+    await page.getByLabel('Course').selectOption({ label: 'BSN-FUND-1 — Fundamentals of Nursing' }); await page.getByLabel('Course').selectOption({ label: 'MBBS-PATH-4 — Pathology' });   // force a new request
     await expect(page.getByTestId('error-server')).toBeVisible();
     await page.unroute('**/api/enrollments?*'); await page.getByRole('button', { name: 'Try again' }).click();
     await expect(row(page)).toBeVisible();
