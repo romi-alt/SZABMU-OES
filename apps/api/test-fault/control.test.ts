@@ -1,14 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Api, DisposablePg, DisposableRedis, REPO_DIR, Student, migrateAndSeed, sleep, until } from './harness';
+import { Api, DisposableMariaDb, DisposableRedis, REPO_DIR, Student, migrateAndSeed, sleep, until, type DbPool } from './harness';
 
 /**
  * Exam-control resilience on DISPOSABLE infrastructure: Redis lost, an API process killed and restarted, two workers, leader failover.
- * Invariants: saving continues; the API itself refuses expired writes; the PostgreSQL-driven reconciler still seals expired attempts exactly
+ * Invariants: saving continues; the API itself refuses expired writes; the database-driven reconciler still seals expired attempts exactly
  * once; control events stay durable (outbox) and reach SSE clients from the database while Redis is down, and are published after it returns.
  */
-let db: DisposablePg; let redis: DisposableRedis; let api: Api; let apiB: Api | undefined; let pool: pg.Pool; let examId: string; let qids: string[] = []; let infra: { DATABASE_URL: string; REDIS_URL: string };
+let db: DisposableMariaDb; let redis: DisposableRedis; let api: Api; let apiB: Api | undefined; let pool: DbPool; let examId: string; let qids: string[] = []; let infra: { DATABASE_URL: string; REDIS_URL: string };
 const cid = () => 'c' + Math.random().toString(36).slice(2, 12);
 const WORKERS = { RUN_WORKERS: 'true', LIFECYCLE_INTERVAL_MS: '700', LIFECYCLE_LEASE_SECONDS: '4' };
 
@@ -29,14 +28,14 @@ async function sse(base: string, path: string, cookie: string, lastId?: number) 
 
 beforeAll(async () => {
   execFileSync('npm', ['run', 'build:shared'], { cwd: REPO_DIR, stdio: 'pipe' }); execFileSync('npm', ['run', 'build', '-w', '@oes/api'], { cwd: REPO_DIR, stdio: 'pipe' });
-  db = new DisposablePg(); await db.init(); redis = new DisposableRedis(); await redis.start(); infra = { DATABASE_URL: db.url, REDIS_URL: redis.url };
+  db = new DisposableMariaDb(); await db.init(); redis = new DisposableRedis(); await redis.start(); infra = { DATABASE_URL: db.url, REDIS_URL: redis.url };
   process.env.SEED_STUDENTS_PER_CAMPUS = '10'; migrateAndSeed(infra);
   api = new Api(infra, 'dist/main.js', WORKERS); await api.start(); pool = db.pool();
   examId = (await pool.query(`SELECT id FROM exams WHERE code = 'MBBS-PATH-MT'`)).rows[0].id;
   qids = (await pool.query(`SELECT id FROM exam_questions WHERE "examId" = $1 ORDER BY position`, [examId])).rows.map((r) => r.id);
   await pool.query(`UPDATE exams SET "suspendTimePolicy" = 'FREEZE_CLOCK', "controlPolicyApprovedAt" = clock_timestamp(), "controlPolicyApprovedBy" = (SELECT id FROM users WHERE email LIKE 'super.admin@%')`);
 }, 300_000);
-afterAll(async () => { try { await db?.closePools(); await apiB?.kill(); await api?.kill(); await redis?.kill(); db?.destroy(); } finally { db?.errors.assertClean(); } });
+afterAll(async () => { try { await db?.closePools(); await apiB?.kill(); await api?.kill(); await redis?.kill(); await db?.destroy(); } finally { db?.errors.assertClean(); } });
 
 describe('Redis lost while an examination is running', () => {
   it('answer saving continues; the database-driven reconciler seals an expired attempt exactly once; control events stay durable and reach SSE from the database; they are published when Redis returns', async () => {
@@ -53,7 +52,7 @@ describe('Redis lost while an examination is running', () => {
 
     await expire([a.attemptId]);                                                // 2. the deadline passes with Redis down
     const late = await put(a, 2, 1, 'C'); expect(late.status).toBe(409); expect(late.body.code).toBe('TIME_EXPIRED');                 // the API refuses by itself, whether or not any worker has run
-    await until('auto-submit by the PostgreSQL reconciler', async () => (await status(a.attemptId)).status === 'AUTO_SUBMITTED', 20_000, 250);
+    await until('auto-submit by the database reconciler', async () => (await status(a.attemptId)).status === 'AUTO_SUBMITTED', 20_000, 250);
     expect((await status(a.attemptId)).receiptCode).toMatch(/^RC-/); expect(await sealedEvents(a.attemptId)).toBe(1);
     await sleep(2500); expect(await sealedEvents(a.attemptId)).toBe(1);        // further reconciler passes never seal it twice
 
@@ -88,7 +87,7 @@ describe('API process killed and restarted with a backlog', () => {
     for (const s of x) { expect(await sealedEvents(s.attemptId)).toBe(1); expect((await pool.query(`SELECT "selectedLabel" FROM attempt_answers WHERE "attemptId" = $1 AND "examQuestionId" = $2`, [s.attemptId, qids[0]])).rows[0].selectedLabel).toBe('D'); }
     const cce2 = await new Student(api.base, 'cce').login();
     const s2 = await sse(api.base, `/invigilation/exams/${examId}/stream`, cce2.cookie, cursor0);               // reconnect with the cursor from before the crash
-    const replayed = await s2.waitFor((f) => f.event === 'DEADLINE_EXTENDED'); expect(replayed.id).toBeGreaterThan(cursor0);   // missed events are replayed from PostgreSQL
+    const replayed = await s2.waitFor((f) => f.event === 'DEADLINE_EXTENDED'); expect(replayed.id).toBeGreaterThan(cursor0);   // missed events are replayed from the database
     const stats = await s2.waitFor((f) => f.event === 'stats'); expect(stats.data.cursor).toBeGreaterThanOrEqual(cursor0);
     s2.close();
   });

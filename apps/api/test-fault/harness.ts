@@ -1,21 +1,22 @@
 /**
  * Fault-injection harness. Everything here runs on DISPOSABLE infrastructure created under a fresh temp directory:
- * its own PostgreSQL 16 cluster (random port, trust auth, 127.0.0.1 only), its own Redis (random port) and its own API
- * processes. Child processes receive an explicit minimal environment, never this process's DATABASE_URL/REDIS_URL,
- * so these tests cannot reach the shared development/test databases or any production system.
+ * its own MariaDB server (random port, 127.0.0.1 only, as in production: READ COMMITTED, InnoDB with a flush at every commit),
+ * its own Redis (random port) and its own API processes. Child processes receive an explicit minimal environment, never this
+ * process's DATABASE_URL/REDIS_URL, so these tests cannot reach the shared development/test databases or any production system.
+ * (Ported from PostgreSQL in the 2026-11 audit, T-QA-01. `pool().query` accepts the PostgreSQL-style SQL the tests were written in
+ * — `$n` placeholders, `::casts`, `clock_timestamp()`, `interval '…'`, `= ANY($n)`, `IS NOT DISTINCT FROM` — and runs it on MariaDB.)
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import pg from 'pg';
+import mariadb, { type Pool } from 'mariadb';
 import Redis from 'ioredis';
 import { PoolErrorPolicy } from './pool-errors';
 
 export const API_DIR = path.resolve(__dirname, '..');
 export const REPO_DIR = path.resolve(API_DIR, '../..');
-const PG_BIN = process.env.PG_BIN ?? '/usr/lib/postgresql/16/bin';
 export const DOMAIN = 'demo.szabmu.invalid';
 export const PASSWORD = 'Demo-Passw0rd-2026!';
 
@@ -28,43 +29,71 @@ export async function until<T>(what: string, fn: () => Promise<T | false | undef
 export const freePort = () => new Promise<number>((resolve, reject) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = (s.address() as net.AddressInfo).port; s.close(() => resolve(p)); }); s.on('error', reject); });
 
 const isRoot = process.getuid?.() === 0;
-function asPg(cmd: string, args: string[], opts: { input?: string } = {}) {
-  // PostgreSQL refuses to run as root; use the postgres OS user in this sandbox.
-  return isRoot ? execFileSync('runuser', ['-u', 'postgres', '--', cmd, ...args], { stdio: 'pipe', ...opts }) : execFileSync(cmd, args, { stdio: 'pipe', ...opts });
-}
+const MARIADB_BIN = process.env.MARIADB_BIN;
+const exe = (n: string) => (MARIADB_BIN ? path.join(MARIADB_BIN, n) : n);
+const SESSION_INIT = ["SET time_zone = '+00:00'", "SET SESSION sql_mode = CONCAT_WS(',', @@SESSION.sql_mode, 'ANSI_QUOTES', 'STRICT_TRANS_TABLES')"];
 
-export class DisposablePg {
+/** Translates the PostgreSQL dialect used by the fault tests into MariaDB, expanding `$n` (repeatable) into positional `?`. */
+export function toMariaDb(sql: string, params: unknown[] = []): { sql: string; params: unknown[] } {
+  const out: unknown[] = [];
+  let q = sql
+    .replace(/clock_timestamp\(\)/gi, 'NOW(6)')
+    .replace(/interval '(\d+) (second|minute|hour|day)s?'/gi, (_m, n, u) => `INTERVAL ${n} ${u.toUpperCase()}`)
+    .replace(/IS NOT DISTINCT FROM/gi, '<=>');
+  q = q.replace(/= ANY\(\$(\d+)(::\w+\[\])?\)/g, (_m, n) => { const arr = params[Number(n) - 1] as unknown[]; out.push(...arr); return `IN (${arr.map(() => '?').join(',') || 'NULL'})`; });
+  q = q.replace(/::\w+(\[\])?/g, '');
+  // remaining placeholders, in order of appearance (ANY() expansions above were consumed first: they never mix in one statement here)
+  q = q.replace(/\$(\d+)/g, (_m, n) => { out.push(params[Number(n) - 1]); return '?'; });
+  return { sql: q, params: out };
+}
+export interface DbPool { query<T = any>(sql: string, params?: unknown[]): Promise<{ rows: T[] }>; end(): Promise<void> }
+
+export class DisposableMariaDb {
   readonly dir = mkdtempSync(path.join(os.tmpdir(), 'oes-fault-'));
   port = 0; readonly db = 'fault_oes';
   /** Classifies errors from pools handed out by `pool()`: connection loss is expected only inside a declared outage. */
   readonly errors = new PoolErrorPolicy();
-  private readonly pools = new Set<pg.Pool>();
+  private readonly pools = new Set<Pool>();
+  private proc?: ChildProcess;
   private get data() { return path.join(this.dir, 'data'); }
-  get url() { return `postgresql://oes@127.0.0.1:${this.port}/${this.db}`; }
-  get adminUrl() { return `postgresql://oes@127.0.0.1:${this.port}/postgres`; }
+  private get sock() { return path.join(this.dir, 'run', 'm.sock'); }
+  private get pidFile() { return path.join(this.dir, 'run', 'm.pid'); }
+  get url() { return `mysql://oes:fault-pw@127.0.0.1:${this.port}/${this.db}`; }
 
   async init() {
-    chmodSync(this.dir, 0o755);
-    if (isRoot) execFileSync('chown', ['postgres:postgres', this.dir]);
-    mkdirSync(path.join(this.dir, 'sock'), { mode: 0o777 }); if (isRoot) execFileSync('chown', ['postgres:postgres', path.join(this.dir, 'sock')]);
-    asPg(`${PG_BIN}/initdb`, ['-D', this.data, '-U', 'oes', '--auth=trust', '-E', 'UTF8', '--locale=C']);
+    chmodSync(this.dir, 0o755); mkdirSync(path.join(this.dir, 'run'), { mode: 0o777 });
+    if (isRoot) execFileSync('chown', ['-R', 'mysql:mysql', this.dir]);
+    execFileSync(exe('mariadb-install-db'), [...(isRoot ? ['--user=mysql'] : []), `--datadir=${this.data}`, '--auth-root-authentication-method=socket'], { stdio: 'pipe' });
     this.port = await freePort();
     await this.start();
-    const c = new pg.Client({ connectionString: this.adminUrl }); await c.connect();
-    await c.query(`CREATE DATABASE ${this.db}`); await c.end();
+    const root = isRoot ? ['-uroot'] : [];
+    execFileSync(exe('mariadb'), ['-S', this.sock, ...root, '-e',
+      `CREATE DATABASE ${this.db} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER 'oes'@'127.0.0.1' IDENTIFIED BY 'fault-pw'; GRANT ALL ON *.* TO 'oes'@'127.0.0.1'; FLUSH PRIVILEGES;`], { stdio: 'pipe' });
   }
   async start() {
-    asPg(`${PG_BIN}/pg_ctl`, ['-D', this.data, '-l', path.join(this.dir, 'pg.log'), '-w', '-t', '60', '-o',
-      `-p ${this.port} -c listen_addresses=127.0.0.1 -c unix_socket_directories=${path.join(this.dir, 'sock')} -c max_connections=100 -c fsync=on -c synchronous_commit=on -c full_page_writes=on`, 'start']);
+    const args = [`--datadir=${this.data}`, `--port=${this.port}`, '--bind-address=127.0.0.1', `--socket=${this.sock}`, `--pid-file=${this.pidFile}`,
+      '--transaction-isolation=READ-COMMITTED', '--max-connections=200', '--log-bin-trust-function-creators=1', '--skip-log-bin',
+      '--innodb-flush-log-at-trx-commit=1', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci', '--innodb-buffer-pool-size=128M', `--log-error=${path.join(this.dir, 'err.log')}`];
+    this.proc = isRoot ? spawn('runuser', ['-u', 'mysql', '--', exe('mariadbd'), ...args], { stdio: 'ignore' }) : spawn(exe('mariadbd'), args, { stdio: 'ignore' });
+    await until('mariadb', async () => { const c = await mariadb.createConnection({ host: '127.0.0.1', port: this.port, user: 'root', socketPath: this.sock, connectTimeout: 1000 }).catch(() => null); if (!c) return false; await c.end(); return true; }, 60_000, 200);
     this.errors.endOutage();
   }
-  /** Simulates a server crash: no shutdown checkpoint; the next start performs WAL crash recovery. */
-  crash() { this.errors.beginOutage(); asPg(`${PG_BIN}/pg_ctl`, ['-D', this.data, '-m', 'immediate', '-w', '-t', '60', 'stop']); }
-  stop() { try { asPg(`${PG_BIN}/pg_ctl`, ['-D', this.data, '-m', 'fast', '-w', '-t', '60', 'stop']); } catch { /* already stopped */ } }
-  pool() { const p = new pg.Pool({ connectionString: this.url, max: 4 }); p.on('error', this.errors.handler); this.pools.add(p); return p; }
+  private serverPid(): number | null { try { return Number(readFileSync(this.pidFile, 'utf8').trim()) || null; } catch { return null; } }
+  private async waitGone(pid: number) { await until('mariadb exit', async () => { try { process.kill(pid, 0); return false; } catch { return true; } }, 60_000, 100); }
+  /** Simulates a server crash: SIGKILL, no shutdown; the next start performs InnoDB crash recovery from the redo log. */
+  async crash() { this.errors.beginOutage(); const pid = this.serverPid(); if (pid) { process.kill(pid, 'SIGKILL'); await this.waitGone(pid); } }
+  async stop() { const pid = this.serverPid(); if (!pid) return; try { process.kill(pid, 'SIGTERM'); await this.waitGone(pid); } catch { /* already stopped */ } }
+  pool(): DbPool {
+    const p = mariadb.createPool({ host: '127.0.0.1', port: this.port, user: 'oes', password: 'fault-pw', database: this.db, connectionLimit: 4, initSql: SESSION_INIT, bigIntAsNumber: true, decimalAsNumber: true, acquireTimeout: 20_000 });
+    this.pools.add(p);   // the mariadb pool has no 'error' event: a lost connection surfaces as an error of the query that used it
+    return {
+      query: async (sql, params) => { const t = toMariaDb(sql, params); const r = await p.query(t.sql, t.params); return { rows: Array.isArray(r) ? r : [] }; },
+      end: () => p.end(),
+    };
+  }
   /** Ends every pool handed out by `pool()`; a pool that is already broken must not mask the real test result. */
   async closePools() { await Promise.all([...this.pools].map((p) => p.end().catch(() => undefined))); this.pools.clear(); }
-  destroy() { this.stop(); rmSync(this.dir, { recursive: true, force: true }); }
+  async destroy() { await this.stop(); rmSync(this.dir, { recursive: true, force: true }); }
 }
 
 export class DisposableRedis {
@@ -86,7 +115,7 @@ export class DisposableRedis {
 export interface InfraEnv { DATABASE_URL: string; REDIS_URL: string }
 function childEnv(i: InfraEnv, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   // Hard guard: never run against the shared dev/test services.
-  if (/:5433\//.test(i.DATABASE_URL) || /:6390\b/.test(i.REDIS_URL) || !/127\.0\.0\.1/.test(i.DATABASE_URL)) throw new Error('refusing to run fault injection against shared infrastructure');
+  if (/:(3306|3307|5433)\//.test(i.DATABASE_URL) || /:6390\b/.test(i.REDIS_URL) || !/127\.0\.0\.1/.test(i.DATABASE_URL)) throw new Error('refusing to run fault injection against shared infrastructure');
   return {
     PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: 'development', ...i,
     API_HOST: '127.0.0.1', WEB_ORIGIN: 'http://localhost:3000', COOKIE_SECRET: 'fault-test-cookie-secret-0123456789abcdef', RECEIPT_SECRET: 'fault-test-receipt-secret-0123456789abcdef',
@@ -152,4 +181,4 @@ export class Student {
   }
 }
 
-export function readLog(db: DisposablePg) { try { return readFileSync(path.join(db.dir, 'pg.log'), 'utf8'); } catch { return ''; } }
+export function readLog(db: DisposableMariaDb) { try { return readFileSync(path.join(db.dir, 'err.log'), 'utf8'); } catch { return ''; } }
