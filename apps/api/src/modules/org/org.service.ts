@@ -15,6 +15,9 @@ export const ATTENDANCE_THRESHOLD = 75; // policy P-06
 
 export const tempPassword = () => `Tmp-${randomBytes(9).toString('base64url')}-9a`;
 
+/** Institution fields the directory import writes; an administrator's edit to one of them is locked against re-import. */
+const IMPORT_OWNED = ['name', 'abbreviation', 'sector', 'affiliation', 'type', 'kind', 'city', 'region', 'campusLabel'];
+
 @Injectable()
 export class OrgService {
   constructor(private readonly prisma: PrismaService, private readonly kv: KvService, private readonly audit: AuditService) {}
@@ -42,7 +45,10 @@ export class OrgService {
       if (prev !== next) { changes[key] = { from: prev, to: next }; data[key] = next; }
     }
     if (!Object.keys(changes).length) return current;
-    const i = await this.prisma.institution.update({ where: { id }, data: data as Prisma.InstitutionUpdateInput });
+    // A field an administrator edits is locked against the directory import: a re-run reports it but never overwrites it.
+    const owned = Object.keys(changes).filter((k) => IMPORT_OWNED.includes(k));           // `active` and `code` belong to the system, not to the import
+    const lockedFields = [...new Set([...(Array.isArray(current.lockedFields) ? (current.lockedFields as string[]) : []), ...owned])];
+    const i = await this.prisma.institution.update({ where: { id }, data: { ...(data as Prisma.InstitutionUpdateInput), ...(owned.length ? { lockedFields } : {}) } });
     await this.audit.log({ actor: u, action: 'institution.update', entity: 'institution', entityId: id, institutionId: id, meta: { changes } as never, ip });
     return i;
   }

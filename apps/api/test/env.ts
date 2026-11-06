@@ -12,4 +12,5 @@ if (process.env.OES_TEST_KV === 'database') delete process.env.REDIS_URL;
 else process.env.REDIS_URL = (process.env.REDIS_URL ?? 'redis://localhost:6390').replace(/\/\d+$/, '') + '/1';
 process.env.RUN_WORKERS = 'false';
 process.env.DEV_EXPOSE_CODES = 'true';
+process.env.DEMO_INSTITUTIONS_VISIBLE = process.env.DEMO_INSTITUTIONS_VISIBLE ?? 'true';   // the demo universe is what the suite runs on; tests of the real-site behaviour set it to 'false'
 process.env.WEB_ORIGIN = 'http://localhost:3000';
