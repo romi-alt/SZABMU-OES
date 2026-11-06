@@ -15,7 +15,7 @@ Medium (weakened control, needs extra conditions) · Low (hygiene, accuracy).
 | SEC-03 | Medium | Password-reset code: parallel guesses bypass the 5-guess limit | Verified fixed |
 | SEC-04 | Medium | Password-reset codes can be re-minted without limit by rotating IP addresses | Verified fixed |
 | SEC-01 | Medium | Session cookie issued without `Secure` on the HTTPS demo | Verified fixed |
-| SEC-08 | Medium | Client IP taken from a forgeable `X-Forwarded-For` (`trustProxy: true`) | Open — needs the real proxy hop count on Hostinger |
+| SEC-08 | Medium | Client IP taken from a forgeable `X-Forwarded-For` (`trustProxy: true`) | Fix implemented (`TRUST_PROXY=<hop count>`); **activation needs the real hop count on Hostinger** |
 | SEC-02 | Low | Integrity-event `detail` unbounded and events not rate-limited | Verified fixed |
 | SEC-05 | Low | Password-reset audit entry records every actor as `STUDENT` | Verified fixed |
 | SEC-09 | Low | Cached session (≤120 s) can outlive natural expiry | Open (accepted, documented) |
@@ -68,7 +68,8 @@ Regression tests: `apps/api/test/audit-hardening.test.ts` (SEC-01…07). Run: `c
 - **Evidence:** with `trustProxy: true` Fastify trusts every hop and takes the left-most `X-Forwarded-For` value, which the client controls. Per-IP limits
   (`rl:login:ip`, `rl:reg:verify`, `rl:treg:verify`, `rl:forgot:<email>:<ip>`, public verify) and the IP written to the audit log can therefore be chosen by the caller.
   Already listed as release blocker B-06. **Mitigation added in this audit:** every brute-force-sensitive flow now also has a per-account atomic limit that does not use the IP (SEC-03/04/06/07; sign-in already had `rl:login:id`).
-- **Proposed fix:** accept a hop count (`TRUST_PROXY=1|2`) and set it to the number of proxies Hostinger actually places in front of Node. Needs a measurement on the live host (send a known `X-Forwarded-For` and log what arrives) — **requires approval to deploy a diagnostic**.
+- **Fix (implemented):** `TRUST_PROXY` also accepts a hop count N (`config.ts` `trustProxySetting`): exactly the N nearest proxies are trusted. Fastify 5's numeric `trustProxy` did not move past the socket address in testing, so a function `(addr, hop) => hop < N` is used. Test SEC-08 shows `true` returns the forged address and `1` the address the proxy saw.
+- **Still needed:** measure how many proxies Hostinger places in front of Node (send a known `X-Forwarded-For`, observe `req.ips` in a log) and set `TRUST_PROXY` to that number — needs deploy approval.
 
 ## SEC-02 — Unbounded integrity-event detail, no rate limit (Low)
 - **Evidence:** `eventDto.detail = z.record(z.string(), z.unknown())` (body limit 2 MB) stored verbatim in `attempt_events`; original code accepted a 5 000-character detail (HTTP 200).

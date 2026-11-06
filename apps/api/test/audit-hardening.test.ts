@@ -128,3 +128,21 @@ describe('SEC-07: the second factor cannot be brute-forced with parallel guesses
     expect((await attacker.get('/exams')).status).toBe(403);
   });
 });
+
+describe('SEC-08: client address behind a proxy', () => {
+  it('TRUST_PROXY accepts true, false or a hop count; a hop count takes the address the trusted proxy saw, not a client-supplied one', async () => {
+    const { trustProxySetting } = await import('../src/config');
+    const Fastify = (await import('fastify')).default;
+    expect([trustProxySetting('true'), trustProxySetting('false')]).toEqual([true, false]);
+    const ipWith = async (trustProxy: ReturnType<typeof trustProxySetting>) => {
+      const f = Fastify({ trustProxy }); f.get('/ip', async (req) => ({ ip: req.ip }));
+      // the client forges "6.6.6.6"; the single real proxy (remote 10.0.0.1) appends the address it actually saw, 203.0.113.9
+      const r = await f.inject({ method: 'GET', url: '/ip', remoteAddress: '10.0.0.1', headers: { 'x-forwarded-for': '6.6.6.6, 203.0.113.9' } }); await f.close();
+      return (JSON.parse(r.body) as { ip: string }).ip;
+    };
+    expect(await ipWith(true)).toBe('6.6.6.6');        // trusting every hop: the forged value wins (the SEC-08 problem)
+    expect(await ipWith(trustProxySetting('1'))).toBe('203.0.113.9');   // one trusted hop: the address the proxy saw
+    expect(await ipWith(trustProxySetting('2'))).toBe('6.6.6.6');       // (two real proxies would each append their own address)
+    expect(await ipWith(false)).toBe('10.0.0.1');
+  });
+});
