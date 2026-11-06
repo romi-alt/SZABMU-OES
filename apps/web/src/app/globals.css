@@ -509,3 +509,12 @@ a.auth-btn, a.auth-btn:hover { color: #fff; }
 .signout-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; background: var(--white); color: var(--ink-2); }
 .signout-btn:hover:not(:disabled) { color: var(--maroon); border-color: var(--maroon); }
 .tbl .code { white-space: nowrap; }
+
+/* UI audit A-04: on phones, long tables show the key columns and fold the rest behind a per-row "Show details" toggle */
+.tbl th.m-toggle, .tbl td.m-toggle { display: none; }
+@media (max-width: 640px) {
+  .tbl-wrap .tbl td.m-more { display: none; }
+  .tbl-wrap .tbl tr.open td.m-more { display: flex; }
+  .tbl-wrap .tbl td.m-toggle { display: flex; justify-content: flex-start; padding: 4px 0 6px; }
+  .tbl-wrap .tbl td.m-toggle .btn-link { min-height: 32px; padding: 4px 0; }
+}
