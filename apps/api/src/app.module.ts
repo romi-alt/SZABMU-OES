@@ -18,6 +18,8 @@ import { OnboardingController } from './modules/auth/onboarding.controller';
 import { TeacherRegistrationService } from './modules/teachers/teacher-registration.service';
 import { TeacherService } from './modules/teachers/teacher.service';
 import { BankReviewService } from './modules/teachers/bank-review.service';
+import { DirectoryController } from './modules/directory/directory.controller';
+import { DirectoryService } from './modules/directory/directory.service';
 import { TeacherAdminService } from './modules/teachers/teacher-admin.service';
 import { TeacherRegistrationController, TeacherController, TeacherAdminController, QuestionBanksController } from './modules/teachers/teachers.controller';
 import { AuthController } from './modules/auth/auth.controller';
@@ -47,11 +49,11 @@ import { ExamControlService } from './modules/control/control.service';
 import { ExamControlController } from './modules/control/control.controller';
 
 @Module({
-  controllers: [AuthController, RegistrationController, OnboardingController, TeacherRegistrationController, TeacherController, TeacherAdminController, QuestionBanksController, OrgController, CourseAssignmentsController, ExamsController, DeliveryController, ResultsController, InvigilationController, ReportsController, ExamControlController, HealthController, MetricsController],
+  controllers: [AuthController, RegistrationController, OnboardingController, TeacherRegistrationController, TeacherController, TeacherAdminController, QuestionBanksController, DirectoryController, OrgController, CourseAssignmentsController, ExamsController, DeliveryController, ResultsController, InvigilationController, ReportsController, ExamControlController, HealthController, MetricsController],
   providers: [
     { provide: CONFIG, useFactory: () => loadConfig() },
     PrismaService, KvService, QueuesService, MailService, MetricsService, AuditService, NotificationsService,
-    AuthService, RegistrationService, OnboardingService, TeacherRegistrationService, TeacherService, TeacherAdminService, BankReviewService, MfaService, OrgService, CourseAccessService, QuestionsService, ExamsService, DeliveryService, ResultsService, InvigilationService, ReportsService, ExamEventsService, MonitorService, LifecycleService, ExamControlService, JobsService,
+    AuthService, RegistrationService, OnboardingService, TeacherRegistrationService, TeacherService, TeacherAdminService, BankReviewService, DirectoryService, MfaService, OrgService, CourseAccessService, QuestionsService, ExamsService, DeliveryService, ResultsService, InvigilationService, ReportsService, ExamEventsService, MonitorService, LifecycleService, ExamControlService, JobsService,
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],

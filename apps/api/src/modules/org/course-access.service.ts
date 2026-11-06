@@ -4,6 +4,7 @@ import { PrismaService } from '../../infra/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { scope, type AuthUser } from '../../common/auth';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
+import { assertOffered } from '../../directory/rules';
 
 export interface CoursePair { courseId: string; institutionId: string; term?: string | null }
 
@@ -68,9 +69,10 @@ export class CourseAccessService {
     scope.assert(u, d.institutionId);
     const [target, course] = await Promise.all([
       this.prisma.user.findUnique({ where: { id: d.userId }, select: { id: true, role: true, active: true, institutions: { select: { institutionId: true } } } }),
-      this.prisma.course.findUnique({ where: { id: d.courseId }, select: { id: true } }),
+      this.prisma.course.findUnique({ where: { id: d.courseId }, select: { id: true, programId: true } }),
     ]);
     if (!course) throw notFound('Course');
+    await assertOffered(this.prisma, d.institutionId, course.programId);   // the institution must offer the subject's programme
     if (!target || target.role !== 'LECTURER' || !target.active) throw badRequest('The user must be an active lecturer');
     if (!target.institutions.some((i) => i.institutionId === d.institutionId)) throw badRequest('The lecturer does not belong to that institution');
     try {
