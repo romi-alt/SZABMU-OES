@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { del, get, post, put, useGet } from '@/api';
+import { del, fmtDT, get, post, put, useGet } from '@/api';
 import { mcqRowsFromCsv, mcqRowsFromTable, MCQ_COLUMNS, MCQ_EXAMPLE, MCQ_TEMPLATE, type McqImportRow } from '@/csv';
 import { MAX_XLSX_BYTES, readXlsx, writeXlsx, XlsxError } from '@/xlsx-lite';
 import { useUrlState } from '@/url-state';
@@ -11,6 +11,8 @@ const downloadBlob = (name: string, blob: Blob) => { const a = document.createEl
 const download = (name: string, text: string, type = 'text/csv;charset=utf-8') => downloadBlob(name, new Blob([text], { type }));
 const BLOOM = ['REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYZE', 'EVALUATE', 'CREATE'] as const;
 const MAX_IMAGE_BYTES = 1_000_000;
+const BANK_LABEL: Record<string, string> = { EMPTY: 'Empty', DRAFT: 'Draft', SUBMITTED: 'Under review', REJECTED: 'Returned for changes', APPROVED: 'Approved' };
+const BANK_TONE: Record<string, string> = { EMPTY: 'grey', DRAFT: 'grey', SUBMITTED: 'amber', REJECTED: 'red', APPROVED: 'green' };
 interface Draft { id?: string; stem: string; options: string[]; correctIndex: number; explanation: string; difficulty: 'EASY' | 'MEDIUM' | 'HARD'; topic: string; subtopic: string; bloom: string; imageId: string; marks: string }
 const blank = (): Draft => ({ stem: '', options: ['', '', '', ''], correctIndex: -1, explanation: '', difficulty: 'MEDIUM', topic: '', subtopic: '', bloom: '', imageId: '', marks: '1' });
 /** The next blank form keeps the classification of the last one (topic, subtopic, difficulty, Bloom level, marks), because a batch usually shares them. */
@@ -40,7 +42,7 @@ function PoolList({ onOpen }: { onOpen: (id: string) => void }) {
         <div data-testid="pool-list"><Table rowKey={(p: any) => p.id} rows={rows} cols={[
           { h: 'Question bank', cell: (p: any) => <><button className="btn-link" onClick={() => onOpen(p.id)}><b>{p.name}</b></button>{p.description && <div className="small faint">{p.description}</div>}</> },
           { h: 'Subject', cell: (p: any) => <>{p.course?.title}<div className="small faint">{p.course?.code}</div></> }, { h: 'Session', cell: (p: any) => p.term },
-          { h: 'Questions', num: true, cell: (p: any) => p.counts.total }, { h: 'Review', cell: (p: any) => <span className="small">{p.counts.draft} draft · {p.counts.submitted} submitted · {p.counts.approved} approved</span> },
+          { h: 'Questions', num: true, cell: (p: any) => p.counts.total }, { h: 'State', cell: (p: any) => <Badge tone={BANK_TONE[p.state] ?? 'grey'}>{BANK_LABEL[p.state] ?? p.state}</Badge> }, { h: 'Review', more: true, cell: (p: any) => <span className="small">{p.counts.draft} draft · {p.counts.submitted} submitted · {p.counts.approved} approved</span> },
           { h: '', cls: 'row-actions', cell: (p: any) => <><button className="btn btn-sm" onClick={() => onOpen(p.id)}>Open</button><button className="btn btn-sm" onClick={() => setRm(p)}>Delete</button></> },
         ]} /></div>
       ) : <p className="muted" data-testid="pool-empty">{approved.length ? 'No question banks yet. Create one to start adding MCQs.' : 'You need an approved class and subject before you can create a question bank.'}</p>}</Async>
@@ -59,8 +61,9 @@ function PoolList({ onOpen }: { onOpen: (id: string) => void }) {
 function PoolDetail({ poolId, onBack }: { poolId: string; onBack: () => void }) {
   const url = useUrlState({ page: '1', search: '', difficulty: '', topic: '', status: '' }); const { page: pg, search, difficulty, topic, status } = url.vals; const page = Number(pg) || 1;
   const pools = useGet<any[]>('/teacher/pools');
+  const [hist, setHist] = useState<any | null>(null);
   const qs = useGet<any>(`/teacher/questions?poolId=${poolId}&page=${page}&pageSize=20${search ? `&search=${encodeURIComponent(search)}` : ''}${difficulty ? `&difficulty=${difficulty}` : ''}${topic ? `&topic=${encodeURIComponent(topic)}` : ''}${status ? `&status=${status}` : ''}`);
-  const pool = pools.data?.find((p) => p.id === poolId); const { run, busy } = useAction(); const toast = useToast();
+  const pool = pools.data?.find((p) => p.id === poolId); const locked = pool?.status === 'SUBMITTED'; const { run, busy } = useAction(); const toast = useToast();
   const [edit, setEdit] = useState<Draft | null>(null); const [prev, setPrev] = useState<any | null>(null); const [rm, setRm] = useState<any | null>(null); const [imp, setImp] = useState(false); const [submit, setSubmit] = useState(false);
   const refresh = () => { qs.reload?.(); pools.reload?.(); };
   const filtered = !!(search || difficulty || topic || status);
@@ -68,13 +71,16 @@ function PoolDetail({ poolId, onBack }: { poolId: string; onBack: () => void }) 
     <>
       <PageHead title={pool?.name ?? 'Question bank'} sub={pool ? `${pool.course?.code} — ${pool.course?.title} · ${pool.term}` : undefined}>
         <button className="btn" onClick={onBack}>← All question banks</button>
-        <button className="btn btn-green" onClick={() => setEdit(blank())}>+ Add MCQ</button>
+        <button className="btn btn-green" disabled={locked} onClick={() => setEdit(blank())}>+ Add MCQ</button>
       </PageHead>
+      {pool && pool.state === 'SUBMITTED' && <Notice><div data-testid="bank-banner"><b>Under review — read only.</b> The examiners are reviewing this question bank. You can look at it and export it, but nothing can be changed until they respond.</div></Notice>}
+      {pool && pool.state === 'REJECTED' && <Notice tone="warn"><div data-testid="bank-banner"><b>Returned for changes.</b>{pool.reviewNote ? <> Reviewer’s comment: “{pool.reviewNote}”.</> : null} Questions that need work are marked <i>rejected</i> with their own comment. Edit them, then submit the question bank again.</div></Notice>}
+      {pool && pool.state === 'APPROVED' && <Notice tone="ok"><div data-testid="bank-banner"><b>Approved.</b> The examiners can use these questions in examination papers.{pool.reviewNote ? <> Reviewer’s comment: “{pool.reviewNote}”.</> : null}</div></Notice>}
       <div className="toolbar" role="toolbar" aria-label="Question bank actions">
-        <button className="btn btn-sm" onClick={() => setImp(true)}>Import from CSV or Excel</button>
+        <button className="btn btn-sm" disabled={locked} onClick={() => setImp(true)}>Import from CSV or Excel</button>
         <button className="btn btn-sm" onClick={() => run(async () => { const r: any = await get(`/teacher/pools/${poolId}/export`); download(r.filename, r.csv); toast(`Exported ${r.rows} question${r.rows === 1 ? '' : 's'}`); })}>Export CSV</button>
         <button className="btn btn-sm" onClick={() => run(async () => { const r: any = await get(`/teacher/pools/${poolId}/export`); downloadBlob(r.filename.replace(/\.csv$/, '.xlsx'), writeXlsx(pool?.name ?? 'Questions', r.table.head, r.table.rows)); toast(`Exported ${r.rows} question${r.rows === 1 ? '' : 's'} to Excel`); })}>Export Excel</button>
-        <button className="btn btn-sm btn-primary" disabled={!pool?.counts.draft} onClick={() => setSubmit(true)}>Submit question bank for review{pool?.counts.draft ? ` (${pool.counts.draft})` : ''}</button>
+        <button className="btn btn-sm btn-primary" disabled={locked || !pool?.counts.draft} onClick={() => setSubmit(true)}>Submit question bank for review{pool?.counts.draft ? ` (${pool.counts.draft})` : ''}</button>
       </div>
       <div className="filters" style={{ margin: '12px 0' }}>
         <Field label="Search"><input className="in" type="search" value={search} onChange={(e) => { url.set('search', e.target.value); url.set('page', '1'); }} placeholder="Statement, topic or subtopic" /></Field>
@@ -89,14 +95,16 @@ function PoolDetail({ poolId, onBack }: { poolId: string; onBack: () => void }) 
             { h: 'Topic', cell: (q: any) => <>{q.topic ?? '—'}{q.subtopic && <div className="small faint">{q.subtopic}</div>}</> }, { h: 'Difficulty', cell: (q: any) => cap(q.difficulty) }, { h: 'Bloom', more: true, cell: (q: any) => q.bloom ? cap(q.bloom) : '—' }, { h: 'Marks', num: true, cell: (q: any) => q.marks }, { h: 'Status', cell: (q: any) => <Status s={q.status} /> },
             { h: '', cls: 'row-actions', cell: (q: any) => <>
               <button className="btn btn-sm" onClick={() => setPrev(q)}>Preview</button>
-              <button className="btn btn-sm" disabled={q.status === 'SUBMITTED'} onClick={() => setEdit({ id: q.id, stem: q.stem, options: q.options.map((o: any) => o.text), correctIndex: q.options.findIndex((o: any) => o.isCorrect), explanation: q.explanation ?? '', difficulty: q.difficulty, topic: q.topic ?? '', subtopic: q.subtopic ?? '', bloom: q.bloom ?? '', imageId: q.imageId ?? '', marks: String(q.marks) })}>Edit</button>
-              <button className="btn btn-sm" onClick={() => run(async () => { await post(`/teacher/questions/${q.id}/duplicate`); toast('Duplicated as a new draft'); refresh(); })}>Duplicate</button>
-              <button className="btn btn-sm" onClick={() => setRm(q)}>Delete</button></> },
+              <button className="btn btn-sm" disabled={locked || q.status === 'SUBMITTED'} onClick={() => setEdit({ id: q.id, stem: q.stem, options: q.options.map((o: any) => o.text), correctIndex: q.options.findIndex((o: any) => o.isCorrect), explanation: q.explanation ?? '', difficulty: q.difficulty, topic: q.topic ?? '', subtopic: q.subtopic ?? '', bloom: q.bloom ?? '', imageId: q.imageId ?? '', marks: String(q.marks) })}>Edit</button>
+              <button className="btn btn-sm" disabled={locked} onClick={() => run(async () => { await post(`/teacher/questions/${q.id}/duplicate`); toast('Duplicated as a new draft'); refresh(); })}>Duplicate</button>
+              <button className="btn btn-sm" disabled={locked} onClick={() => setRm(q)}>Delete</button>
+              <button className="btn btn-sm" onClick={() => setHist(q)}>History</button></> },
           ]} /></div>
           <Pager page={page} total={d.total} size={20} onPage={(n) => url.set('page', String(n))} />
         </>) : <p className="muted" data-testid="question-empty">{filtered ? 'No questions match these filters.' : 'This question bank has no questions yet. Add an MCQ or import a CSV or Excel file.'} {filtered && <button className="btn-link" onClick={url.reset}>Clear filters</button>}</p>}
       </Async>
 
+      {hist && <VersionsModal q={hist} onClose={() => setHist(null)} />}
       {edit && <Editor draft={edit} onClose={() => setEdit(null)} onChanged={refresh} poolId={poolId} />}
       {prev && <Modal title="Preview" onClose={() => setPrev(null)} footer={<CancelButton>Close</CancelButton>}>
         <div className="stack" data-testid="question-preview"><p style={{ margin: 0, fontWeight: 600 }}>{prev.stem}</p>{prev.imageId && <QImage id={prev.imageId} />}
@@ -120,6 +128,7 @@ function Editor({ draft, onClose, onChanged, poolId }: { draft: Draft; onClose: 
 function EditorForm({ draft, added, onClose, onChanged, onAnother, poolId }: { draft: Draft; added: number; onClose: () => void; onChanged: () => void; onAnother: (saved: Draft) => void; poolId: string }) {
   const [d, setD] = useState<Draft>(draft); const { run, busy } = useAction(); const toast = useToast(); const [tried, setTried] = useState(false); const [preview, setPreview] = useState(false);
   const [img, setImg] = useState<{ data: string } | null>(null); const [imgErr, setImgErr] = useState(''); const [upBusy, setUpBusy] = useState(false); const stemRef = useRef<HTMLTextAreaElement>(null);
+  const info = useGet<{ usedInExams: number }>(draft.id ? `/teacher/questions/${draft.id}` : null);
   const initial = useRef(JSON.stringify(draft)); const dirty = JSON.stringify(d) !== initial.current;
   const opts = d.options.map((o) => o.trim()); const distinct = new Set(opts.map((o) => o.toLowerCase())).size === opts.length;
   const marks = Number(d.marks);
@@ -191,6 +200,7 @@ function EditorForm({ draft, added, onClose, onChanged, onAnother, poolId }: { d
           <Field label="Topic"><input className="in" value={d.topic} maxLength={120} onChange={(e) => setD({ ...d, topic: e.target.value })} /></Field>
           <Field label="Subtopic"><input className="in" value={d.subtopic} maxLength={120} onChange={(e) => setD({ ...d, subtopic: e.target.value })} /></Field>
         </div>
+        {!!info.data?.usedInExams && <Notice tone="warn"><span data-testid="used-in-exams">This question is used in {info.data.usedInExams} examination{info.data.usedInExams === 1 ? '' : 's'}. Those papers keep the approved version unchanged; your edit creates a new version that must be approved again before it can be used.</span></Notice>}
         {d.id && <p className="small faint" style={{ margin: 0 }}>Saving returns an approved question to draft for re-review. Examinations that already use it keep the approved copy.</p>}
         <p className="small faint" style={{ margin: 0 }}>Tip: Enter moves to the next option; Ctrl+Enter saves and opens a new question.</p>
         </>)}
@@ -225,6 +235,33 @@ function ImportModal({ poolId, onClose, onDone }: { poolId: string; onClose: () 
         {parsed?.error && <Notice tone="bad">{parsed.error}</Notice>}
         {parsed && !parsed.error && <p className="small" style={{ margin: 0 }}>{parsed.rows.length} question{parsed.rows.length === 1 ? '' : 's'} found.</p>}
         {err && <Notice tone="bad">{err}</Notice>}
+      </div>
+    </Modal>
+  );
+}
+
+const FIELD_LABEL: Record<string, string> = { stem: 'statement', options: 'options' };
+/** Every saved version of one of the teacher's own questions: what changed, and which versions an examination paper froze. */
+function VersionsModal({ q, onClose }: { q: any; onClose: () => void }) {
+  const st = useGet<any[]>(`/teacher/questions/${q.id}/versions`);
+  return (
+    <Modal title="Version history" onClose={onClose} footer={<CancelButton>Close</CancelButton>}>
+      <div className="stack" data-testid="version-history">
+        <p className="muted small" style={{ margin: 0 }}>{q.stem.length > 120 ? `${q.stem.slice(0, 120)}…` : q.stem}</p>
+        <Async state={st}>{(rows) => (
+          <ol className="stack" style={{ listStyle: 'none', margin: 0, padding: 0, gap: 10 }}>{[...rows].reverse().map((v: any) => (
+            <li key={v.version} className="card" style={{ padding: 12 }} data-testid={`version-${v.version}`}>
+              <div className="row between wrap"><b>Version {v.version}{v.current ? ' (current)' : ''}</b><span className="small faint">{fmtDT(v.at)}</span></div>
+              <div className="small" style={{ margin: '4px 0' }}>{v.version === rows[0]?.version ? 'First saved version.' : v.changed.length ? <>Changed: {v.changed.map((c: string) => FIELD_LABEL[c] ?? c).join(', ')}.</> : 'No visible change.'}</div>
+              {v.usedInExams > 0 && <div style={{ margin: '4px 0' }}><Badge tone="blue">Used in {v.usedInExams} examination{v.usedInExams === 1 ? '' : 's'}</Badge> <span className="small faint">This version is frozen in those papers and cannot change.</span></div>}
+              <details><summary className="small">Show this version</summary>
+                <div className="stack" style={{ marginTop: 6 }}><p style={{ margin: 0, fontWeight: 600 }}>{v.snapshot.stem}</p>
+                  <ol className="preview-options">{v.snapshot.options.map((o: any) => <li key={o.label} className={o.isCorrect ? 'correct' : ''}><span className="lab">{o.label}</span>{o.text}{o.isCorrect && <Badge tone="green">correct</Badge>}</li>)}</ol>
+                  {v.snapshot.explanation && <p className="muted small" style={{ margin: 0 }}><b>Explanation:</b> {v.snapshot.explanation}</p>}
+                  <p className="small faint" style={{ margin: 0 }}>{cap(v.snapshot.difficulty ?? 'MEDIUM')} · {v.snapshot.marks} mark{v.snapshot.marks === 1 ? '' : 's'}{v.snapshot.topic ? ` · ${v.snapshot.topic}` : ''}{v.snapshot.subtopic ? ` › ${v.snapshot.subtopic}` : ''}{v.snapshot.bloom ? ` · Bloom: ${cap(v.snapshot.bloom)}` : ''}</p></div>
+              </details>
+            </li>))}</ol>)}
+        </Async>
       </div>
     </Modal>
   );

@@ -12,6 +12,7 @@ import { paginate } from '../../common/validate';
 import { decodePhoto } from './teacher-registration.service';
 import { createHash } from 'node:crypto';
 import { versionSnapshot } from '../exams/questions.service';
+import { bankState, refreshBankStatus, type BankState } from './bank-status';
 
 export const BLOOM = ['REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYZE', 'EVALUATE', 'CREATE'] as const;
 export type Bloom = (typeof BLOOM)[number];
@@ -30,11 +31,7 @@ export function decodeQuestionImage(dataUrl: string): { mime: string; bytes: Buf
   return { mime: m[1]!, bytes: buf };
 }
 export type AssignmentEffect = 'ACTIVE' | 'WAITS_FOR_ACCOUNT' | 'ACCOUNT_NOT_APPROVED' | 'PENDING_REVIEW' | 'REJECTED' | 'REVOKED';
-export type BankState = 'EMPTY' | 'DRAFT' | 'SUBMITTED' | 'REJECTED' | 'APPROVED';
-/** A bank has no status of its own yet; its state is derived from its questions: anything under review → SUBMITTED, else anything returned → REJECTED, else any draft → DRAFT, else all APPROVED. */
-export function bankState(statuses: string[]): BankState {
-  if (!statuses.length) return 'EMPTY'; if (statuses.includes('SUBMITTED')) return 'SUBMITTED'; if (statuses.includes('REJECTED')) return 'REJECTED'; if (statuses.includes('DRAFT')) return 'DRAFT'; return 'APPROVED';
-}
+export { bankState, type BankState } from './bank-status';
 const LABELS = ['A', 'B', 'C', 'D', 'E'];
 /** Spreadsheet formula injection: a cell that starts with one of these is read as a formula by Excel/Sheets, so it is prefixed with an apostrophe. */
 const safeCell = (v: unknown) => { const s = String(v ?? ''); const t = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s; return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
@@ -190,6 +187,15 @@ export class TeacherService {
     return p;
   }
 
+  /** A bank that has been submitted is read-only until the reviewers respond. */
+  private assertOpen(pool: { status: string }) {
+    if (pool.status === 'SUBMITTED') throw new AppError(409, 'BANK_LOCKED', 'This question bank is under review and cannot be changed until the reviewers respond.');
+  }
+  private async openPoolOf(q: { poolId: string | null }) {
+    if (!q.poolId) return;
+    const p = await this.prisma.questionPool.findUnique({ where: { id: q.poolId }, select: { status: true } }); if (p) this.assertOpen(p);
+  }
+
   async pools(u: AuthUser, f: { assignmentId?: string }) {
     const pairs = await this.pairs(u);
     if (!pairs.length) return [];
@@ -201,7 +207,7 @@ export class TeacherService {
     });
     const courses = await this.prisma.course.findMany({ where: { id: { in: [...new Set(pools.map((p) => p.courseId))] } }, select: { id: true, code: true, title: true } });
     return pools.filter((p) => this.pairOk(pairs, p.courseId, p.institutionId, p.term)).map((p) => ({
-      id: p.id, name: p.name, description: p.description, term: p.term, submittedAt: p.submittedAt, state: bankState(p.questions.map((q) => q.status)), course: courses.find((c) => c.id === p.courseId),
+      id: p.id, name: p.name, description: p.description, term: p.term, submittedAt: p.submittedAt, status: p.status, reviewNote: p.reviewNote, reviewedAt: p.reviewedAt, state: bankState(p.questions.map((q) => q.status)), course: courses.find((c) => c.id === p.courseId),
       counts: { total: p.questions.length, draft: p.questions.filter((q) => q.status === 'DRAFT' || q.status === 'REJECTED').length, submitted: p.questions.filter((q) => q.status === 'SUBMITTED').length, approved: p.questions.filter((q) => q.status === 'APPROVED').length },
     }));
   }
@@ -217,7 +223,7 @@ export class TeacherService {
   }
 
   async updatePool(u: AuthUser, id: string, d: { name?: string; description?: string | null }, ip?: string) {
-    const p = await this.ownPool(u, id);
+    const p = await this.ownPool(u, id); this.assertOpen(p);
     await this.prisma.$transaction(async (tx) => {
       await tx.questionPool.update({ where: { id }, data: { ...(d.name !== undefined ? { name: d.name.trim() } : {}), ...(d.description !== undefined ? { description: d.description?.trim() || null } : {}) } });
       await this.audit.append(tx, { actor: u, action: 'pool.update', entity: 'question_pool', entityId: id, institutionId: p.institutionId, meta: { fields: Object.keys(d) }, ip });
@@ -240,12 +246,13 @@ export class TeacherService {
 
   /** Sends every draft/rejected question of the pool to the examiners in one step (one audit entry per question, one notification). */
   async submitPool(u: AuthUser, id: string, ip?: string) {
-    const p = await this.ownPool(u, id);
+    const p = await this.ownPool(u, id); this.assertOpen(p);
     const qs = await this.prisma.question.findMany({ where: { poolId: id, authorId: u.id, status: { in: ['DRAFT', 'REJECTED'] } }, select: { id: true } });
     if (!qs.length) throw new AppError(409, 'NOTHING_TO_SUBMIT', 'There are no draft questions in this pool to submit.');
     await this.prisma.$transaction(async (tx) => {
       await tx.question.updateMany({ where: { id: { in: qs.map((q) => q.id) } }, data: { status: 'SUBMITTED', reviewNote: null } });
-      await tx.questionPool.update({ where: { id }, data: { submittedAt: new Date() } });
+      await tx.questionPool.update({ where: { id }, data: { submittedAt: new Date(), reviewNote: null } });
+      await refreshBankStatus(tx, id);
       for (const q of qs) await this.audit.append(tx, { actor: u, action: 'question.submit', entity: 'question', entityId: q.id, institutionId: p.institutionId, meta: { pool: id }, ip });
     });
     await this.notifications.notifyRole('EXAMINER', 'Question pool awaiting review', `${p.name}: ${qs.length} question${qs.length === 1 ? '' : 's'} submitted for approval.`, LINKS.questions).catch(() => undefined);
@@ -288,10 +295,42 @@ export class TeacherService {
     return { total, topics: topics.map((t) => t.topic), items: rows.map((q) => ({ ...this.view(q), course: q.course.code })) };
   }
 
-  async getQuestion(u: AuthUser, id: string) { return this.view(await this.ownQuestion(u, id)); }
+  /** Frozen exam papers whose copy of the question has exactly this content (statement, clinical scenario and option texts). The key ignores everything a paper does not freeze. */
+  private contentKey = (c: { stem: string; vignette?: string | null; options: { label?: string; text: string }[] }) => JSON.stringify([c.stem, c.vignette ?? null, [...c.options].sort((a, b) => (a.label ?? '').localeCompare(b.label ?? '')).map((o) => o.text)]);
+  private async frozenKeys(questionId: string) {
+    const rows = await this.prisma.examQuestion.findMany({ where: { questionId }, select: { snapshot: true } });   // papers that are not approved yet hold no snapshot
+    return rows.map((r) => { const s = r.snapshot as { stem?: string; vignette?: string | null; options?: { label?: string; text: string }[] } | null; return s?.stem ? this.contentKey({ stem: s.stem, vignette: s.vignette, options: s.options ?? [] }) : ''; }).filter(Boolean);
+  }
+
+  async getQuestion(u: AuthUser, id: string) {
+    const q = await this.ownQuestion(u, id); const keys = await this.frozenKeys(id); const mine = this.contentKey(q);
+    return { ...this.view(q), usedInExams: keys.filter((k) => k === mine).length };
+  }
+
+  /** Every version of the author's own question, what changed from the one before, and how many frozen examination papers hold exactly that version. */
+  async versions(u: AuthUser, id: string) {
+    const q = await this.ownQuestion(u, id); const frozen = await this.frozenKeys(id);
+    const rows = await this.prisma.questionVersion.findMany({ where: { questionId: id }, orderBy: { version: 'asc' } });
+    type Snap = { stem: string; vignette?: string | null; explanation?: string | null; difficulty?: string; topic?: string | null; subtopic?: string | null; bloom?: string | null; imageId?: string | null; marks?: number; options: { label: string; text: string; isCorrect: boolean }[] };
+    const snaps: { version: number; at: Date; snap: Snap }[] = rows.map((r) => ({ version: r.version, at: r.createdAt, snap: r.snapshot as unknown as Snap }));
+    if (!snaps.some((x) => x.version === q.version)) snaps.push({ version: q.version, at: q.updatedAt, snap: { ...(versionSnapshot(q) as object) } as Snap });   // a question that has not been edited since history began
+    const keyOf = (s: Snap) => s.options.find((o) => o.isCorrect)?.label ?? '';
+    return snaps.map((x, i) => {
+      const prev = i ? snaps[i - 1]!.snap : null; const s = x.snap; const changed: string[] = [];
+      if (prev) {
+        if (s.stem !== prev.stem) changed.push('stem'); if ((s.vignette ?? null) !== (prev.vignette ?? null)) changed.push('clinical scenario');
+        if (JSON.stringify(s.options.map((o) => o.text)) !== JSON.stringify(prev.options.map((o) => o.text))) changed.push('options'); if (keyOf(s) !== keyOf(prev)) changed.push('correct answer');
+        if ((s.explanation ?? null) !== (prev.explanation ?? null)) changed.push('explanation'); if (s.difficulty !== prev.difficulty) changed.push('difficulty');
+        if ((s.topic ?? null) !== (prev.topic ?? null)) changed.push('topic'); if ((s.subtopic ?? null) !== (prev.subtopic ?? null)) changed.push('subtopic'); if ((s.bloom ?? null) !== (prev.bloom ?? null)) changed.push('Bloom level');
+        if ((s.imageId ?? null) !== (prev.imageId ?? null)) changed.push('image'); if (s.marks !== prev.marks) changed.push('marks');
+      }
+      const mine = this.contentKey(s);
+      return { version: x.version, at: x.at, current: x.version === q.version, changed, usedInExams: frozen.filter((k) => k === mine).length, snapshot: s };
+    });
+  }
 
   async createQuestion(u: AuthUser, poolId: string, d: McqInput, ip?: string) {
-    const p = await this.ownPool(u, poolId);
+    const p = await this.ownPool(u, poolId); this.assertOpen(p);
     await this.imageOwned(u, d.imageId);
     const input = this.toInput(poolId, p, d); validateQuestion(input);
     const q = await this.questions.create(u, input, ip);
@@ -299,7 +338,7 @@ export class TeacherService {
   }
 
   async updateQuestion(u: AuthUser, id: string, d: McqInput, ip?: string) {
-    const q = await this.ownQuestion(u, id);
+    const q = await this.ownQuestion(u, id); await this.openPoolOf(q);
     await this.imageOwned(u, d.imageId);
     const input = this.toInput(q.poolId!, q, d);
     return this.view(await this.questions.update(u, id, input, ip));
@@ -333,22 +372,22 @@ export class TeacherService {
   }
 
   async duplicateQuestion(u: AuthUser, id: string, ip?: string) {
-    const q = await this.ownQuestion(u, id);
+    const q = await this.ownQuestion(u, id); await this.openPoolOf(q);
     const sorted = [...q.options].sort((a, b) => a.label.localeCompare(b.label));
     const copy = await this.questions.create(u, this.toInput(q.poolId!, q, { stem: q.stem, options: sorted.map((o) => o.text), correctIndex: sorted.findIndex((o) => o.isCorrect), explanation: q.explanation ?? undefined, difficulty: q.difficulty, topic: q.topic ?? undefined, subtopic: q.subtopic, bloom: q.bloom, imageId: q.imageId, marks: q.defaultMarks }), ip);
     return this.view(copy);
   }
 
   async deleteQuestion(u: AuthUser, id: string, ip?: string) {
-    await this.ownQuestion(u, id);
+    await this.openPoolOf(await this.ownQuestion(u, id));
     return this.questions.retire(u, id, ip);                // retired, not erased: a question already used in an examination keeps its frozen paper content
   }
 
-  async submitQuestion(u: AuthUser, id: string, ip?: string) { await this.ownQuestion(u, id); return this.questions.submit(u, id, ip); }
+  async submitQuestion(u: AuthUser, id: string, ip?: string) { await this.openPoolOf(await this.ownQuestion(u, id)); return this.questions.submit(u, id, ip); }
 
   /** All-or-nothing import. Rows are validated with exactly the rules used for manual entry; the first problem is reported with its row number. */
   async importQuestions(u: AuthUser, poolId: string, rows: { statement: string; options: string[]; correct: string; explanation?: string; difficulty?: string; topic?: string; subtopic?: string; bloom?: string; marks?: number }[], ip?: string) {
-    const p = await this.ownPool(u, poolId);
+    const p = await this.ownPool(u, poolId); this.assertOpen(p);
     const prepared = rows.map((r, i) => {
       const where = `Row ${i + 2}`;
       const idx = LABELS.indexOf(String(r.correct ?? '').trim().toUpperCase());
@@ -369,6 +408,7 @@ export class TeacherService {
         await tx.questionVersion.create({ data: { questionId: q.id, version: q.version, changedById: u.id, snapshot: versionSnapshot(q) } });
         await this.audit.append(tx, { actor: u, action: 'question.create', entity: 'question', entityId: q.id, institutionId: p.institutionId, meta: { import: true, pool: poolId }, ip });
       }
+      await refreshBankStatus(tx, poolId);
     }, { timeout: 60_000 });
     return { created: prepared.length };
   }
