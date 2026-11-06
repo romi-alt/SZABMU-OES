@@ -109,12 +109,20 @@ export function Async<T = any>({ state, children, idle }: { state: { data: T | n
 export interface Col<T> { h: string; cell: (r: T) => ReactNode; num?: boolean; cls?: string; more?: boolean }
 export function Table<T>({ cols, rows, empty = 'Nothing to show.', rowKey, rowLabel }: { cols: Col<T>[]; rows: T[]; empty?: ReactNode; rowKey: (r: T) => string; rowLabel?: (r: T) => string }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // A table that scrolls sideways must be reachable by keyboard (WCAG 2.1.1): focusable, named, only while it really overflows.
+  const wrapRef = useRef<HTMLDivElement>(null); const [scrolls, setScrolls] = useState(false);
+  useEffect(() => {
+    const el = wrapRef.current; if (!el) return;
+    const check = () => setScrolls(el.scrollWidth > el.clientWidth + 1); check();
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(check); ro?.observe(el); const t = el.querySelector('table'); if (t) ro?.observe(t);
+    window.addEventListener('resize', check); return () => { ro?.disconnect(); window.removeEventListener('resize', check); };
+  }, [rows]);
   if (!Array.isArray(rows)) return <Notice tone="bad">The server returned this list in an unexpected format, so it cannot be shown. Try again; if it keeps happening, tell the examination office.</Notice>;
   if (!rows.length) return <Empty>{empty}</Empty>;
   const folded = cols.some((c) => c.more);
   const flip = (k: string) => setOpen((o) => { const n = new Set(o); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   return (
-    <div className="tbl-wrap"><table className="tbl"><thead><tr>{cols.map((c) => <th key={c.h || 'actions'} scope="col" className={`${c.num ? 'num' : ''}${c.more ? ' m-more' : ''}`}>{c.h || <span className="sr-only">Actions</span>}</th>)}{folded && <th scope="col" className="m-toggle"><span className="sr-only">Details</span></th>}</tr></thead>
+    <div className="tbl-wrap" ref={wrapRef} {...(scrolls ? { tabIndex: 0, role: 'region', 'aria-label': 'Table, scrolls sideways' } : {})}><table className="tbl"><thead><tr>{cols.map((c) => <th key={c.h || 'actions'} scope="col" className={`${c.num ? 'num' : ''}${c.more ? ' m-more' : ''}`}>{c.h || <span className="sr-only">Actions</span>}</th>)}{folded && <th scope="col" className="m-toggle"><span className="sr-only">Details</span></th>}</tr></thead>
       <tbody>{rows.map((r) => { const k = rowKey(r); const isOpen = open.has(k); const who = rowLabel?.(r);
         return <tr key={k} className={isOpen ? 'open' : undefined}>{cols.map((c) => <td key={c.h} data-label={c.h} className={`${c.num ? 'num' : ''} ${c.cls ?? ''}${c.more ? ' m-more' : ''}`}>{c.cell(r)}</td>)}
           {folded && <td className="m-toggle" data-label=""><button type="button" className="btn-link small" aria-expanded={isOpen} aria-label={`${isOpen ? 'Hide' : 'Show'} details${who ? ` for ${who}` : ''}`} onClick={() => flip(k)}>{isOpen ? 'Hide details ▴' : 'Show details ▾'}</button></td>}</tr>; })}</tbody></table></div>
