@@ -8,6 +8,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { dropUserSessions, scope, type AuthUser } from '../../common/auth';
 import { badRequest, conflict, notFound } from '../../common/errors';
 import { paginate } from '../../common/validate';
+import { bankState } from './bank-status';
 
 /**
  * Administrator side of teacher registration. Campus administrators see only the requests (and the teachers behind them) that name their own
@@ -132,6 +133,41 @@ export class TeacherAdminService {
     const a = await this.prisma.courseAssignment.findFirst({ where: { id, ...this.aWhere(u) }, include: { course: { select: { code: true } } } });
     if (!a) throw notFound('Assignment');
     return a;
+  }
+
+  /**
+   * What a teacher has done with their question banks, and what reviewers decided, newest first (up to 100 entries), with a summary of where
+   * their banks and questions stand. Names, actions, comments and counts only: no addresses, answer keys or log hashes. Campus administrators
+   * see only entries recorded for their own institutions.
+   */
+  async activity(u: AuthUser, userId: string) {
+    await this.load(u, userId);
+    const pools = await this.prisma.questionPool.findMany({ where: { ownerId: userId, archivedAt: null, institutionId: scope.filter(u) }, select: { id: true, name: true } });
+    const ids = pools.map((p) => p.id);
+    const qStatus = ids.length ? await this.prisma.question.groupBy({ by: ['status', 'poolId'], where: { poolId: { in: ids }, status: { not: 'RETIRED' } }, _count: true }) : [];
+    const questions = { draft: 0, submitted: 0, approved: 0, rejected: 0 };
+    for (const g of qStatus) { const k = g.status.toLowerCase() as keyof typeof questions; if (k in questions) questions[k] += g._count; }
+    const banks = { total: ids.length, empty: 0, draft: 0, submitted: 0, approved: 0, rejected: 0 };
+    for (const p of pools) {
+      const st = bankState(qStatus.filter((g) => g.poolId === p.id).flatMap((g) => Array<string>(g._count).fill(g.status)));
+      banks[st.toLowerCase() as keyof typeof banks]++;
+    }
+    const MINE = ['pool.create', 'pool.update', 'pool.delete', 'pool.export', 'question.create', 'question.update', 'question.submit', 'question.retire', 'question_image.upload'];
+    const logs = await this.prisma.auditLog.findMany({
+      where: { institutionId: scope.filter(u), OR: [{ actorId: userId, action: { in: MINE } }, { entity: 'question_pool', action: 'question_pool.review', entityId: { in: ids } }] },
+      orderBy: { seq: 'desc' }, take: 100, select: { at: true, action: true, entity: true, entityId: true, actorId: true, actorRole: true, meta: true },
+    });
+    const qIds = logs.filter((l) => l.entity === 'question' && l.entityId).map((l) => l.entityId!);
+    const qPool = qIds.length ? await this.prisma.question.findMany({ where: { id: { in: qIds } }, select: { id: true, poolId: true } }) : [];
+    const actors = await this.prisma.user.findMany({ where: { id: { in: [...new Set(logs.map((l) => l.actorId).filter(Boolean) as string[])] } }, select: { id: true, fullName: true } });
+    const items = logs.map((l) => {
+      const m = (l.meta ?? {}) as { note?: string | null; approved?: number; rejected?: number; rows?: number; pool?: string };
+      const poolId = l.entity === 'question_pool' ? l.entityId : l.entity === 'question' ? qPool.find((q) => q.id === l.entityId)?.poolId ?? m.pool ?? null : null;
+      const bank = poolId ? pools.find((p) => p.id === poolId) : undefined;
+      return { at: l.at, action: l.action, actor: { name: actors.find((a) => a.id === l.actorId)?.fullName ?? 'System', role: l.actorRole }, bank: bank ? { id: bank.id, name: bank.name } : null,
+        note: m.note ?? null, ...(typeof m.approved === 'number' ? { approved: m.approved } : {}), ...(typeof m.rejected === 'number' ? { rejected: m.rejected } : {}), ...(typeof m.rows === 'number' ? { rows: m.rows } : {}) };
+    });
+    return { summary: { banks, questions }, items };
   }
 
   /** What the teacher has written, for review: counts and question statements. Correct answers are not shown here. */

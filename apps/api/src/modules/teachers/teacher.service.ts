@@ -255,7 +255,7 @@ export class TeacherService {
       await refreshBankStatus(tx, id);
       for (const q of qs) await this.audit.append(tx, { actor: u, action: 'question.submit', entity: 'question', entityId: q.id, institutionId: p.institutionId, meta: { pool: id }, ip });
     });
-    await this.notifications.notifyRole('EXAMINER', 'Question pool awaiting review', `${p.name}: ${qs.length} question${qs.length === 1 ? '' : 's'} submitted for approval.`, LINKS.questions).catch(() => undefined);
+    await this.notifications.notifyRole('EXAMINER', 'Question bank awaiting review', `${p.name}: ${qs.length} question${qs.length === 1 ? '' : 's'} submitted for approval.`, LINKS.questionBanks).catch(() => undefined);
     return { submitted: qs.length };
   }
 

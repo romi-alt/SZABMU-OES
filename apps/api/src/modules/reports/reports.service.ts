@@ -36,13 +36,14 @@ export class ReportsService {
         return { myQuestions: mine, byStatus: Object.fromEntries(bySt.map((s) => [s.status, s._count])), resultsToReview: review, students };
       }
       case 'EXAMINER': {
-        const [qs, papers, live, results] = await Promise.all([
+        const [qs, papers, live, results, banks] = await Promise.all([
           this.prisma.question.count({ where: { status: 'SUBMITTED' } }),
           this.prisma.exam.count({ where: { status: 'PAPER_PENDING' } }),
           this.prisma.exam.count({ where: { status: 'LIVE' } }),
           this.prisma.exam.count({ where: { status: 'RESULT_PENDING', resultBatch: { status: 'LECTURER_REVIEWED' } } }),
+          this.prisma.questionPool.count({ where: { status: 'SUBMITTED', archivedAt: null } }),
         ]);
-        return { questionsToReview: qs, papersPending: papers, liveExams: live, resultsToApprove: results };
+        return { questionsToReview: qs, papersPending: papers, liveExams: live, resultsToApprove: results, banksToReview: banks };
       }
       case 'CAMPUS_ADMIN': {
         const [students, users, exams, incidents, live, scheduled] = await Promise.all([
@@ -64,13 +65,14 @@ export class ReportsService {
         return { assignedExams: duties, liveNow: live, myOpenIncidents: mine };
       }
       case 'CCE': {
-        const [papers, publish, incidents, live] = await Promise.all([
+        const [papers, publish, incidents, live, banks] = await Promise.all([
           this.prisma.exam.count({ where: { status: 'PAPER_PENDING' } }),
           this.prisma.exam.count({ where: { resultBatch: { status: 'EXAMINER_APPROVED' } } }),
           this.prisma.incident.count({ where: { status: { in: ['OPEN', 'INVESTIGATING'] } } }),
           this.prisma.exam.count({ where: { status: 'LIVE' } }),
+          this.prisma.questionPool.count({ where: { status: 'SUBMITTED', archivedAt: null } }),
         ]);
-        return { papersToApprove: papers, resultsToPublish: publish, openIncidents: incidents, liveExams: live };
+        return { papersToApprove: papers, resultsToPublish: publish, openIncidents: incidents, liveExams: live, banksToReview: banks };
       }
       default: {
         const [institutions, users, students, exams, audit] = await Promise.all([
