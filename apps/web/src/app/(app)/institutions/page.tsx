@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { patch, post, put, del, fmtDate, useGet } from '@/api';
 import { useMe } from '@/session';
 import { Async, Badge, Card, Confirm, Field, ListEmpty, Modal, Notice, PageHead, Pager, CancelButton, Table, useAction } from '@/ui';
@@ -16,7 +16,8 @@ export default function Institutions() {
   const { can } = useMe(); const { run, busy } = useAction();
   const [q, setQ] = useState(''); const [search, setSearch] = useState(''); const [page, setPage] = useState(1);
   const [flt, setFlt] = useState({ kind: '', sector: '', affiliation: '', type: '', region: '', operationalStatus: '', listingStatus: '', restricted: false, demo: 'exclude' });
-  useEffect(() => { const t = setTimeout(() => { setSearch(q.trim()); setPage(1); }, 250); return () => clearTimeout(t); }, [q]);
+  const lastSearch = useRef('');   // reset to page 1 only when the search text really changed (not on mount, which would undo an early page change)
+  useEffect(() => { const t = setTimeout(() => { const v = q.trim(); if (v !== lastSearch.current) { lastSearch.current = v; setSearch(v); setPage(1); } }, 250); return () => clearTimeout(t); }, [q]);
   const facets = useGet<{ regions: string[]; types: string[]; canViewDemo: boolean }>('/directory/facets');
   const qs = new URLSearchParams({ page: String(page), pageSize: String(PAGE) }); if (search) qs.set('search', search);
   for (const [k, v] of Object.entries(flt)) if (v) qs.set(k, String(v));   // demo is always sent: the default hides synthetic records even on a site that shows them
