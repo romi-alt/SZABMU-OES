@@ -36,9 +36,29 @@ Product classification unchanged: INTERNAL_TESTING_READY. Nothing deployed; no m
 - **Limits, stated plainly:** "recent activity" is built from question timestamps (created / submitted / reviewed), not from the audit log, so it shows the latest submission and latest decision per bank rather than every edit; "returned" = REJECTED (the brief's "return for changes" has no separate state until bank-level review exists, step 4).
 - **Tests:** `teacher-overview.test.ts` (2; failed before the code existed), `teacher-portal-overview.spec.ts` (fails on the old UI), `teachers.spec.ts` updated for the new names. API 360/360, shared 77/77.
 
+## Step 2 — migration written and tested locally (NOT deployed, NOT applied anywhere but disposable databases)
+File: `apps/api/prisma/migrations/20261106100000_teacher_question_bank_review/migration.sql`. **Review the SQL before any merge to `main`** (merging deploys; `auto-migrate.mjs` then applies it).
+
+| Change | Detail |
+|---|---|
+| `question_pools` + `status` (DRAFT/SUBMITTED/APPROVED/REJECTED, default DRAFT), `reviewNote`, `reviewedById`, `reviewedAt` | bank-level review state and feedback |
+| `questions` + `subtopic`, `bloom` (REMEMBER…CREATE), `imageId` | optional MCQ metadata |
+| new `question_images` | image/diagram bytes + mime + size + sha256 (database storage, like profile photos) |
+| new `question_versions` | one row per content version; unique (questionId, version); **UPDATE/DELETE refused by triggers**; FK RESTRICT so history cannot be removed with its question |
+| 4 indexes | `question_pools(status, institutionId)`, `(ownerId, status)`, `questions(poolId, status)`, `(authorId, status)` |
+| 1 data backfill | `question_pools.status` set from each bank's questions (SUBMITTED › REJECTED › DRAFT › APPROVED, else DRAFT); no question row is touched |
+
+**Not included on purpose.** A raw Prisma diff also proposes dropping `course_assignments_active_uniq` and its generated columns, `question_options_one_correct` / `correctFlag`, and adding two unrelated foreign keys. Those are existing hand-written integrity protections that `schema.prisma` does not model; applying a generated diff would remove them. They are left alone (noted in `docs/COORDINATION.md`).
+
+**Verified on disposable MariaDB 10.11:** applied to (a) a database at the previous schema with seeded demo data plus banks in every state — backfill gave SUBMITTED, REJECTED, DRAFT, APPROVED, DRAFT, DRAFT as designed and all 29 existing questions kept NULL in the new columns; (b) an empty database from scratch; `prisma migrate status` clean on both. Triggers refuse UPDATE and DELETE on `question_versions`; duplicate (question, version) refused; deleting a question that has history refused; deleting an image clears the reference. The full API suite (360), lint, typecheck and production build pass on the new schema.
+
+**Rollback.** The change is additive, so the previous application code keeps working on the migrated database (it ignores the new columns/tables). Do not "undo" by dropping columns on a live database; if ever needed, restore from backup (`ROLLBACK_AND_RECOVERY.md`).
+
+**Not yet done:** nothing in the application uses the new columns yet (steps 3–5). **Needs your approval before anything beyond this branch:** merging to `main`.
+
 ## Proposed order (each step: failing test first, additive migration announced, small commits)
 1. Overview figures + Question Submissions page + nav renames (no schema change).
-2. Schema (additive): `questions.subtopic`, `questions.bloom`, image reference; `question_pools.status/reviewNote/reviewedAt/reviewedById`; `question_versions` history. **Needs your approval before the migration is written.**
+2. Schema (additive): **written and tested locally — see "Step 2" above; awaiting your review before any merge.**
 3. Editor: Save & Add Another, unsaved-changes guard, subtopic/Bloom/image fields; Excel import/export.
 4. Bank-level submit/return/approve/reject and teacher feedback view; version history.
 5. Admin/examiner pages for banks and teacher activity.

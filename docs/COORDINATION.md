@@ -26,3 +26,8 @@ Update the table when ownership changes.
 
 - The UI/UX tracker lists a notification-panel batch. The accessible notification menu already exists in PR #2 (`apps/web/src/app/(app)/layout.tsx`); whichever lands first, the other rebases onto it instead of building a second one.
 - Redis is still used by the exam-control event channel and live monitor (`modules/control/events.service.ts`, `monitor.service.ts`). Hosting stage 1 replaces it; until then, treat those files as owned by the hosting session for anything Redis-related.
+
+## Migration notices
+
+- **20261106100000_teacher_question_bank_review** (teacher portal, step 2; branch `claude/vigilant-cori-2lo8uc`, **not merged, not deployed**). Additive only: `question_pools` gains `status`, `reviewNote`, `reviewedById`, `reviewedAt`; `questions` gains `subtopic`, `bloom`, `imageId`; new tables `question_images` and `question_versions` (append-only, UPDATE/DELETE refused by triggers); four indexes; two foreign keys; one backfill of `question_pools.status` from each bank's questions. Nothing dropped or narrowed. Merging to `main` applies it on the next deploy through `scripts/auto-migrate.mjs`. Any other branch adding a migration should be dated after `20261106100000`.
+- Known drift, left alone on purpose: a Prisma diff of the schema proposes dropping `course_assignments_active_uniq` (and `activeKey`/`termKey`), `question_options_one_correct` (and `correctFlag`) — hand-written integrity protections that Prisma does not model. Never apply a generated diff blindly; hand-write the migration.

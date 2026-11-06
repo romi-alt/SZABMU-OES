@@ -56,6 +56,24 @@ enum QuestionStatus {
   RETIRED
 }
 
+/// Bloom's taxonomy level of a question (optional, set by the author).
+enum BloomLevel {
+  REMEMBER
+  UNDERSTAND
+  APPLY
+  ANALYZE
+  EVALUATE
+  CREATE
+}
+
+/// Review state of a teacher's question bank as a whole (questions keep their own QuestionStatus).
+enum BankStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
 enum PaperStatus {
   DRAFT
   SUBMITTED
@@ -453,19 +471,27 @@ model Question {
   reviewedAt    DateTime?      @db.DateTime(3)
   poolId        String?        @db.Char(36)
   topic         String?        @db.VarChar(191)
+  subtopic      String?        @db.VarChar(191)
+  bloom         BloomLevel?
+  /// Optional image or diagram for the stem (stored in question_images; the database is the only durable store on hosted file systems).
+  imageId       String?        @db.Char(36)
   defaultMarks  Float          @default(1)
   createdAt     DateTime       @default(now()) @db.DateTime(3)
   updatedAt     DateTime       @updatedAt @db.DateTime(3)
 
-  pool        QuestionPool?    @relation(fields: [poolId], references: [id], onDelete: SetNull)
-  course      Course           @relation(fields: [courseId], references: [id])
-  institution Institution      @relation(fields: [institutionId], references: [id])
+  pool        QuestionPool?     @relation(fields: [poolId], references: [id], onDelete: SetNull)
+  image       QuestionImage?    @relation(fields: [imageId], references: [id], onDelete: SetNull)
+  versions    QuestionVersion[]
+  course      Course            @relation(fields: [courseId], references: [id])
+  institution Institution       @relation(fields: [institutionId], references: [id])
   options     QuestionOption[]
   paperUses   ExamQuestion[]
 
   @@index([courseId, status])
   @@index([institutionId, status])
   @@index([poolId])
+  @@index([poolId, status])
+  @@index([authorId, status])
   @@map("questions")
 }
 
@@ -1113,13 +1139,53 @@ model QuestionPool {
   description   String?    @db.Text
   archivedAt    DateTime?  @db.DateTime(3)
   submittedAt   DateTime?  @db.DateTime(3)
+  /// Review state of the bank as a whole. Existing banks are given a state derived from their questions by the migration.
+  status        BankStatus @default(DRAFT)
+  reviewNote    String?    @db.Text
+  reviewedById  String?    @db.Char(36)
+  reviewedAt    DateTime?  @db.DateTime(3)
   createdAt     DateTime   @default(now()) @db.DateTime(3)
   updatedAt     DateTime   @updatedAt @db.DateTime(3)
   questions     Question[]
 
   @@index([ownerId, archivedAt])
   @@index([courseId, institutionId])
+  @@index([status, institutionId])
+  @@index([ownerId, status])
   @@map("question_pools")
+}
+
+/// An image or diagram attached to a question stem. Type, size and magic bytes are checked by the API before a row is written.
+model QuestionImage {
+  id           String     @id @default(uuid()) @db.Char(36)
+  uploadedById String     @db.Char(36)
+  mime         String     @db.VarChar(40)
+  sizeBytes    Int
+  sha256       String     @db.Char(64)
+  data         Bytes
+  createdAt    DateTime   @default(now()) @db.DateTime(3)
+  questions    Question[]
+
+  @@index([uploadedById])
+  @@index([sha256])
+  @@map("question_images")
+}
+
+/// Append-only history of a question's content: one row per version (written when a question is created and on every edit).
+/// Database triggers refuse UPDATE and DELETE. Exam papers keep their own frozen snapshot; this table is the author-facing history.
+model QuestionVersion {
+  id          String   @id @default(uuid()) @db.Char(36)
+  questionId  String   @db.Char(36)
+  version     Int
+  changedById String   @db.Char(36)
+  /// Everything an author can change: stem, vignette, options (with the key), explanation, difficulty, topic, subtopic, bloom, marks, imageId.
+  snapshot    Json
+  createdAt   DateTime @default(now()) @db.DateTime(3)
+  question    Question @relation(fields: [questionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([questionId, version])
+  @@index([changedById, createdAt])
+  @@map("question_versions")
 }
 
 /// A student who signed up with a registration number and verified email but has not yet completed the one-time profile. The Student row is created only when the profile is saved.
