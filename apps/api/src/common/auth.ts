@@ -26,6 +26,16 @@ export interface AuthUser {
 export const MFA_ROLES: readonly Role[] = ['SUPER_ADMIN', 'CCE', 'EXAMINER', 'CAMPUS_ADMIN'];
 
 export const SESSION_COOKIE = 'oes_session';
+/**
+ * Session cookie attributes. `secure` must not depend on NODE_ENV alone: the Hostinger demo runs the API with NODE_ENV=development
+ * behind HTTPS, which left the cookie without the Secure flag. It is set when the deployment is production, the request arrived over
+ * HTTPS (trusted proxy), or every configured web origin is https. Plain-http local development keeps working.
+ */
+export function sessionCookieOptions(cfg: Pick<Config, 'NODE_ENV' | 'WEB_ORIGIN'>, req: { protocol?: string }, expires?: Date) {
+  const origins = cfg.WEB_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean);
+  const secure = cfg.NODE_ENV === 'production' || req.protocol === 'https' || (origins.length > 0 && origins.every((o) => o.startsWith('https://')));
+  return { httpOnly: true, sameSite: 'lax' as const, secure, path: '/', ...(expires ? { expires } : {}) };
+}
 export const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
 export const Public = () => SetMetadata('public', true);

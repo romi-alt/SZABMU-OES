@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Req
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { isValidPhone, PHONE_HINT, PORTAL_HEADER, portalOf } from '@oes/shared';
-import { AllowMfaPending, AllowMustChange, CurrentUser, Perm, Public, SESSION_COOKIE, type AuthUser } from '../../common/auth';
+import { AllowMfaPending, AllowMustChange, CurrentUser, Perm, Public, SESSION_COOKIE, sessionCookieOptions, type AuthUser } from '../../common/auth';
 import { parse } from '../../common/validate';
 import { AuthService } from './auth.service';
 import { MfaService } from './mfa.service';
@@ -23,14 +23,14 @@ export class AuthController {
   async login(@Body() body: unknown, @Req() req: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
     const dto = parse(loginDto, body);
     const r = await this.auth.login(dto.email, dto.password, req.ip, req.headers['user-agent'], portalOf(req.headers[PORTAL_HEADER]));
-    reply.setCookie(SESSION_COOKIE, r.token, { httpOnly: true, sameSite: 'lax', secure: this.cfg.NODE_ENV === 'production', path: '/', expires: r.expiresAt });
+    reply.setCookie(SESSION_COOKIE, r.token, sessionCookieOptions(this.cfg, req, r.expiresAt));
     return { user: r.user };
   }
 
   @Perm('program.read') @AllowMustChange() @AllowMfaPending() @Post('logout') @HttpCode(200)
-  async logout(@CurrentUser() u: AuthUser, @Res({ passthrough: true }) reply: FastifyReply) {
+  async logout(@CurrentUser() u: AuthUser, @Req() req: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
     await this.auth.logout(u);
-    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    reply.clearCookie(SESSION_COOKIE, sessionCookieOptions(this.cfg, req));
     return { ok: true };
   }
 
