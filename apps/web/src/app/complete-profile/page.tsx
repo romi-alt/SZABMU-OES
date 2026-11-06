@@ -8,7 +8,7 @@ import { photoToDataUrl } from '@/image';
 import { useMe } from '@/session';
 import { Field, Loading, Notice, errMsg, useToast } from '@/ui';
 
-interface Catalog { institutions: { id: string; code: string; name: string }[]; programs: { id: string; code: string; name: string }[]; programsByInstitution: Record<string, string[]>; semestersByProgram: Record<string, number[]>; batchYears: number[] }
+interface Catalog { institutions: { id: string; code: string; name: string; city?: string | null }[]; programs: { id: string; code: string; name: string }[]; programsByInstitution: Record<string, string[]>; stoppedByInstitution: Record<string, string[]>; shiftsByOffering: Record<string, string[]>; semestersByProgram: Record<string, number[]>; batchYears: number[] }
 const GENDERS = [['MALE', 'Male'], ['FEMALE', 'Female'], ['OTHER', 'Other']] as const;
 
 /**
@@ -18,19 +18,20 @@ const GENDERS = [['MALE', 'Male'], ['FEMALE', 'Female'], ['OTHER', 'Other']] as 
 export default function CompleteProfile() {
   const { me, loading, refresh, logout } = useMe(); const router = useRouter(); const toast = useToast();
   const [cat, setCat] = useState<Catalog | null>(null); const [catErr, setCatErr] = useState('');
-  const [f, setF] = useState({ fullName: '', fatherName: '', gender: '', dateOfBirth: '', mobile: '', institutionId: '', programId: '', semester: '', batchYear: '' });
+  const [f, setF] = useState({ fullName: '', fatherName: '', gender: '', dateOfBirth: '', mobile: '', institutionId: '', programId: '', shift: '', semester: '', batchYear: '' });
   const [photo, setPhoto] = useState(''); const [tried, setTried] = useState(false); const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
   useEffect(() => { document.title = 'Complete your profile · SZABMU OES'; }, []);
   useEffect(() => { if (me?.role === 'STUDENT' && me.onboarding?.required) get<Catalog>('/onboarding/catalog').then(setCat).catch((e) => setCatErr(errMsg(e))); }, [me]);
 
   const programs = useMemo(() => { if (!cat) return []; const allowed = cat.programsByInstitution[f.institutionId]; return allowed?.length ? cat.programs.filter((p) => allowed.includes(p.id)) : cat.programs; }, [cat, f.institutionId]);
   const semesters = cat?.semestersByProgram[f.programId] ?? [];
-  const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v, ...(k === 'institutionId' ? { programId: '', semester: '' } : {}), ...(k === 'programId' ? { semester: '' } : {}) }));
+  const shifts = cat?.shiftsByOffering[`${f.institutionId}|${f.programId}`] ?? []; const stopped = !!f.programId && !!cat?.stoppedByInstitution[f.institutionId]?.includes(f.programId);
+  const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v, ...(k === 'institutionId' ? { programId: '', shift: '', semester: '' } : {}), ...(k === 'programId' ? { shift: '', semester: '' } : {}) }));
   const today = new Date().toISOString().slice(0, 10);
   const e = {
     fullName: f.fullName.trim().length < 3 ? 'Enter your full name.' : '', fatherName: f.fatherName.trim().length < 3 ? "Enter your father's name." : '', gender: f.gender ? '' : 'Select your gender.',
     mobile: f.mobile.trim() && isValidPhone(f.mobile) ? '' : PHONE_HINT, institutionId: f.institutionId ? '' : 'Select your college.', programId: f.programId ? '' : 'Select your degree programme.',
-    semester: f.semester ? '' : 'Select your semester.', batchYear: f.batchYear ? '' : 'Select your academic year.', dateOfBirth: f.dateOfBirth && (f.dateOfBirth >= today || f.dateOfBirth < '1940-01-01') ? 'Enter a valid date of birth.' : '',
+    shift: !shifts.length || f.shift ? '' : 'Select your shift.', semester: f.semester ? '' : 'Select your semester.', batchYear: f.batchYear ? '' : 'Select your academic year.', dateOfBirth: f.dateOfBirth && (f.dateOfBirth >= today || f.dateOfBirth < '1940-01-01') ? 'Enter a valid date of birth.' : '',
   };
   const invalid = Object.values(e).some(Boolean); const show = (k: keyof typeof e) => (tried ? e[k] : '');
 
@@ -38,7 +39,7 @@ export default function CompleteProfile() {
     setTried(true); setErr(''); if (invalid) { setTimeout(() => document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(), 30); return; }
     setBusy(true);
     try {
-      await post('/onboarding/complete', { fullName: f.fullName.trim(), fatherName: f.fatherName.trim(), gender: f.gender, institutionId: f.institutionId, programId: f.programId, semester: Number(f.semester), batchYear: Number(f.batchYear), mobile: f.mobile.trim(), dateOfBirth: f.dateOfBirth || undefined, photo: photo || undefined });
+      await post('/onboarding/complete', { fullName: f.fullName.trim(), fatherName: f.fatherName.trim(), gender: f.gender, institutionId: f.institutionId, programId: f.programId, shift: f.shift || undefined, semester: Number(f.semester), batchYear: Number(f.batchYear), mobile: f.mobile.trim(), dateOfBirth: f.dateOfBirth || undefined, photo: photo || undefined });
       await refresh(); toast('Profile saved'); router.replace('/schedule');
     } catch (x) { setErr(errMsg(x)); setBusy(false); }                                    // the form keeps everything the student typed
   }
@@ -75,9 +76,11 @@ export default function CompleteProfile() {
                 <Field label="Registration number"><input className="in mono" value={me.onboarding?.regNo ?? ''} readOnly aria-readonly="true" /></Field>
                 {sel('College / institution', 'institutionId', <><option value="">Select your college</option>{cat.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</>)}
                 {sel('Degree programme', 'programId', <><option value="">{f.institutionId ? 'Select your programme' : 'Select a college first'}</option>{programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</>, { disabled: !f.institutionId })}
+                {shifts.length > 0 && sel('Shift', 'shift', <><option value="">Select your shift</option>{shifts.map((x) => <option key={x} value={x}>{x === 'MORNING' ? 'Morning' : x === 'EVENING' ? 'Evening' : x}</option>)}</>)}
                 {sel('Semester', 'semester', <><option value="">{f.programId ? 'Select your semester' : 'Select a programme first'}</option>{semesters.map((s) => <option key={s} value={s}>Semester {s}</option>)}</>, { disabled: !f.programId })}
                 {sel('Academic year (year of admission)', 'batchYear', <><option value="">Select</option>{cat.batchYears.map((y) => <option key={y} value={y}>{y}</option>)}</>)}
               </div>
+              {stopped && <Notice tone="warn">New admissions to this programme at this college have been stopped. You can continue only if you are already an enrolled student or are on your campus register; otherwise your campus examination office will need to confirm your place.</Notice>}
               <p className="cp-note">Your college, programme and semester are checked by your campus examination office. After you save they can only be changed by them, and you can sit an examination only once they are verified and you are assigned to it.</p>
             </section>
             {err && <Notice tone="bad">{err}</Notice>}
