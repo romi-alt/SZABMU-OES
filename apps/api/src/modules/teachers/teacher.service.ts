@@ -93,6 +93,10 @@ export class TeacherService {
     }
     return p;
   }
+  /** Questions the caller may reach: the course, the campus AND the academic session, which the question's bank carries. */
+  private questionScope(pairs: CoursePair[]): Prisma.QuestionWhereInput[] {
+    return pairs.map((p) => ({ courseId: p.courseId, institutionId: p.institutionId, ...(p.term ? { pool: { term: p.term } } : {}) }));
+  }
   private pairOk = (pairs: CoursePair[], courseId: string, institutionId: string, term?: string | null) => pairs.some((x) => x.courseId === courseId && x.institutionId === institutionId && (!term || x.term === term));
 
   /** The teacher's own approved assignment, or "not found". */
@@ -107,11 +111,19 @@ export class TeacherService {
   async assignments(u: AuthUser) {
     await this.pairs(u);
     const rows = await this.prisma.courseAssignment.findMany({ where: { userId: u.id, revokedAt: null, status: { in: ['APPROVED', 'PENDING', 'REJECTED'] } }, include: this.aInclude, orderBy: [{ status: 'asc' }, { requestedAt: 'desc' }] });
-    return Promise.all(rows.map(async (a) => ({
-      id: a.id, status: a.status, term: a.term, semester: a.course.semester, decisionNote: a.status === 'REJECTED' ? a.decisionNote : null, requestedAt: a.requestedAt,
-      course: { code: a.course.code, title: a.course.title }, program: a.course.program, institution: { code: a.institution.code, name: a.institution.name },
-      studentCount: a.status === 'APPROVED' ? await this.countStudents([{ courseId: a.courseId, institutionId: a.institutionId, term: a.term }]) : null,
-    })));
+    return Promise.all(rows.map(async (a) => {
+      const ok = a.status === 'APPROVED';
+      // the same (course, campus, session) the assignment covers: MCQs written in banks of that session, and those banks
+      const [mcqCount, bankCount] = ok ? await Promise.all([
+        this.prisma.question.count({ where: { authorId: u.id, status: { not: 'RETIRED' }, courseId: a.courseId, institutionId: a.institutionId, pool: { archivedAt: null, ...(a.term ? { term: a.term } : {}) } } }),
+        this.prisma.questionPool.count({ where: { ownerId: u.id, archivedAt: null, courseId: a.courseId, institutionId: a.institutionId, ...(a.term ? { term: a.term } : {}) } }),
+      ]) : [null, null];
+      return {
+        id: a.id, status: a.status, term: a.term, semester: a.course.semester, decisionNote: a.status === 'REJECTED' ? a.decisionNote : null, requestedAt: a.requestedAt,
+        course: { code: a.course.code, title: a.course.title }, program: a.course.program, institution: { code: a.institution.code, name: a.institution.name },
+        studentCount: ok ? await this.countStudents([{ courseId: a.courseId, institutionId: a.institutionId, term: a.term }]) : null, mcqCount, bankCount,
+      };
+    }));
   }
 
   async overview(u: AuthUser) {
@@ -119,7 +131,7 @@ export class TeacherService {
     const rows = await this.prisma.courseAssignment.findMany({ where: { userId: u.id, revokedAt: null, status: 'APPROVED' }, include: { course: { select: { programId: true, semester: true } } } });
     const classes = new Set(rows.map((r) => `${r.institutionId}|${r.course.programId}|${r.course.semester}|${r.term}`)).size;
     const subjects = new Set(rows.map((r) => r.courseId)).size;
-    const mcqs = pairs.length ? await this.prisma.question.count({ where: { authorId: u.id, status: { not: 'RETIRED' }, poolId: { not: null }, OR: pairs.map((p) => ({ courseId: p.courseId, institutionId: p.institutionId })) } }) : 0;
+    const mcqs = pairs.length ? await this.prisma.question.count({ where: { authorId: u.id, status: { not: 'RETIRED' }, poolId: { not: null }, OR: this.questionScope(pairs) } }) : 0;
     // Question and bank figures come from the teacher's own banks inside their approved assignments (never anyone else's).
     const banks = pairs.length ? (await this.prisma.questionPool.findMany({
       where: { ownerId: u.id, archivedAt: null, OR: pairs.map((p) => ({ courseId: p.courseId, institutionId: p.institutionId })) },
@@ -148,7 +160,7 @@ export class TeacherService {
     const pairs = await this.pairs(u);
     const counts = { SUBMITTED: 0, APPROVED: 0, REJECTED: 0 };
     if (!pairs.length) return { total: 0, counts, items: [] };
-    const scope: Prisma.QuestionWhereInput = { authorId: u.id, poolId: { not: null }, OR: pairs.map((p) => ({ courseId: p.courseId, institutionId: p.institutionId })) };
+    const scope: Prisma.QuestionWhereInput = { authorId: u.id, poolId: { not: null }, OR: this.questionScope(pairs) };
     const [grouped, total, rows] = await Promise.all([
       this.prisma.question.groupBy({ by: ['status'], where: { ...scope, status: { in: ['SUBMITTED', 'APPROVED', 'REJECTED'] } }, _count: true }),
       this.prisma.question.count({ where: { ...scope, status: f.status ?? { in: ['SUBMITTED', 'APPROVED', 'REJECTED'] } } }),
@@ -272,15 +284,15 @@ export class TeacherService {
   }
   private async ownQuestion(u: AuthUser, id: string) {
     const pairs = await this.pairs(u);
-    const q = await this.prisma.question.findFirst({ where: { id, authorId: u.id, poolId: { not: null } }, include: { options: true } });
-    if (!q || !this.pairOk(pairs, q.courseId, q.institutionId)) throw notFound('Question');
+    const q = await this.prisma.question.findFirst({ where: { id, authorId: u.id, poolId: { not: null } }, include: { options: true, pool: { select: { term: true } } } });
+    if (!q || !this.pairOk(pairs, q.courseId, q.institutionId, q.pool?.term)) throw notFound('Question');
     return q;
   }
 
   async listQuestions(u: AuthUser, f: { poolId?: string; assignmentId?: string; topic?: string; difficulty?: string; status?: string; search?: string; page: number; pageSize: number }) {
     const pairs = await this.pairs(u);
     if (!pairs.length) return { total: 0, items: [], topics: [] };
-    const and: Prisma.QuestionWhereInput[] = [{ authorId: u.id, status: f.status ? (f.status as never) : { not: 'RETIRED' }, poolId: { not: null }, OR: pairs.map((p) => ({ courseId: p.courseId, institutionId: p.institutionId })) }];
+    const and: Prisma.QuestionWhereInput[] = [{ authorId: u.id, status: f.status ? (f.status as never) : { not: 'RETIRED' }, poolId: { not: null }, OR: this.questionScope(pairs) }];
     if (f.poolId) { await this.ownPool(u, f.poolId); and.push({ poolId: f.poolId }); }
     if (f.assignmentId) { const a = await this.myAssignment(u, f.assignmentId); and.push({ courseId: a.courseId, institutionId: a.institutionId }); }
     if (f.topic) and.push({ topic: { equals: f.topic } });
@@ -290,7 +302,7 @@ export class TeacherService {
     const [rows, total, topics] = await Promise.all([
       this.prisma.question.findMany({ where, include: { options: true, course: { select: { code: true } } }, orderBy: { createdAt: 'desc' }, ...paginate(f) }),
       this.prisma.question.count({ where }),
-      this.prisma.question.findMany({ where: { authorId: u.id, topic: { not: null }, poolId: { not: null }, OR: pairs.map((p) => ({ courseId: p.courseId, institutionId: p.institutionId })) }, distinct: ['topic'], select: { topic: true }, orderBy: { topic: 'asc' } }),
+      this.prisma.question.findMany({ where: { authorId: u.id, topic: { not: null }, poolId: { not: null }, status: { not: 'RETIRED' }, OR: this.questionScope(pairs) }, distinct: ['topic'], select: { topic: true }, orderBy: { topic: 'asc' } }),
     ]);
     return { total, topics: topics.map((t) => t.topic), items: rows.map((q) => ({ ...this.view(q), course: q.course.code })) };
   }

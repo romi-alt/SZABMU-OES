@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useGet } from '@/api';
 import { Async, Badge, PageHead, Table } from '@/ui';
 
@@ -16,8 +17,10 @@ export default function MyClasses() {
             <section aria-label="Approved assignments">
               {approved.length ? (
                 <div data-testid="approved-assignments"><Table rowKey={(r: any) => r.id} rows={approved} cols={[
-                  { h: 'Subject', cell: (r: any) => <><b>{r.course.title}</b><div className="small faint">{r.course.code}</div></> }, { h: 'Institution', cell: (r: any) => r.institution.name }, { h: 'Programme', cell: (r: any) => r.program.code },
-                  { h: 'Semester', num: true, cell: (r: any) => r.semester }, { h: 'Session', cell: (r: any) => r.term }, { h: 'Students', num: true, cell: (r: any) => r.studentCount },
+                  { h: 'Subject', cell: (r: any) => <><b>{r.course.title}</b><div className="small faint">{r.course.code}</div></> }, { h: 'Class', cell: (r: any) => <>{r.program.code} · Semester {r.semester}</> },
+                  { h: 'Session', cell: (r: any) => r.term }, { h: 'Campus', more: true, cell: (r: any) => r.institution.name }, { h: 'Status', more: true, cell: () => <Badge tone="green">Approved</Badge> },
+                  { h: 'Students', num: true, cell: (r: any) => r.studentCount }, { h: 'MCQs', num: true, cell: (r: any) => r.mcqCount },
+                  { h: 'Question banks', cell: (r: any) => <>{r.bankCount} · <Link href={`/pools?assignment=${r.id}`} aria-label={`Open question banks for ${r.course.title} (${r.term})`}>Open</Link></> },
                 ]} /></div>
               ) : <p className="muted">You have no approved class or subject yet.</p>}
             </section>
