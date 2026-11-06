@@ -1,6 +1,6 @@
 # Teacher portal — audit against the "complete portal and MCQ bank" brief (2026-11-06)
 
-Status: audit + **Phase 1 (approval logic) done and tested**. Phases 2–10 below are *not* started; this table says what already exists (verified in code/tests) and what is missing, so the work is not rebuilt.
+Status: audit + **Phase 1 (approval logic) done and tested** + **step 1 of the proposed order (Overview figures, Question Submissions, sidebar) done and tested**. The rest of Phases 2–10 below is *not* started; this table says what already exists (verified in code/tests) and what is missing, so the work is not rebuilt.
 Product classification unchanged: INTERNAL_TESTING_READY. Nothing deployed; no migration run anywhere but a disposable local database.
 
 ## Phase 1 — approval logic (done)
@@ -28,6 +28,13 @@ Product classification unchanged: INTERNAL_TESTING_READY. Nothing deployed; no m
 | **P8 Admin/examiner** | admin Teachers page (identity + per-assignment decisions, view of a teacher's pools without answer keys); submitted questions reach the existing examiner review; examiners pick APPROVED questions for papers | dedicated "Teacher Question Banks / Bank Review / Teacher Activity" pages; bank-level approve/reject with comments |
 | **P9 Security** | per-call DB check of account + assignment; IDOR → 404; results/grades/exports refused; student paper delivery carries no answer key; audit entries; transaction-safe writes | image upload hardening (type/size/magic bytes) once images exist; indexes for new columns |
 | **P10 Tests** | listed in `teachers.test.ts`, `teacher-approval-state.test.ts`, `teachers.spec.ts`, `teacher-approval-live.spec.ts` | tests for each new item above |
+
+## Step 1 — done (no schema change)
+- **Sidebar** (exactly six, in this order): Overview, My Classes & Subjects, MCQ Question Banks, My Students, Question Submissions, My Profile. Visible wording "pool" → "question bank" on that page; no results, marks, grades or analytics anywhere.
+- **Overview** (`GET /teacher/overview`, additive fields): `questions {draft, submitted, approved, rejected}`, `banks {total, empty, draft, submitted, rejected, approved}`, `recent` (up to 8 events: bank created / sent for review / approved / returned). All from the caller's own banks inside approved assignments. A bank has no status of its own yet, so its state is **derived** from its questions: any under review → submitted; else any returned → rejected; else any draft → draft; else all approved → approved (`bankState`). `GET /teacher/pools` returns that `state`.
+- **Question Submissions** (`GET /teacher/submissions`, new route, one `teacher.work` permission; route manifest updated): the caller's questions that left DRAFT, counts per state, state filter, reviewer feedback on returned questions, no options or answer key in the response. Page `/submissions`, with phone-compact rows.
+- **Limits, stated plainly:** "recent activity" is built from question timestamps (created / submitted / reviewed), not from the audit log, so it shows the latest submission and latest decision per bank rather than every edit; "returned" = REJECTED (the brief's "return for changes" has no separate state until bank-level review exists, step 4).
+- **Tests:** `teacher-overview.test.ts` (2; failed before the code existed), `teacher-portal-overview.spec.ts` (fails on the old UI), `teachers.spec.ts` updated for the new names. API 360/360, shared 77/77.
 
 ## Proposed order (each step: failing test first, additive migration announced, small commits)
 1. Overview figures + Question Submissions page + nav renames (no schema change).

@@ -95,7 +95,7 @@ describe('registration is transactional and grants nothing', () => {
     const t = await register(); const a = await as(ctx, 'admin.a');
     expect((await a.post(`/admin/teachers/${t.userId}/decision`, { decision: 'APPROVE' })).status).toBe(200);
     expect((await t.c.get('/auth/me')).body.permissions).toContain('teacher.work');
-    expect((await t.c.get('/teacher/overview')).body).toEqual({ classes: 0, subjects: 0, mcqs: 0, students: 0 });
+    expect((await t.c.get('/teacher/overview')).body).toEqual({ classes: 0, subjects: 0, mcqs: 0, students: 0, questions: { draft: 0, submitted: 0, approved: 0, rejected: 0 }, banks: { total: 0, empty: 0, draft: 0, submitted: 0, rejected: 0, approved: 0 }, recent: [] });
     expect((await t.c.get('/teacher/students')).body).toEqual({ total: 0, items: [] });
     expect((await t.c.post('/teacher/pools', { assignmentId: t.path.id, name: 'Pending subject' })).status).toBe(404);
     expect(await t.c.get('/teacher/assignments').then((r) => r.body.every((x: any) => x.status === 'PENDING' && x.studentCount === null))).toBe(true);

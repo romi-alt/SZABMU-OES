@@ -21,25 +21,25 @@ function PoolList({ onOpen }: { onOpen: (id: string) => void }) {
   const approved = (as.data ?? []).filter((a) => a.status === 'APPROVED');
   return (
     <>
-      <PageHead title="MCQ Pool" sub="Question pools for your approved subjects. Submit a pool and the examiners review its questions.">
-        <button className="btn btn-green" disabled={!approved.length} onClick={() => { setF({ assignmentId: approved[0]?.id ?? '', name: '', description: '' }); setAdd(true); }}>+ New pool</button>
+      <PageHead title="MCQ Question Banks" sub="Question banks for your approved subjects. Submit a bank and the examiners review its questions.">
+        <button className="btn btn-green" disabled={!approved.length} onClick={() => { setF({ assignmentId: approved[0]?.id ?? '', name: '', description: '' }); setAdd(true); }}>+ New question bank</button>
       </PageHead>
       <Async state={st}>{(rows) => rows.length ? (
         <div data-testid="pool-list"><Table rowKey={(p: any) => p.id} rows={rows} cols={[
-          { h: 'Pool', cell: (p: any) => <><button className="btn-link" onClick={() => onOpen(p.id)}><b>{p.name}</b></button>{p.description && <div className="small faint">{p.description}</div>}</> },
+          { h: 'Question bank', cell: (p: any) => <><button className="btn-link" onClick={() => onOpen(p.id)}><b>{p.name}</b></button>{p.description && <div className="small faint">{p.description}</div>}</> },
           { h: 'Subject', cell: (p: any) => <>{p.course?.title}<div className="small faint">{p.course?.code}</div></> }, { h: 'Session', cell: (p: any) => p.term },
           { h: 'Questions', num: true, cell: (p: any) => p.counts.total }, { h: 'Review', cell: (p: any) => <span className="small">{p.counts.draft} draft · {p.counts.submitted} submitted · {p.counts.approved} approved</span> },
           { h: '', cls: 'row-actions', cell: (p: any) => <><button className="btn btn-sm" onClick={() => onOpen(p.id)}>Open</button><button className="btn btn-sm" onClick={() => setRm(p)}>Delete</button></> },
         ]} /></div>
-      ) : <p className="muted" data-testid="pool-empty">{approved.length ? 'No question pools yet. Create one to start adding MCQs.' : 'You need an approved class and subject before you can create a pool.'}</p>}</Async>
-      {add && <Modal title="New question pool" onClose={() => setAdd(false)} missing={[!f.assignmentId && 'Class and subject', f.name.trim().length < 2 && 'Pool name'].filter(Boolean) as string[]}
-        footer={<><CancelButton /><button className="btn btn-green" disabled={busy || !f.assignmentId || f.name.trim().length < 2} onClick={() => run(async () => { const r: any = await post('/teacher/pools', { assignmentId: f.assignmentId, name: f.name, description: f.description || undefined }); setAdd(false); toast('Pool created'); onOpen(r.id); })}>Create pool</button></>}>
+      ) : <p className="muted" data-testid="pool-empty">{approved.length ? 'No question banks yet. Create one to start adding MCQs.' : 'You need an approved class and subject before you can create a question bank.'}</p>}</Async>
+      {add && <Modal title="New question bank" onClose={() => setAdd(false)} missing={[!f.assignmentId && 'Class and subject', f.name.trim().length < 2 && 'Bank title'].filter(Boolean) as string[]}
+        footer={<><CancelButton /><button className="btn btn-green" disabled={busy || !f.assignmentId || f.name.trim().length < 2} onClick={() => run(async () => { const r: any = await post('/teacher/pools', { assignmentId: f.assignmentId, name: f.name, description: f.description || undefined }); setAdd(false); toast('Question bank created'); onOpen(r.id); })}>Create question bank</button></>}>
         <div className="stack">
           <Field label="Class and subject" required><select className="in" value={f.assignmentId} onChange={(e) => setF({ ...f, assignmentId: e.target.value })}>{approved.map((a) => <option key={a.id} value={a.id}>{a.course.code} — {a.course.title} · {a.institution.code} · {a.term}</option>)}</select></Field>
-          <Field label="Pool name" required><input className="in" value={f.name} maxLength={120} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Endocrine pathology — week 3" /></Field>
+          <Field label="Bank title" required><input className="in" value={f.name} maxLength={120} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Endocrine pathology — week 3" /></Field>
           <Field label="Description"><input className="in" value={f.description} maxLength={500} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
         </div></Modal>}
-      {rm && <Confirm title={`Delete “${rm.name}”?`} body={<>Draft questions in this pool are retired with it. A pool with submitted or approved questions cannot be deleted.</>} yes="Delete pool" danger onNo={() => setRm(null)} onYes={() => run(async () => { await del(`/teacher/pools/${rm.id}`); setRm(null); toast('Pool deleted'); st.reload(); })} />}
+      {rm && <Confirm title={`Delete “${rm.name}”?`} body={<>Draft questions in this bank are retired with it. A bank with submitted or approved questions cannot be deleted.</>} yes="Delete question bank" danger onNo={() => setRm(null)} onYes={() => run(async () => { await del(`/teacher/pools/${rm.id}`); setRm(null); toast('Question bank deleted'); st.reload(); })} />}
     </>
   );
 }
@@ -54,14 +54,14 @@ function PoolDetail({ poolId, onBack }: { poolId: string; onBack: () => void }) 
   const filtered = !!(search || difficulty || topic || status);
   return (
     <>
-      <PageHead title={pool?.name ?? 'Question pool'} sub={pool ? `${pool.course?.code} — ${pool.course?.title} · ${pool.term}` : undefined}>
-        <button className="btn" onClick={onBack}>← All pools</button>
+      <PageHead title={pool?.name ?? 'Question bank'} sub={pool ? `${pool.course?.code} — ${pool.course?.title} · ${pool.term}` : undefined}>
+        <button className="btn" onClick={onBack}>← All question banks</button>
         <button className="btn btn-green" onClick={() => setEdit(blank())}>+ Add MCQ</button>
       </PageHead>
-      <div className="toolbar" role="toolbar" aria-label="Pool actions">
+      <div className="toolbar" role="toolbar" aria-label="Question bank actions">
         <button className="btn btn-sm" onClick={() => setImp(true)}>Import CSV</button>
         <button className="btn btn-sm" onClick={() => run(async () => { const r: any = await get(`/teacher/pools/${poolId}/export`); download(r.filename, r.csv); toast(`Exported ${r.rows} question${r.rows === 1 ? '' : 's'}`); })}>Export CSV</button>
-        <button className="btn btn-sm btn-primary" disabled={!pool?.counts.draft} onClick={() => setSubmit(true)}>Submit pool for review{pool?.counts.draft ? ` (${pool.counts.draft})` : ''}</button>
+        <button className="btn btn-sm btn-primary" disabled={!pool?.counts.draft} onClick={() => setSubmit(true)}>Submit question bank for review{pool?.counts.draft ? ` (${pool.counts.draft})` : ''}</button>
       </div>
       <div className="filters" style={{ margin: '12px 0' }}>
         <Field label="Search"><input className="in" type="search" value={search} onChange={(e) => { url.set('search', e.target.value); url.set('page', '1'); }} placeholder="Statement or topic" /></Field>
@@ -81,7 +81,7 @@ function PoolDetail({ poolId, onBack }: { poolId: string; onBack: () => void }) 
               <button className="btn btn-sm" onClick={() => setRm(q)}>Delete</button></> },
           ]} /></div>
           <Pager page={page} total={d.total} size={20} onPage={(n) => url.set('page', String(n))} />
-        </>) : <p className="muted" data-testid="question-empty">{filtered ? 'No questions match these filters.' : 'This pool has no questions yet. Add an MCQ or import a CSV file.'} {filtered && <button className="btn-link" onClick={url.reset}>Clear filters</button>}</p>}
+        </>) : <p className="muted" data-testid="question-empty">{filtered ? 'No questions match these filters.' : 'This question bank has no questions yet. Add an MCQ or import a CSV file.'} {filtered && <button className="btn-link" onClick={url.reset}>Clear filters</button>}</p>}
       </Async>
 
       {edit && <Editor draft={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); refresh(); }} poolId={poolId} />}
@@ -91,7 +91,7 @@ function PoolDetail({ poolId, onBack }: { poolId: string; onBack: () => void }) 
           {prev.explanation && <p className="muted" style={{ margin: 0 }}><b>Explanation:</b> {prev.explanation}</p>}
           <p className="small faint" style={{ margin: 0 }}>{cap(prev.difficulty)} · {prev.marks} mark{prev.marks === 1 ? '' : 's'}{prev.topic ? ` · ${prev.topic}` : ''} · This is what you see; students never receive the correct answer before the paper is scored.</p></div></Modal>}
       {rm && <Confirm title="Delete this question?" body={<>It is retired, not erased: an examination that already uses it keeps its approved copy.</>} yes="Delete" danger onNo={() => setRm(null)} onYes={() => run(async () => { await del(`/teacher/questions/${rm.id}`); setRm(null); toast('Question deleted'); refresh(); })} />}
-      {submit && <Confirm title="Submit this pool for review?" body={<>{pool?.counts.draft} draft question{pool?.counts.draft === 1 ? '' : 's'} will be sent to the examiners and cannot be edited until they respond.</>} yes="Submit for review" onNo={() => setSubmit(false)} onYes={() => run(async () => { const r: any = await post(`/teacher/pools/${poolId}/submit`); setSubmit(false); toast(`${r.submitted} question${r.submitted === 1 ? '' : 's'} submitted`); refresh(); })} />}
+      {submit && <Confirm title="Submit this question bank for review?" body={<>{pool?.counts.draft} draft question{pool?.counts.draft === 1 ? '' : 's'} will be sent to the examiners and cannot be edited until they respond.</>} yes="Submit for review" onNo={() => setSubmit(false)} onYes={() => run(async () => { const r: any = await post(`/teacher/pools/${poolId}/submit`); setSubmit(false); toast(`${r.submitted} question${r.submitted === 1 ? '' : 's'} submitted`); refresh(); })} />}
       {imp && <ImportModal poolId={poolId} onClose={() => setImp(false)} onDone={() => { setImp(false); refresh(); }} />}
       <p className="sr-only" aria-live="polite">{busy ? 'Working…' : ''}</p>
     </>

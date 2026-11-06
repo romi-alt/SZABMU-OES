@@ -47,7 +47,7 @@ test('registration: three steps on a phone, validation, selection kept between s
 test('a pending teacher sees only the approval status and cannot reach any workspace page, even by URL', async ({ page }) => {
   await signIn(page, EMAIL);
   await expect(page.getByTestId('teacher-approval')).toContainText('awaiting approval'); await expect(page.getByTestId('teacher-approval').locator('tbody tr')).toHaveCount(2);
-  await expect(page.getByRole('link', { name: 'MCQ Pool' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'MCQ Question Banks' })).toHaveCount(0);
   for (const url of ['/pools', '/classes', '/my-students', '/profile']) { await page.goto(url); await expect(page.getByTestId('teacher-approval'), url).toBeVisible(); }
   expect((await page.request.get('/api/teacher/students')).status()).toBe(403); expect((await page.request.get('/api/teacher/overview')).status()).toBe(403);
 });
@@ -64,11 +64,11 @@ test('administrator reviews identity, approves one class-subject and rejects the
 
 test('teacher workspace: five pages only; real counts; MCQ pool lifecycle; names-only students; profile', async ({ page }) => {
   await signIn(page, EMAIL);
-  const nav = page.getByRole('navigation', { name: 'Primary' }); await expect(nav.getByRole('link')).toHaveText(['Overview', 'My Classes & Subjects', 'MCQ Pool', 'Students', 'My Profile']);
+  const nav = page.getByRole('navigation', { name: 'Primary' }); await expect(nav.getByRole('link')).toHaveText(['Overview', 'My Classes & Subjects', 'MCQ Question Banks', 'My Students', 'Question Submissions', 'My Profile']);
   const kpis = page.getByTestId('teacher-kpis'); await expect(kpis).toContainText('Assigned classes'); await expect(kpis.locator('div').nth(0).locator('dd')).toHaveText('1'); await expect(kpis.locator('div').nth(1).locator('dd')).toHaveText('1');
   await nav.getByRole('link', { name: 'My Classes & Subjects' }).click(); const approved = page.getByTestId('approved-assignments'); await expect(approved.locator('tbody tr')).toHaveCount(1); await expect(page.getByText('Not on the panel this session')).toBeVisible();
   // pool
-  await nav.getByRole('link', { name: 'MCQ Pool' }).click(); await page.getByRole('button', { name: '+ New pool' }).click(); await page.getByLabel('Pool name').fill('Endocrine basics'); await page.getByRole('button', { name: 'Create pool' }).click();
+  await nav.getByRole('link', { name: 'MCQ Question Banks' }).click(); await page.getByRole('button', { name: '+ New question bank' }).click(); await page.getByLabel('Bank title').fill('Endocrine basics'); await page.getByRole('button', { name: 'Create question bank' }).click();
   await expect(page.getByRole('heading', { name: 'Endocrine basics' })).toBeVisible(); await page.getByRole('button', { name: '+ Add MCQ' }).click();
   await page.getByRole('button', { name: 'Add question' }).click(); await expect(page.getByText('Enter the question.')).toBeVisible();
   await page.getByLabel('Question statement').fill('Which organ produces insulin?'); for (const [i, t] of ['Liver', 'Pancreas', 'Kidney', 'Spleen'].entries()) await page.getByLabel(`Option ${'ABCD'[i]}`, { exact: true }).fill(t);
@@ -79,9 +79,9 @@ test('teacher workspace: five pages only; real counts; MCQ pool lifecycle; names
   await page.getByRole('button', { name: 'Import CSV' }).click(); await page.getByLabel('CSV content').fill('statement,option_a,option_b,option_c,option_d,option_e,correct,explanation,difficulty,topic,marks\nNormal resting heart rate?,20-30,60-100,150-200,300-400,,B,,easy,Cardio,1\n');
   await page.getByRole('button', { name: /Import 1 question/ }).click(); await expect(list.locator('tbody tr')).toHaveCount(3);
   const dl = page.waitForEvent('download'); await page.getByRole('button', { name: 'Export CSV' }).click(); expect((await dl).suggestedFilename()).toBe('Endocrine-basics.csv');
-  await page.getByRole('button', { name: /Submit pool for review/ }).click(); await page.getByRole('button', { name: 'Submit for review' }).click(); await expect(list.getByText('Submitted').first()).toBeVisible();
+  await page.getByRole('button', { name: /Submit question bank for review/ }).click(); await page.getByRole('button', { name: 'Submit for review' }).click(); await expect(list.getByText('Submitted').first()).toBeVisible();
   // students: names only
-  await nav.getByRole('link', { name: 'Students' }).click(); const names = page.getByTestId('student-names'); await expect(names.locator('tbody tr').first()).toBeVisible(); await expect(names.locator('th')).toHaveText(['Student name']);
+  await nav.getByRole('link', { name: 'My Students' }).click(); const names = page.getByTestId('student-names'); await expect(names.locator('tbody tr').first()).toBeVisible(); await expect(names.locator('th')).toHaveText(['Student name']);
   const text = await page.locator('main').innerText(); expect(text).not.toMatch(/@|DMC-|attendance|marks|grade|result|phone|email/i);
   await page.getByLabel('Search').fill('zzzz-nobody'); await expect(page.getByText(/No students/i)).toBeVisible();
   // profile

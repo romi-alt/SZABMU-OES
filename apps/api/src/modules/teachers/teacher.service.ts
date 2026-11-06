@@ -13,6 +13,11 @@ import { decodePhoto } from './teacher-registration.service';
 
 export interface McqInput { stem: string; options: string[]; correctIndex: number; explanation?: string; difficulty: 'EASY' | 'MEDIUM' | 'HARD'; topic?: string; marks: number }
 export type AssignmentEffect = 'ACTIVE' | 'WAITS_FOR_ACCOUNT' | 'ACCOUNT_NOT_APPROVED' | 'PENDING_REVIEW' | 'REJECTED' | 'REVOKED';
+export type BankState = 'EMPTY' | 'DRAFT' | 'SUBMITTED' | 'REJECTED' | 'APPROVED';
+/** A bank has no status of its own yet; its state is derived from its questions: anything under review → SUBMITTED, else anything returned → REJECTED, else any draft → DRAFT, else all APPROVED. */
+export function bankState(statuses: string[]): BankState {
+  if (!statuses.length) return 'EMPTY'; if (statuses.includes('SUBMITTED')) return 'SUBMITTED'; if (statuses.includes('REJECTED')) return 'REJECTED'; if (statuses.includes('DRAFT')) return 'DRAFT'; return 'APPROVED';
+}
 const LABELS = ['A', 'B', 'C', 'D', 'E'];
 /** Spreadsheet formula injection: a cell that starts with one of these is read as a formula by Excel/Sheets, so it is prefixed with an apostrophe. */
 const safeCell = (v: unknown) => { const s = String(v ?? ''); const t = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s; return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
@@ -101,7 +106,43 @@ export class TeacherService {
     const classes = new Set(rows.map((r) => `${r.institutionId}|${r.course.programId}|${r.course.semester}|${r.term}`)).size;
     const subjects = new Set(rows.map((r) => r.courseId)).size;
     const mcqs = pairs.length ? await this.prisma.question.count({ where: { authorId: u.id, status: { not: 'RETIRED' }, poolId: { not: null }, OR: pairs.map((p) => ({ courseId: p.courseId, institutionId: p.institutionId })) } }) : 0;
-    return { classes, subjects, mcqs, students: await this.countStudents(pairs) };
+    // Question and bank figures come from the teacher's own banks inside their approved assignments (never anyone else's).
+    const banks = pairs.length ? (await this.prisma.questionPool.findMany({
+      where: { ownerId: u.id, archivedAt: null, OR: pairs.map((p) => ({ courseId: p.courseId, institutionId: p.institutionId })) },
+      select: { id: true, name: true, term: true, courseId: true, institutionId: true, createdAt: true, submittedAt: true, questions: { where: { status: { not: 'RETIRED' }, authorId: u.id }, select: { status: true, reviewedAt: true } } },
+    })).filter((p) => this.pairOk(pairs, p.courseId, p.institutionId, p.term)) : [];
+    const questions = { draft: 0, submitted: 0, approved: 0, rejected: 0 };
+    for (const b of banks) for (const q of b.questions) { const k = q.status.toLowerCase() as keyof typeof questions; if (k in questions) questions[k]++; }
+    const states = banks.map((b) => bankState(b.questions.map((q) => q.status)));
+    const count = (st: BankState) => states.filter((x) => x === st).length;
+    const events: { kind: 'CREATED' | 'SUBMITTED' | 'REVIEWED'; at: Date; bank: { id: string; name: string }; decision?: 'APPROVED' | 'REJECTED'; count?: number }[] = [];
+    for (const b of banks) {
+      const bank = { id: b.id, name: b.name }; events.push({ kind: 'CREATED', at: b.createdAt, bank });
+      const waiting = b.questions.filter((q) => q.status === 'SUBMITTED').length; if (waiting && b.submittedAt) events.push({ kind: 'SUBMITTED', at: b.submittedAt, bank, count: waiting });
+      for (const decision of ['APPROVED', 'REJECTED'] as const) {
+        const reviewed = b.questions.filter((q) => q.status === decision && q.reviewedAt); if (!reviewed.length) continue;
+        events.push({ kind: 'REVIEWED', at: new Date(Math.max(...reviewed.map((q) => q.reviewedAt!.getTime()))), bank, decision, count: reviewed.length });
+      }
+    }
+    events.sort((x, y) => y.at.getTime() - x.at.getTime());
+    return { classes, subjects, mcqs, students: await this.countStudents(pairs), questions,
+      banks: { total: banks.length, empty: count('EMPTY'), draft: count('DRAFT'), submitted: count('SUBMITTED'), rejected: count('REJECTED'), approved: count('APPROVED') }, recent: events.slice(0, 8) };
+  }
+
+  /** Question Submissions: the teacher's own questions that have left DRAFT, with the reviewer's feedback. No options or answer key are returned here. */
+  async submissions(u: AuthUser, f: { status?: 'SUBMITTED' | 'APPROVED' | 'REJECTED'; page: number; pageSize: number }) {
+    const pairs = await this.pairs(u);
+    const counts = { SUBMITTED: 0, APPROVED: 0, REJECTED: 0 };
+    if (!pairs.length) return { total: 0, counts, items: [] };
+    const scope: Prisma.QuestionWhereInput = { authorId: u.id, poolId: { not: null }, OR: pairs.map((p) => ({ courseId: p.courseId, institutionId: p.institutionId })) };
+    const [grouped, total, rows] = await Promise.all([
+      this.prisma.question.groupBy({ by: ['status'], where: { ...scope, status: { in: ['SUBMITTED', 'APPROVED', 'REJECTED'] } }, _count: true }),
+      this.prisma.question.count({ where: { ...scope, status: f.status ?? { in: ['SUBMITTED', 'APPROVED', 'REJECTED'] } } }),
+      this.prisma.question.findMany({ where: { ...scope, status: f.status ?? { in: ['SUBMITTED', 'APPROVED', 'REJECTED'] } }, orderBy: { updatedAt: 'desc' }, ...paginate(f),
+        select: { id: true, stem: true, status: true, reviewNote: true, reviewedAt: true, version: true, topic: true, difficulty: true, updatedAt: true, pool: { select: { id: true, name: true } }, course: { select: { code: true } } } }),
+    ]);
+    for (const g of grouped) counts[g.status as keyof typeof counts] = g._count;
+    return { total, counts, items: rows.map((q) => ({ id: q.id, stem: q.stem.length > 200 ? `${q.stem.slice(0, 200)}…` : q.stem, status: q.status, reviewNote: q.status === 'REJECTED' ? q.reviewNote : null, reviewedAt: q.reviewedAt, version: q.version, topic: q.topic, difficulty: q.difficulty, updatedAt: q.updatedAt, pool: q.pool, course: q.course.code })) };
   }
 
   // ── students: names only ──
@@ -143,7 +184,7 @@ export class TeacherService {
     });
     const courses = await this.prisma.course.findMany({ where: { id: { in: [...new Set(pools.map((p) => p.courseId))] } }, select: { id: true, code: true, title: true } });
     return pools.filter((p) => this.pairOk(pairs, p.courseId, p.institutionId, p.term)).map((p) => ({
-      id: p.id, name: p.name, description: p.description, term: p.term, submittedAt: p.submittedAt, course: courses.find((c) => c.id === p.courseId),
+      id: p.id, name: p.name, description: p.description, term: p.term, submittedAt: p.submittedAt, state: bankState(p.questions.map((q) => q.status)), course: courses.find((c) => c.id === p.courseId),
       counts: { total: p.questions.length, draft: p.questions.filter((q) => q.status === 'DRAFT' || q.status === 'REJECTED').length, submitted: p.questions.filter((q) => q.status === 'SUBMITTED').length, approved: p.questions.filter((q) => q.status === 'APPROVED').length },
     }));
   }
