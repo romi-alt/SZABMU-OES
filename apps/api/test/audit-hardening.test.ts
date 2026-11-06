@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sessionCookieOptions } from '../src/common/auth';
-import { as, boot, startExam, type Ctx } from './helpers';
+import { Client, as, boot, startExam, type Ctx } from './helpers';
 import { DOMAIN } from '../src/seed/seed';
 
 /** Regression tests for findings of the 2026-11 full-system audit (docs/audits/SECURITY_FINDINGS.md). */
@@ -101,5 +101,30 @@ describe('SEC-06: sign-up verification codes cannot be brute-forced with paralle
     const s = await inject('/auth/register', { regNo: `NM/${Date.now()}`, email, password: 'Sturdy-Pass-2026!x' }, '10.33.0.1'); const code = s.body.devCode as string;
     for (const typo of ['000001', '999998']) if (typo !== code) expect((await inject('/auth/register/verify', { email, code: typo }, '10.33.0.1')).status).toBe(400);
     expect((await inject('/auth/register/verify', { email, code }, '10.33.0.1')).status).toBe(200);
+  });
+});
+
+describe('SEC-07: the second factor cannot be brute-forced with parallel guesses', () => {
+  let ctx: Ctx;
+  beforeAll(async () => { process.env.MFA_ENFORCE = 'true'; ctx = await boot({ studentsPerCampus: 3 }); });
+  afterAll(async () => { await ctx.app.close(); delete process.env.MFA_ENFORCE; });
+
+  it('a burst of 40 parallel wrong codes is capped before verification; afterwards even the right code is refused and the account is locked', async () => {
+    const { totpAt } = await import('../src/common/totp');
+    const setupClient = new Client(ctx.app, 'cce'); await setupClient.login();
+    const secret = (await setupClient.post('/auth/mfa/setup')).body.secret as string;
+    expect((await setupClient.post('/auth/mfa/enable', { code: totpAt(secret, Date.now()) })).status).toBe(200);
+    await ctx.kv.del(`rl:mfa:${(await ctx.prisma.user.findFirstOrThrow({ where: { email: `cce@${DOMAIN}` } })).id}`);   // enrolment used one try
+
+    const attacker = new Client(ctx.app, 'cce'); expect((await attacker.login()).body.user.mfa).toBe('pending');   // has the password, not the device
+    const right = totpAt(secret, Date.now());
+    const wrong = Array.from({ length: 40 }, (_, i) => String((Number(right) + 7 + i) % 1_000_000).padStart(6, '0'));
+    const rs = await Promise.all(wrong.map((code) => attacker.post('/auth/mfa/verify', { code })));
+    expect(rs.every((r) => [401, 423, 429].includes(r.status))).toBe(true);
+    expect(rs.filter((r) => r.status === 429).length).toBeGreaterThanOrEqual(30);                    // refused before any code was checked
+    const row = await ctx.prisma.user.findFirstOrThrow({ where: { email: `cce@${DOMAIN}` } });
+    expect(row.lockedUntil && row.lockedUntil > new Date()).toBe(true);                               // the lockout is reached despite the burst
+    expect((await attacker.post('/auth/mfa/verify', { code: right })).status).not.toBe(200);
+    expect((await attacker.get('/exams')).status).toBe(403);
   });
 });
