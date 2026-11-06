@@ -9,3 +9,4 @@ export * from './exam-status';
 export * from './phone';
 export * from './portal';
 export * from './psychometrics';
+export * from './similarity';
