@@ -46,9 +46,9 @@ function Inner() {
       <Card flush>
         <div className="filters"><Field label="Status"><select className="in" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}><option value="">All</option>{['DRAFT', 'PAPER_PENDING', 'APPROVED', 'SCHEDULED', 'LIVE', 'CLOSED', 'RESULT_PENDING', 'PUBLISHED', 'CANCELLED'].map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}</select></Field></div>
         <Async state={list}>{(d) => <><Table rowKey={(r) => r.id} empty={<ListEmpty noun="examinations" filters={[status && status.toLowerCase().replace(/_/g, ' ')].filter(Boolean) as string[]} onClear={url.reset} />} rows={d.items} cols={[
-          { h: 'Code', cell: (r) => <Link className="code" href={`/exams/${r.id}`}>{r.code}</Link> }, { h: 'Title', cell: (r) => <b>{r.title}</b> }, { h: 'Course', cell: (r) => r.course.code },
+          { h: 'Code', cell: (r) => <Link className="code" href={`/exams/${r.id}`} aria-label={`Open ${r.code}`}>{r.code}</Link> }, { h: 'Title', cell: (r) => <b>{r.title}</b> }, { h: 'Course', cell: (r) => r.course.code },
           { h: 'Window opens', cell: (r) => LIVEISH.includes(r.status) ? <b>Live now</b> : fmtDT(r.opensAt) }, { h: 'Minutes', num: true, cell: (r) => r.durationMin }, { h: 'Questions', num: true, cell: (r) => r._count.questions }, { h: 'Candidates', num: true, cell: (r) => r._count.candidates },
-          { h: 'Status', cell: (r) => <Status s={r.status} /> }, { h: '', cell: (r) => <span className="row"><Link href={`/exams/${r.id}`}>Open ›</Link>{can('exam.control.view') && CONTROLLABLE.includes(r.status) && <Link className="btn btn-sm" href={`/exams/${r.id}/control`} aria-label={`Control centre for ${r.code}`}>Control centre</Link>}</span> },
+          { h: 'Status', cell: (r) => <Status s={r.status} /> }, { h: '', cell: (r) => <span className="row">{can('exam.control.view') && CONTROLLABLE.includes(r.status) && <Link className="btn btn-sm" href={`/exams/${r.id}/control`} aria-label={`Control centre for ${r.code}`}>Control centre</Link>}</span> },
         ]} /><Pager page={page} total={d.total} size={25} onPage={setPage} /></>}</Async>
       </Card>
       {create && <Create onClose={() => setCreate(false)} onDone={list.reload} />}

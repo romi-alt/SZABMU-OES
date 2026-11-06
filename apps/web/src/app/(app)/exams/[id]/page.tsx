@@ -56,7 +56,7 @@ function PaperBuilder({ exam, reload }: { exam: any; reload: () => void }) {
         </div>
         <Async state={bank}>{(d) => <Table rowKey={(r: any) => r.id} empty={<ListEmpty noun="approved questions" filters={filters} onClear={() => { setSearch(''); setDiff(''); setType(''); }} />} rows={d.items} cols={[
           { h: '', cell: (r: any) => <input type="checkbox" aria-label={`Include on paper: ${String(r.stem).slice(0, 60)}`} checked={ids.has(r.id)} onChange={() => edit((c) => ids.has(r.id) ? c.filter((x) => x.id !== r.id) : [...c, { id: r.id, marks: 1 }])} /> },
-          { h: 'Question', cell: (r: any) => r.stem }, { h: 'Type', cell: (r: any) => r.type === 'CLINICAL_MCQ' ? 'Clinical' : 'MCQ' }, { h: 'Diff.', cell: (r: any) => r.difficulty.toLowerCase() },
+          { h: 'Question', cell: (r: any) => r.stem }, { h: 'Type', cell: (r: any) => r.type === 'CLINICAL_MCQ' ? 'Clinical' : 'MCQ' }, { h: 'Difficulty', cell: (r: any) => r.difficulty.toLowerCase() },
           { h: 'Marks', num: true, cell: (r: any) => ids.has(r.id) ? <input className="in mono" style={{ width: 70 }} type="number" min={0.5} step={0.5} value={chosen.find((x) => x.id === r.id)!.marks} onChange={(e) => setMarks(r.id, +e.target.value)} aria-label="Marks" /> : null },
         ]} />}</Async>
       </>}
@@ -112,7 +112,7 @@ function Roster({ exam, canAccommodate, canOverride }: { exam: any; canAccommoda
       { h: 'Extra time', num: true, cell: (r: any) => canAccommodate && !r.attempt && ['SCHEDULED', 'LIVE'].includes(exam.status) ? <span className="row" style={{ justifyContent: 'flex-end' }}><input className="in mono" style={{ width: 64 }} type="number" min={0} max={120} value={extra[r.studentId] ?? r.extraTimeMin} onChange={(e) => setExtra({ ...extra, [r.studentId]: e.target.value })} aria-label={`Extra minutes for ${r.regNo}`} /><button className="btn btn-sm" onClick={() => run(async () => { await patch(`/exams/${exam.id}/candidates/${r.studentId}`, { extraTimeMin: +(extra[r.studentId] ?? 0) }); roster.reload(); }, 'Accommodation saved')}>Set</button></span> : `${r.extraTimeMin} min` },
       { h: 'Admission', cell: (r: any) => <span title={r.statusReason ?? ''}><Badge tone={r.admission === 'REVOKED' ? 'bad' : 'green'}>{r.admission === 'REVOKED' ? 'Revoked' : 'Admitted'}</Badge>{r.decisionSource === 'OVERRIDE' && <span className="small faint"> manual</span>}</span> },
       { h: 'Attempt', cell: (r: any) => r.attempt ? <Status s={r.attempt} /> : <span className="faint">—</span> },
-      ...(canOverride && ['SCHEDULED', 'LIVE'].includes(exam.status) ? [{ h: '', cell: (r: any) => !r.attempt || r.attempt === 'IN_PROGRESS' ? <button className="btn btn-sm" onClick={() => setOv(r)}>{r.admission === 'REVOKED' ? 'Admit…' : 'Withdraw…'}</button> : null }] : []),
+      ...(canOverride && ['SCHEDULED', 'LIVE'].includes(exam.status) ? [{ h: '', cell: (r: any) => !r.attempt || r.attempt === 'IN_PROGRESS' ? <button className="btn-link small" onClick={() => setOv(r)}>{r.admission === 'REVOKED' ? 'Admit…' : 'Withdraw…'}</button> : null }] : []),
     ]} />}</Async>{ov && <OverrideDialog exam={exam} row={ov} onClose={() => setOv(null)} done={roster.reload} />}</Card>
   );
 }

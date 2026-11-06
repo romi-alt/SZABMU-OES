@@ -504,3 +504,8 @@ a.auth-btn, a.auth-btn:hover { color: #fff; }
 @media (max-width: 860px) { .auth, .auth-wide { grid-template-columns: minmax(0, 1fr); } .auth-art { padding: 20px 20px 22px; } }
 
 .brand-name { font-size: 18px; line-height: 1.25; }
+
+/* UI audit A-17: visible sign-out label; A-14/A-15: codes do not wrap mid-code */
+.signout-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; background: var(--white); color: var(--ink-2); }
+.signout-btn:hover:not(:disabled) { color: var(--maroon); border-color: var(--maroon); }
+.tbl .code { white-space: nowrap; }
