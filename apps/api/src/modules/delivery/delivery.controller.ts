@@ -19,11 +19,14 @@ const submitDto = z.object({
   clientId, submitKey: z.string().min(8).max(80),
   expected: z.array(z.object({ examQuestionId: z.string().uuid(), revision: z.number().int().min(0), selectedLabel: z.string().nullable() })).max(500).optional(),
 });
-const eventDto = z.object({ clientId, kind: z.enum(['TAB_HIDDEN', 'TAB_VISIBLE', 'FULLSCREEN_EXIT', 'OFFLINE', 'ONLINE', 'PASTE_BLOCKED']), detail: z.record(z.string(), z.unknown()).optional() });
+// detail is optional context only (the exam player sends none): small, flat and bounded so a client cannot fill attempt_events with arbitrary data.
+const eventDetail = z.record(z.string().max(40), z.union([z.string().max(200), z.number(), z.boolean(), z.null()])).refine((o) => Object.keys(o).length <= 10, 'At most 10 detail fields');
+const eventDto = z.object({ clientId, kind: z.enum(['TAB_HIDDEN', 'TAB_VISIBLE', 'FULLSCREEN_EXIT', 'OFFLINE', 'ONLINE', 'PASTE_BLOCKED']), detail: eventDetail.optional() });
 
 @Controller()
 export class DeliveryController {
   private readonly saveGuard = new LocalRateWindow(10_000);
+  private readonly eventGuard = new LocalRateWindow(60_000);
   constructor(private readonly svc: DeliveryService, private readonly metrics: MetricsService) {}
 
   @Perm('exam.sit') @Get('me/exams') myExams(@CurrentUser() u: AuthUser) { return this.svc.myExams(u); }
@@ -51,7 +54,12 @@ export class DeliveryController {
   hb(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown) { const d = parse(z.object({ clientId, online: z.boolean().optional() }), b); return this.svc.heartbeat(u, id, d.clientId, d.online); }
 
   @Perm('exam.sit') @Post('attempts/:id/events') @HttpCode(200)
-  ev(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown) { const d = parse(eventDto, b); return this.svc.recordEvent(u, id, d.clientId, d.kind, d.detail); }
+  ev(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown) {
+    const d = parse(eventDto, b);
+    // Integrity events are weak context, never evidence on their own; a looping or hostile client must not flood the journal (2 writes per event).
+    if (this.eventGuard.hit(id) > 60) throw new AppError(429, 'RATE_LIMITED', 'Too many events; retry shortly');
+    return this.svc.recordEvent(u, id, d.clientId, d.kind, d.detail);
+  }
 
   @Perm('exam.sit') @Get('attempts/:id/sheet') sheet(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.svc.sheet(u, id); }
 
