@@ -10,6 +10,7 @@ import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { sha256 } from '../../common/auth';
 import { CONFIG, type Config } from '../../config';
+import { assertNotHiddenDemo, assertOffered, selectableWhere } from '../../directory/rules';
 
 const TTL_SEC = 30 * 60;
 const MAX_ATTEMPTS = 5;
@@ -49,17 +50,21 @@ export class TeacherRegistrationService {
 
   /** Public, read-only options for step 2. Names and codes of academic structure only — no people, no counts. */
   async catalog() {
+    // Institutions, programmes and subjects come from the directory: only offerings that are selectable, and no synthetic demo subject on a real site.
+    const demo = this.cfg.DEMO_INSTITUTIONS_VISIBLE === 'true';
+    const offerings = await this.prisma.institutionProgramOffering.findMany({ where: selectableWhere(demo), select: { institutionId: true, programId: true, intakeStatus: true } });
+    const instIds = [...new Set(offerings.map((o) => o.institutionId))]; const progIds = [...new Set(offerings.map((o) => o.programId))];
     const [institutions, programs, courses, tuples, examTerms] = await Promise.all([
-      this.prisma.institution.findMany({ where: { active: true }, select: { id: true, code: true, name: true }, orderBy: { name: 'asc' } }),
-      this.prisma.program.findMany({ where: { active: true }, select: { id: true, code: true, name: true }, orderBy: { name: 'asc' } }),
-      this.prisma.course.findMany({ select: { id: true, programId: true, code: true, title: true, semester: true }, orderBy: [{ semester: 'asc' }, { title: 'asc' }] }),
+      this.prisma.institution.findMany({ where: { id: { in: instIds } }, select: { id: true, code: true, name: true, sector: true, city: true }, orderBy: { name: 'asc' } }),
+      this.prisma.program.findMany({ where: { id: { in: progIds } }, select: { id: true, code: true, name: true }, orderBy: { name: 'asc' } }),
+      this.prisma.course.findMany({ where: { programId: { in: progIds }, ...(demo ? {} : { isDemo: false }) }, select: { id: true, programId: true, code: true, title: true, semester: true }, orderBy: [{ semester: 'asc' }, { title: 'asc' }] }),
       this.prisma.$queryRaw<{ term: string; institutionId: string; programId: string; semester: number }[]>`
         SELECT DISTINCT e."term", s."institutionId", s."programId", c."semester"
         FROM enrollments e JOIN students s ON s."id" = e."studentId" JOIN courses c ON c."id" = e."courseId"`,
       this.prisma.exam.findMany({ distinct: ['term'], select: { term: true } }),
     ]);
     const terms = [...new Set([...tuples.map((t) => t.term), ...examTerms.map((t) => t.term)])].sort().reverse();
-    return { institutions, programs, courses, terms, termsByClass: tuples };
+    return { institutions, programs, courses, terms, termsByClass: tuples, offerings: offerings.map((o) => ({ institutionId: o.institutionId, programId: o.programId, intakeStopped: o.intakeStatus === 'STOPPED' })) };
   }
 
   /** Public catalog, rate-limited per address (it is unauthenticated). */
@@ -84,6 +89,8 @@ export class TeacherRegistrationService {
       const c = cById.get(a.courseId);
       if (!c || c.programId !== a.programId || c.semester !== a.semester) throw badRequest('One of the selected subjects does not belong to the selected programme and semester.');
       if (!iIds.has(a.institutionId)) throw badRequest('One of the selected institutions is not available.');
+      await assertNotHiddenDemo(this.prisma, a.institutionId, this.cfg.DEMO_INSTITUTIONS_VISIBLE === 'true');
+      await assertOffered(this.prisma, a.institutionId, c.programId);          // the institution must offer the subject's programme (teaching an existing cohort of a stopped intake is allowed)
       if (cat.terms.length && !cat.terms.includes(a.term)) throw badRequest('Choose one of the listed academic sessions.');
     }
   }

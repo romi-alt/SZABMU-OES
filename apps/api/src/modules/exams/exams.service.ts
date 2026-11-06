@@ -9,6 +9,7 @@ import type { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DeliveryService } from '../delivery/delivery.service';
 import { CourseAccessService } from '../org/course-access.service';
+import { outsideSzabmuPairs } from '../../directory/rules';
 
 export interface ExamInput {
   code: string; title: string; courseId: string; term: string;
@@ -161,9 +162,10 @@ export class ExamsService {
     const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: examId }, include: { institutions: true } });
     const enr = await this.prisma.enrollment.findMany({
       where: { courseId: exam.courseId, term: exam.term, status: 'ENROLLED', student: { institutionId: { in: exam.institutions.map((i) => i.institutionId) }, status: 'ACTIVE', selfDeclared: false } },
-      select: { eligibility: true, student: { select: { id: true, institutionId: true } } },
+      select: { eligibility: true, student: { select: { id: true, institutionId: true, programId: true } } },
     });
-    const eligible = new Map(enr.filter((e) => e.eligibility !== 'INELIGIBLE').map((e) => [e.student.id, e.student.institutionId]));
+    const outside = await outsideSzabmuPairs(this.prisma);      // offerings awarded by someone other than SZABMU are outside SZABMU examination eligibility
+    const eligible = new Map(enr.filter((e) => e.eligibility !== 'INELIGIBLE' && !outside.has(`${e.student.institutionId}|${e.student.programId}`)).map((e) => [e.student.id, e.student.institutionId]));
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM exams WHERE id = ${examId} FOR UPDATE`;   // serialises roster builds/overrides for this exam
       const current = await tx.examCandidate.findMany({ where: { examId } });

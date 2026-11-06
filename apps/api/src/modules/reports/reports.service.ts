@@ -1,12 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma.service';
 import { idList, int } from '../../infra/sql';
 import { scope, type AuthUser } from '../../common/auth';
 import { notFound } from '../../common/errors';
+import { CONFIG, type Config } from '../../config';
 
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Inject(CONFIG) private readonly cfg: Config) {}
 
   /** Role-specific landing statistics. Every count is computed under the caller's institution scope. */
   async dashboard(u: AuthUser) {
@@ -75,8 +76,11 @@ export class ReportsService {
         return { papersToApprove: papers, resultsToPublish: publish, openIncidents: incidents, liveExams: live, banksToReview: banks };
       }
       default: {
+        // Production totals leave out synthetic demo records (explicit isDemo flags) unless this site shows them.
+        const demo = this.cfg.DEMO_INSTITUTIONS_VISIBLE === 'true'; const real = demo ? {} : { isDemo: false };
         const [institutions, users, students, exams, audit] = await Promise.all([
-          this.prisma.institution.count(), this.prisma.user.count(), this.prisma.student.count(), this.prisma.exam.count(), this.prisma.auditLog.count(),
+          this.prisma.institution.count({ where: { ...real, kind: 'INSTITUTION' } }), this.prisma.user.count({ where: demo ? {} : { institutions: { none: { institution: { isDemo: true } } } } }), this.prisma.student.count({ where: demo ? {} : { institution: { isDemo: false } } }),
+          this.prisma.exam.count({ where: demo ? {} : { institutions: { none: { institution: { isDemo: true } } } } }), this.prisma.auditLog.count(),
         ]);
         return { institutions, users, students, exams, auditEntries: audit };
       }
