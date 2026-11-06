@@ -12,6 +12,7 @@ import { paginate } from '../../common/validate';
 import { decodePhoto } from './teacher-registration.service';
 
 export interface McqInput { stem: string; options: string[]; correctIndex: number; explanation?: string; difficulty: 'EASY' | 'MEDIUM' | 'HARD'; topic?: string; marks: number }
+export type AssignmentEffect = 'ACTIVE' | 'WAITS_FOR_ACCOUNT' | 'ACCOUNT_NOT_APPROVED' | 'PENDING_REVIEW' | 'REJECTED' | 'REVOKED';
 const LABELS = ['A', 'B', 'C', 'D', 'E'];
 /** Spreadsheet formula injection: a cell that starts with one of these is read as a formula by Excel/Sheets, so it is prefixed with an apostrophe. */
 const safeCell = (v: unknown) => { const s = String(v ?? ''); const t = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s; return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
@@ -28,13 +29,19 @@ export class TeacherService {
 
   // ── identity & approval status (allowed while pending) ──
   async status(u: AuthUser) {
-    const p = await this.prisma.teacherProfile.findUnique({ where: { userId: u.id } });
+    const p = await this.prisma.teacherProfile.findUnique({ where: { userId: u.id }, include: { user: { select: { active: true } } } });
     if (!p) throw forbidden('This account has no teacher registration');
     const rows = await this.prisma.courseAssignment.findMany({ where: { userId: u.id }, orderBy: { requestedAt: 'asc' }, include: this.aInclude });
     const counts: Record<string, number> = {}; for (const r of rows) counts[r.status.toLowerCase()] = (counts[r.status.toLowerCase()] ?? 0) + 1;
+    // Two separate decisions: the ACCOUNT (identity) and each class-subject. Access needs both, so an approved subject on a not-yet-approved account is
+    // reported as waiting for the account, never as usable. The same rule is enforced on every working route (CourseAccessService.pairs).
+    const accountOk = p.status === 'APPROVED' && p.user.active;
+    const effective = (a: (typeof rows)[number]): AssignmentEffect => a.status === 'APPROVED' && !a.revokedAt ? (accountOk ? 'ACTIVE' : p.status === 'PENDING' ? 'WAITS_FOR_ACCOUNT' : 'ACCOUNT_NOT_APPROVED')
+      : a.status === 'PENDING' ? 'PENDING_REVIEW' : a.status === 'REJECTED' ? 'REJECTED' : 'REVOKED';
+    const requested = rows.map((a) => ({ id: a.id, status: a.status, effective: effective(a), term: a.term, semester: a.course.semester, decisionNote: a.status === 'REJECTED' || a.status === 'REVOKED' ? a.decisionNote : null, course: { code: a.course.code, title: a.course.title }, program: a.course.program.code, institution: a.institution.code }));
     // The teacher's own requests, so a pending teacher can see exactly what was submitted. Nothing here grants access.
-    return { status: p.status, reviewNote: p.reviewNote, submittedAt: p.submittedAt, reviewedAt: p.reviewedAt, requests: counts,
-      requested: rows.map((a) => ({ id: a.id, status: a.status, term: a.term, semester: a.course.semester, decisionNote: a.status === 'REJECTED' ? a.decisionNote : null, course: { code: a.course.code, title: a.course.title }, program: a.course.program.code, institution: a.institution.code })) };
+    return { status: p.status, accountStatus: p.status, access: { accountApproved: accountOk, activeAssignments: requested.filter((r) => r.effective === 'ACTIVE').length },
+      reviewNote: p.reviewNote, submittedAt: p.submittedAt, reviewedAt: p.reviewedAt, requests: counts, requested };
   }
 
   async profile(u: AuthUser) {
