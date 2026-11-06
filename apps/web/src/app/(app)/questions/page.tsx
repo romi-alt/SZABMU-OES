@@ -3,8 +3,20 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { post, put, useGet } from '@/api';
 import { useMe } from '@/session';
+import { itemWritingChecks } from '@oes/shared';
 import { useUrlState } from '@/url-state';
 import { Async, Badge, Card, Field, Modal, PageHead, Pager, Status, Table, useAction, Confirm, CancelButton, ListEmpty } from '@/ui';
+
+/** Item-writing advice (deterministic rules in @oes/shared): shown to authors while editing and to reviewers; never blocks saving or approval. */
+function ItemChecks({ draft }: { draft: { stem: string; vignette?: string | null; options: { label: string; text: string; isCorrect?: boolean }[] } }) {
+  const found = itemWritingChecks(draft);
+  if (!found.length) return null;
+  return (
+    <div className="notice warn small" data-testid="item-checks"><b>Item-writing advice</b> (does not block saving or approval):
+      <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{found.map((f) => <li key={f.id}>{f.message}{f.options?.length ? ` Option${f.options.length > 1 ? 's' : ''} ${f.options.join(', ')}.` : ''}</li>)}</ul>
+    </div>
+  );
+}
 
 const blankOpts = () => ['A', 'B', 'C', 'D', 'E'].map((label, i) => ({ label, text: '', isCorrect: i === 0 }));
 const DIFF: Record<string, string> = { EASY: 'green', MEDIUM: 'amber', HARD: 'red' };
@@ -31,6 +43,7 @@ function Editor({ q, courses, institutionId, onClose, onSaved }: { q?: any; cour
         <fieldset style={{ border: 0, padding: 0, margin: 0 }} className="stack"><legend className="small muted" style={{ fontWeight: 600, marginBottom: 6 }}>Options — select the single correct answer (4 or 5 options) <span aria-hidden className="req">*</span></legend>
           {f.options.map((o: any, i: number) => <div className="row" key={o.label}><input type="radio" name="correct" aria-label={`Option ${o.label} is correct`} checked={o.isCorrect} onChange={() => setOpt(i, { isCorrect: true })} /><span className="mono" style={{ width: 16 }}>{o.label}</span><input className="in" value={o.text} onChange={(e) => setOpt(i, { text: e.target.value })} placeholder={i >= 4 ? 'Optional fifth option' : 'Option text'} aria-label={`Option ${o.label} text`} /></div>)}
         </fieldset>
+        {f.stem.trim().length >= 10 && f.options.filter((o: any) => o.text.trim()).length >= 4 && <ItemChecks draft={f} />}
         <div className="grid g2"><Field label="Difficulty"><select className="in" value={f.difficulty} onChange={(e) => set('difficulty', e.target.value)}><option>EASY</option><option>MEDIUM</option><option>HARD</option></select></Field></div>
         <Field label="Explanation (reviewers only)"><textarea className="in" value={f.explanation} onChange={(e) => set('explanation', e.target.value)} rows={2} /></Field>
       </div>
@@ -98,6 +111,7 @@ function Inner() {
       {view && <Modal title="Question" onClose={() => setView(null)}>
         <div className="stack">{view.vignette && <div className="vignette">{view.vignette}</div>}<b>{view.stem}</b>
           {view.options.map((o: any) => <div key={o.label} className="row"><span className="mono" style={{ width: 16 }}>{o.label}</span><span>{o.text}</span>{o.isCorrect && <Badge tone="green">correct</Badge>}</div>)}
+          <ItemChecks draft={view} />
           {view.explanation && <div className="notice small"><b>Explanation:</b> {view.explanation}</div>}{view.reviewNote && <div className="notice warn small"><b>Reviewer note:</b> {view.reviewNote}</div>}</div></Modal>}
     </>
   );
