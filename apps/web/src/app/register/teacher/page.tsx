@@ -11,7 +11,7 @@ import { AuthField, AuthFrame, AuthHeading, Icon } from '../../AuthFrame';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; const DRAFT = 'oes:teacher-reg:v1';
 type Step = 1 | 2 | 3 | 'code' | 'done';
-interface Catalog { institutions: { id: string; code: string; name: string }[]; programs: { id: string; code: string; name: string }[]; courses: { id: string; programId: string; code: string; title: string; semester: number }[]; terms: string[]; termsByClass: { term: string; institutionId: string; programId: string; semester: number }[] }
+interface Catalog { offerings?: { institutionId: string; programId: string; intakeStopped: boolean }[]; institutions: { id: string; code: string; name: string }[]; programs: { id: string; code: string; name: string }[]; courses: { id: string; programId: string; code: string; title: string; semester: number }[]; terms: string[]; termsByClass: { term: string; institutionId: string; programId: string; semester: number }[] }
 interface Combo { institutionId: string; programId: string; semester: number; term: string; courseId: string }
 const key = (c: Combo) => `${c.institutionId}|${c.courseId}|${c.term}`;
 
@@ -157,13 +157,14 @@ function Picker({ cat, combos, onAdd }: { cat: Catalog; combos: Combo[]; onAdd: 
   const semesters = useMemo(() => [...new Set(cat.courses.filter((c) => c.programId === prog).map((c) => c.semester))].sort((a, b) => a - b), [cat, prog]);
   const sessions = useMemo(() => { const own = cat.termsByClass.filter((t) => t.institutionId === inst && t.programId === prog && String(t.semester) === sem).map((t) => t.term); return own.length ? [...new Set(own)].sort().reverse() : cat.terms; }, [cat, inst, prog, sem]);
   const subjects = useMemo(() => cat.courses.filter((c) => c.programId === prog && String(c.semester) === sem), [cat, prog, sem]);
+  const programs = useMemo(() => { if (!inst || !cat.offerings) return cat.programs; const ids = new Set(cat.offerings.filter((o) => o.institutionId === inst).map((o) => o.programId)); return cat.programs.filter((p) => ids.has(p.id)); }, [cat, inst]);   // only programmes the institution offers
   const have = (courseId: string) => combos.some((c) => c.institutionId === inst && c.courseId === courseId && c.term === term);
   const ready = inst && prog && sem && term;
   return (
     <section className="picker" aria-label="Add classes and subjects">
       <div className="grid g2">
-        <Sel label="Institution" value={inst} onChange={(v) => { setInst(v); setTerm(''); setPicked([]); }}><option value="">Select institution</option>{cat.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Sel>
-        <Sel label="Programme" value={prog} onChange={(v) => { setProg(v); setSem(''); setTerm(''); setPicked([]); }}><option value="">Select programme</option>{cat.programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Sel>
+        <Sel label="Institution" value={inst} onChange={(v) => { setInst(v); setTerm(''); setPicked([]); if (prog && cat.offerings && !cat.offerings.some((o) => o.institutionId === v && o.programId === prog)) { setProg(''); setSem(''); } }}>   {/* the programme stays selected only if the new institution also offers it */}<option value="">Select institution</option>{cat.institutions.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Sel>
+        <Sel label="Programme" value={prog} disabled={!inst} onChange={(v) => { setProg(v); setSem(''); setTerm(''); setPicked([]); }}><option value="">{inst ? 'Select programme' : 'Select an institution first'}</option>{programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Sel>
         <Sel label="Semester" value={sem} disabled={!prog} onChange={(v) => { setSem(v); setTerm(''); setPicked([]); }}><option value="">Select semester</option>{semesters.map((s) => <option key={s} value={s}>Semester {s}</option>)}</Sel>
         <Sel label="Academic session" value={term} disabled={!sem || !inst} onChange={(v) => { setTerm(v); setPicked([]); }}><option value="">Select session</option>{sessions.map((t) => <option key={t} value={t}>{t}</option>)}</Sel>
       </div>
