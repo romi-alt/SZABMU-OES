@@ -13,7 +13,7 @@ Branch `claude/oes-platform-foundation`, from commit `d6f297f`. **Nothing has be
 | T-SEC-03/04/05 | P0 | Reset-code guess race, per-address code limit, audit role | `auth.service.ts` | SEC-03/04/05 (all failed before) | pass | — | Verified |
 | T-SEC-01 | P1 | Secure cookie on HTTPS demo | `common/auth.ts`, `auth.controller.ts`, `registration.controller.ts` | SEC-01 unit cases | pass | not observed on the live site | Verified (locally) |
 | T-SEC-02 | P1 | Bound integrity-event detail, rate-limit events | `delivery.controller.ts` | SEC-02 (failed before: 5 000-char detail accepted) | pass | — | Verified |
-| T-SEC-08 | P1 | Client IP from forgeable `X-Forwarded-For` | — | analysis only | — | per-IP limits and audit IP spoofable (per-account limits mitigate) | Blocked — needs the real hop count on Hostinger (approval for a diagnostic) |
+| T-SEC-08 | P1 | Client IP from forgeable `X-Forwarded-For` | `config.ts` (`TRUST_PROXY` hop count, function form), `bootstrap.ts` | SEC-08 test: `true` → forged address, `1` → address the proxy saw | pass | live value must be set to Hostinger's hop count | Implemented; activation blocked on measuring the hop count |
 | T-DI-01 | P1 | Tests for untested failure scenarios #7, #10, #13, #16/#17 | `test/failure-scenarios.test.ts` | 4 tests | pass (no defect found) | — | Verified |
 | T-QA-01 | P1 | Port the fault-injection suite to MariaDB (DI-05) | `apps/api/test-fault/*`, `vitest.fault.config.ts`, `scripts/db-backup.mjs` (restore server: `--no-defaults`, own PID file, root-safe) | `npm run test:fault`: **17 passed, 1 skipped** (opt-in benchmark) — API SIGKILL ×2, kill inside a write, restart, lost acks, database crash + InnoDB recovery, Redis loss, clock forgery, reconciler failover, backup during writes + isolated restore | pass | not in CI (needs mariadbd on the runner; `.github/workflows/ci.yml` is a shared file) | Verified |
 | T-PERF-01 | P1 | Port the load test to MariaDB and measure | `tests/load/exam-load.mjs` | runs below | pass (integrity) | not measured on Hostinger | Verified (local measurement) |
@@ -22,14 +22,20 @@ Branch `claude/oes-platform-foundation`, from commit `d6f297f`. **Nothing has be
 | T-A11Y-01 | P1 | Label-in-Name failure on exam palette | `exam/[examId]/palette.tsx`, `page.tsx` | axe `label-content-name-mismatch` → 0; 33 exam-player e2e pass | pass | — | Verified |
 | T-A11Y-02 | P2 | Scan critical journeys | `tests/e2e/a11y-critical.spec.ts`, `global-setup.ts` (9 students/campus) | 11 more states, 0 serious/critical | pass | automated scans only | Verified |
 | T-UX-A12 | P1 | Confirm deactivate / reset password | `(app)/users/page.tsx` | `users-confirm.spec.ts` | pass | — | Verified |
-| T-UX-REST | P2 | UI findings A-03…A-11, A-13…A-18 | — | — | — | — | Not started |
+| T-UX-A11 | P1 | Enrolment term chosen from terms in use (data integrity) | `org.service/controller` (`GET /courses/:id/terms`), `enrolment/page.tsx` | `course-terms.test.ts`, `enrolment.spec.ts` | pass | default course still first in list | Verified |
+| T-UX-A06/A08/A10 | P2 | Explained buttons (sign-in, change password); monitor 'Not started' once + quiet incident control; plain-language audit filters | `login`, `profile`, `monitor/[examId]`, `audit` pages | `explained-buttons.spec.ts`, `staff/exam-control/responsive/a11y-critical` specs, `list-state-and-paper.spec.ts` | pass | — | Verified |
+| T-A11Y-04 | P2 | axe incl. target-size on question bank, exams, audit (A-07) | `tests/e2e/a11y-lists.spec.ts` | 3 scans, 0 serious/critical | pass | not hand-measured | Verified (automated) |
+| T-UX-REST | P2 | Remaining UI findings A-03, A-04, A-05, A-09, A-13…A-18 | — | — | — | — | Not started |
 | T-A11Y-03 | P1 | Manual screen-reader pass of the exam journey | — | — | — | — | Not started |
 | T-OPS-01 | P1 | Production configuration: SMTP, MFA, portal enforcement, `NODE_ENV=production` | — | — | — | demo posture | Blocked — Hostinger access/approval |
 | T-OPS-02 | P1 | Backup restore drill on Hostinger MariaDB | — | — | — | — | Blocked — database host access |
 | T-DOC-01 | — | Audit documents (this folder) | `docs/audits/*` | — | — | — | Implemented |
-| T-PH8 | P3 | AI features (Phase 8) | — | — | — | — | Not started (governance documents first; no external AI provider without approval) |
-| T-PH12 | P1 | Hostinger deployment audit, readiness checklist, rollback docs | — | — | — | — | Not started |
-| T-PSY | P2 | Deterministic item statistics (discrimination, point-biserial, KR-20) | — | — | — | — | Not started |
+| T-AI-DOCS | P3 | AI assessment, governance, status (`docs/ai/`) | 3 documents | — | — | — | Implemented |
+| T-AI-F2a | P3 | Possible-duplicate questions (deterministic similarity) | `shared/similarity.ts`, `questions.service`, `GET /questions/duplicates`, question bank dialog | unit 4, `question-duplicates.test.ts`, `question-duplicates.spec.ts` (+axe) | pass | — | Verified |
+| T-AI-F2b | P3 | Item-writing advice (7 deterministic rules) in editor and review view | `shared/item-writing.ts`, questions page | unit 5, `item-writing.spec.ts` (+axe); 4/127 seeded questions flagged | pass | rules are heuristics | Verified |
+| T-AI-LLM | P3 | LLM features (drafting, LLM review, Bloom) | — | — | — | — | Blocked — owner approval, provider, credentials, data-processing agreement |
+| T-PH12 | P1 | Hostinger deployment audit, readiness checklist, rollback docs | `docs/deployment/HOSTINGER_DEPLOYMENT_AUDIT.md`, `PRODUCTION_READINESS_CHECKLIST.md`, `ROLLBACK_AND_RECOVERY.md` | — | — | rollback not rehearsed | Implemented |
+| T-PSY | P2 | Deterministic item statistics (difficulty, discrimination, corrected item–rest r, KR-20, SEM) | `shared/psychometrics.ts`, `results.service.ts` (additive API fields), exam page | unit 7 (hand-checked), `item-statistics.test.ts` (independent recomputation, campus scope), `item-statistics.spec.ts` | pass | small samples flagged as unstable | Verified |
 | T-SEB | P3 | Optional Safe Exam Browser Config-Key verification | — | — | — | — | Not started |
 
 ## 2. Load measurements (T-PERF-01) — local, NOT Hostinger
@@ -74,9 +80,9 @@ All on one 4-vCPU machine with the database and the load generator; Hostinger nu
 | Gate | Before (`d6f297f`) | After (this branch) |
 |---|---|---|
 | Lint / typecheck / build / migrate | pass | pass |
-| Shared unit | 58/58 | 58/58 |
-| API integration (`apps/api`, vitest) | 335/335 (30 files) | **348/348 (32 files)** |
-| Browser (Playwright) | 118 passed, **4 skipped** | **126 passed, 0 skipped, 0 failed** |
+| Shared unit | 58/58 | **77/77** |
+| API integration (`apps/api`, vitest) | 335/335 (30 files) | **352/352 (35 files)** |
+| Browser (Playwright) | 118 passed, **4 skipped** | **135 passed, 0 skipped, 0 failed** |
 | Fault suite (`npm run test:fault`) | cannot run (PostgreSQL harness) | **17 passed, 1 skipped** |
 | Load test (MariaDB) | could not run (PostgreSQL script) | runs; see §2 |
 
