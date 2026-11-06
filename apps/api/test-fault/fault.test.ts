@@ -1,21 +1,20 @@
 import { execFileSync } from 'node:child_process';
-import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Api, DisposablePg, DisposableRedis, DropProxy, REPO_DIR, Student, migrateAndSeed, sleep, until } from './harness';
+import { Api, DisposableMariaDb, DisposableRedis, DropProxy, REPO_DIR, Student, migrateAndSeed, sleep, until, type DbPool } from './harness';
 
 /**
- * Durability fault injection against a DISPOSABLE stack (own PostgreSQL cluster, Redis and API processes).
- * Invariant under test: if the API said `saved: true` (or returned a receipt), the data is in PostgreSQL after ANY of
+ * Durability fault injection against a DISPOSABLE stack (own MariaDB server, Redis and API processes).
+ * Invariant under test: if the API said `saved: true` (or returned a receipt), the data is in the database after ANY of
  * these faults, no journal/answer row is torn, and a retry converges without duplicates.
  */
-let db: DisposablePg; let redis: DisposableRedis; let api: Api; let proxy: DropProxy; let pool: pg.Pool; let examId: string; let qids: string[] = [];
+let db: DisposableMariaDb; let redis: DisposableRedis; let api: Api; let proxy: DropProxy; let pool: DbPool; let examId: string; let qids: string[] = [];
 const cid = () => 'c' + Math.random().toString(36).slice(2, 12);
 const label = (qi: number, rev: number) => 'ABCD'[(qi + rev) % 4]!;
 
 beforeAll(async () => {
   execFileSync('npm', ['run', 'build:shared'], { cwd: REPO_DIR, stdio: 'pipe' });
   execFileSync('npm', ['run', 'build', '-w', '@oes/api'], { cwd: REPO_DIR, stdio: 'pipe' });
-  db = new DisposablePg(); await db.init();
+  db = new DisposableMariaDb(); await db.init();
   redis = new DisposableRedis(); await redis.start();
   const infra = { DATABASE_URL: db.url, REDIS_URL: redis.url };
   process.env.SEED_STUDENTS_PER_CAMPUS = '24';
@@ -30,7 +29,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Clean up everything deterministically first, THEN let an unexpected connection error fail the run.
-  try { await db?.closePools(); proxy?.stop(); await api?.kill(); await redis?.kill(); db?.destroy(); }
+  try { await db?.closePools(); proxy?.stop(); await api?.kill(); await redis?.kill(); await db?.destroy(); }
   finally { db?.errors.assertClean(); }
 });
 
@@ -73,7 +72,7 @@ async function verify(c: Candidate) {
   let committedUnacked = 0;
   for (const [q, a] of c.acked) {
     const row = byQ.get(q);
-    expect(row, `${c.local}: acknowledged answer for ${q} rev ${a.rev} is missing from PostgreSQL`).toBeTruthy();
+    expect(row, `${c.local}: acknowledged answer for ${q} rev ${a.rev} is missing from the databaQL`).toBeTruthy();
     expect(row.revision, `${c.local}: durable revision regressed below the acknowledged one`).toBeGreaterThanOrEqual(a.rev);
     if (row.revision === a.rev) expect(row.label).toBe(a.label);
     if (row.revision > a.rev) committedUnacked++;
@@ -98,7 +97,7 @@ const fleet = (locals: string[], rounds: number) => Promise.all(locals.map((l) =
 const locals = (prefix: 'a' | 'b', from: number, n: number) => Array.from({ length: n }, (_, i) => `student.${prefix}${String(from + i).padStart(3, '0')}`);
 
 describe('A. API process crash', () => {
-  it('SIGKILL of the API twice during an answer stream: every acknowledged answer is in PostgreSQL, no torn writes, retries converge', async () => {
+  it('SIGKILL of the API twice during an answer stream: every acknowledged answer is in the database, no torn writes, retries converge', async () => {
     const cs = await fleet(locals('a', 2, 6), 5);
     for (const target of [60, 150]) {
       let killed = false;
@@ -114,19 +113,20 @@ describe('A. API process crash', () => {
 
   it('crash INSIDE a write (journal insert stalled mid-statement): atomic — never a row without its journal entry; retry succeeds exactly once', async () => {
     const c = await Candidate.begin('student.a010', 1);
-    await pool.query(`CREATE OR REPLACE FUNCTION fault_sleep() RETURNS trigger AS $$ BEGIN PERFORM pg_sleep(2.5); RETURN NEW; END $$ LANGUAGE plpgsql`);
-    await pool.query(`CREATE TRIGGER fault_sleep_t BEFORE INSERT ON answer_events FOR EACH ROW EXECUTE FUNCTION fault_sleep()`);
+    // stall the JOURNAL insert (the second statement of the save transaction) for 2.5 s; while the trigger sleeps the process list shows
+    // the trigger's own statement (state 'User sleep'), not the outer INSERT
+    await pool.query(`CREATE TRIGGER fault_sleep_t BEFORE INSERT ON answer_events FOR EACH ROW SET @fault_sleep = SLEEP(2.5)`);
     try {
       // (i) the database connection is killed while the statement is mid-flight → whole statement rolls back
       const inflight = c.saveOne(0, 1).catch(() => 'net');
-      const pid = await until('stalled backend', async () => (await pool.query(`SELECT pid FROM pg_stat_activity WHERE query ILIKE '%INSERT INTO attempt_answers%' AND state = 'active' AND datname = $1 AND pid <> pg_backend_pid()`, [db.db])).rows[0]?.pid, 10_000, 50);
-      await pool.query(`SELECT pg_terminate_backend($1)`, [pid]);
+      const pid = await until('stalled backend', async () => (await pool.query(`SELECT ID AS pid FROM information_schema.PROCESSLIST WHERE (STATE = 'User sleep' OR INFO LIKE '%INSERT INTO answer_events%') AND DB = $1 AND ID <> CONNECTION_ID()`, [db.db])).rows[0]?.pid, 10_000, 50);
+      await pool.query(`KILL CONNECTION ${Number(pid)}`);
       expect(await inflight).not.toBe(true); // never acknowledged
       expect((await pool.query(`SELECT count(*)::int n FROM attempt_answers WHERE "attemptId" = $1`, [c.attemptId])).rows[0].n).toBe(0);
       expect((await pool.query(`SELECT count(*)::int n FROM answer_events WHERE "attemptId" = $1`, [c.attemptId])).rows[0].n).toBe(0);
-      // (ii) the API process dies mid-statement → PostgreSQL finishes or discards the statement as a unit
+      // (ii) the API process dies mid-statement → the database finishes or discards the transaction as a unit
       const inflight2 = c.saveOne(0, 1).catch(() => 'net');
-      await until('stalled backend', async () => (await pool.query(`SELECT pid FROM pg_stat_activity WHERE query ILIKE '%INSERT INTO attempt_answers%' AND state = 'active' AND datname = $1 AND pid <> pg_backend_pid()`, [db.db])).rows[0]?.pid, 10_000, 50);
+      await until('stalled backend', async () => (await pool.query(`SELECT ID AS pid FROM information_schema.PROCESSLIST WHERE (STATE = 'User sleep' OR INFO LIKE '%INSERT INTO answer_events%') AND DB = $1 AND ID <> CONNECTION_ID()`, [db.db])).rows[0]?.pid, 10_000, 50);
       await api.kill('SIGKILL'); await inflight2;
       await sleep(3500); // let the orphaned statement run to completion
       const rows = (await pool.query(`SELECT count(*)::int n FROM attempt_answers WHERE "attemptId" = $1`, [c.attemptId])).rows[0].n;
@@ -134,10 +134,10 @@ describe('A. API process crash', () => {
       expect(rows).toBe(evs); // atomic: both or neither
       console.log(`[FT-A2] orphaned statement outcome: ${rows ? 'committed (unacknowledged)' : 'rolled back'}`);
     } finally {
-      await pool.query(`DROP TRIGGER IF EXISTS fault_sleep_t ON answer_events`);
+      await pool.query(`DROP TRIGGER IF EXISTS fault_sleep_t`);
       if (!api.proc) await api.start();
     }
-    // the original session cookie must still work: sessions live in PostgreSQL, not in the crashed process
+    // the original session cookie must still work: sessions live in the database, not in the crashed process
     expect(await c.saveOne(0, 1)).toBe(true); // retry after restart: idempotent, exactly one journal entry
     expect((await pool.query(`SELECT count(*)::int n FROM answer_events WHERE "attemptId" = $1 AND revision = 1`, [c.attemptId])).rows[0].n).toBe(1);
     await verify(c);
@@ -145,7 +145,7 @@ describe('A. API process crash', () => {
 });
 
 describe('B. restart after committed write', () => {
-  it('graceful stop and hard kill both preserve acknowledged answers; sheet and submit agree with PostgreSQL; submit replays the same receipt', async () => {
+  it('graceful stop and hard kill both preserve acknowledged answers; sheet and submit agree with the database; submit replays the same receipt', async () => {
     const [x, y] = await fleet(['student.a011', 'student.a012'], 1);
     for (const c of [x!, y!]) expect(await c.run(() => false)).toBe(true);
     await api.kill('SIGTERM'); await api.start();                       // graceful
@@ -197,18 +197,18 @@ describe('C. lost HTTP acknowledgement after the database commit', () => {
   });
 });
 
-describe('D. PostgreSQL crash (disposable cluster, immediate stop + WAL recovery)', () => {
+describe('D. Database crash (disposable MariaDB, SIGKILL + InnoDB crash recovery)', () => {
   it('no acknowledged answer is lost across a database crash; the API recovers without a restart; retries converge', async () => {
     const cs = await fleet(locals('a', 14, 6), 4);
     let crashed = false;
     const runners = Promise.all(cs.map((c) => c.run(() => crashed)));
     await until('60 acks', async () => total(cs) >= 60, 60_000, 50);
-    crashed = true; db.crash();
+    crashed = true; await db.crash();
     await runners;
     const during = await api.health();
     console.log(`[FT-D] database crashed after ≈${total(cs)} acked answers; API health while down: ${JSON.stringify(during)}`);
     expect(during === null || during.db === false).toBe(true);           // API never claims a healthy database
-    db.start();                                                           // WAL crash recovery
+    await db.start();                                                     // InnoDB crash recovery from the redo log
     await until('API to reconnect to recovered database', async () => (await api.health())?.db === true, 60_000, 500);
     const stats = await Promise.all(cs.map(verify));
     console.log(`[FT-D] after recovery: acknowledged ${stats.reduce((n, s) => n + s.acked, 0)} · committed-but-unacknowledged ${stats.reduce((n, s) => n + s.committedUnacked, 0)} · API recovered without restart`);

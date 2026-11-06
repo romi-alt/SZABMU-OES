@@ -88,6 +88,8 @@ describe('staff MFA end to end (MFA_ENFORCE=true)', () => {
 
   it('recovery codes work exactly once, are stored hashed, and are audited', async () => {
     await ctx.prisma.user.updateMany({ where: { email: `examiner@${DOMAIN}` }, data: { failedLogins: 0, lockedUntil: null } });
+    // the previous test used up the attempt cap as well as the lockout; both expire with time — clear both, as waiting out the window would
+    await ctx.kv.del(`rl:mfa:${(await ctx.prisma.user.findFirstOrThrow({ where: { email: `examiner@${DOMAIN}` } })).id}`);
     // mint a known recovery code (hash only is stored, so we create one directly)
     const u = await ctx.prisma.user.findFirstOrThrow({ where: { email: `examiner@${DOMAIN}` } });
     const { sha256 } = await import('../src/common/auth');

@@ -2,24 +2,25 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import pg from 'pg';
+import mariadb from 'mariadb';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Api, DisposablePg, DisposableRedis, REPO_DIR, Student, migrateAndSeed, sleep, until } from './harness';
+import { Api, DisposableMariaDb, DisposableRedis, REPO_DIR, Student, migrateAndSeed, sleep, until, type DbPool } from './harness';
 
 /**
  * A backup is only accepted when it has been RESTORED in isolation and verified. This suite exercises
  * scripts/db-backup.mjs against a disposable source cluster, taking the backup WHILE candidates are writing.
  */
-let src: DisposablePg; let redisA: DisposableRedis; let redisB: DisposableRedis; let apiA: Api; let apiB: Api | undefined; let pool: pg.Pool; let work: string;
+let src: DisposableMariaDb; let redisA: DisposableRedis; let redisB: DisposableRedis; let apiA: Api; let apiB: Api | undefined; let pool: DbPool; let work: string;
 const SCRIPT = path.join(REPO_DIR, 'scripts/db-backup.mjs');
 const run = (args: string[]) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', cwd: REPO_DIR });
-const stopCluster = (dataDir: string) => { try { execFileSync('runuser', ['-u', 'postgres', '--', `${process.env.PG_BIN ?? '/usr/lib/postgresql/16/bin'}/pg_ctl`, '-D', dataDir, '-m', 'fast', '-w', 'stop'], { stdio: 'pipe' }); } catch { /* already stopped */ } };
+// the kept restore server is a throw-away mariadbd started by scripts/db-backup.mjs; it is identified exactly by its own temp data directory
+const stopCluster = (dataDir: string) => { try { execFileSync('pkill', ['-TERM', '-f', `--datadir=${dataDir}`], { stdio: 'pipe' }); execFileSync('sleep', ['2']); } catch { /* already stopped */ } };
 
 beforeAll(async () => {
   execFileSync('npm', ['run', 'build:shared'], { cwd: REPO_DIR, stdio: 'pipe' });
   execFileSync('npm', ['run', 'build', '-w', '@oes/api'], { cwd: REPO_DIR, stdio: 'pipe' });
   work = mkdtempSync(path.join(os.tmpdir(), 'oes-bk-test-'));
-  src = new DisposablePg(); await src.init();
+  src = new DisposableMariaDb(); await src.init();
   redisA = new DisposableRedis(); await redisA.start(); redisB = new DisposableRedis(); await redisB.start();
   process.env.SEED_STUDENTS_PER_CAMPUS = '10';
   migrateAndSeed({ DATABASE_URL: src.url, REDIS_URL: redisA.url });
@@ -28,7 +29,7 @@ beforeAll(async () => {
 }, 300_000);
 
 afterAll(async () => {
-  try { await src?.closePools(); await apiB?.kill(); await apiA?.kill(); await redisA?.kill(); await redisB?.kill(); src?.destroy(); if (work) rmSync(work, { recursive: true, force: true }); }
+  try { await src?.closePools(); await apiB?.kill(); await apiA?.kill(); await redisA?.kill(); await redisB?.kill(); await src?.destroy(); if (work) rmSync(work, { recursive: true, force: true }); }
   finally { src?.errors.assertClean(); }
 });
 
@@ -70,16 +71,18 @@ describe('backup → isolated restore → verification', () => {
     expect(v.status, v.stdout + v.stderr).toBe(0);
     const rep = JSON.parse(v.stdout);
     try {
-      apiB = new Api({ DATABASE_URL: rep.restoredUrl, REDIS_URL: redisB.url }); await apiB.start();
+      // the report redacts the password; the throw-away restore server's root account has an empty one
+      const restoredUrl = String(rep.restoredUrl).replace(':***@', ':@');
+      apiB = new Api({ DATABASE_URL: restoredUrl, REDIS_URL: redisB.url }); await apiB.start();
       const cce = await new Student(apiB.base, 'cce').login();
       const chain = await cce.call('GET', '/audit/verify');
       expect(chain.status).toBe(200); expect(chain.body.brokenAt).toBeNull(); expect(chain.body.checked).toBeGreaterThan(0);
-      // the candidate's session survived (sessions are in PostgreSQL); their sealed attempt and receipt are intact
+      // the candidate's session survived (sessions are in the database); their sealed attempt and receipt are intact
       const s2 = new Student(apiB.base, 'student.a002'); s2.cookie = stu.cookie;
       const r = await s2.call('GET', `/attempts/${attemptId}/receipt`);
       expect(r.status).toBe(200); expect(JSON.stringify(r.body)).toContain(receipt);
-      const rp = new pg.Pool({ connectionString: rep.restoredUrl, max: 1 });
-      try { expect((await rp.query(`SELECT count(*)::int n FROM attempt_answers WHERE "attemptId" = $1`, [attemptId])).rows[0].n).toBe(12); } finally { await rp.end(); }
+      const u = new URL(restoredUrl); const rc = await mariadb.createConnection({ host: u.hostname, port: +u.port, user: 'root', password: '', database: u.pathname.slice(1), bigIntAsNumber: true });
+      try { expect((await rc.query('SELECT count(*) n FROM attempt_answers WHERE `attemptId` = ?', [attemptId]))[0].n).toBe(12); } finally { await rc.end(); }
       expect(ackedBeforeBackup).toBeGreaterThan(0);
     } finally { await apiB?.kill(); apiB = undefined; stopCluster(rep.dataDir); rmSync(path.dirname(rep.dataDir), { recursive: true, force: true }); }
   }, 240_000);

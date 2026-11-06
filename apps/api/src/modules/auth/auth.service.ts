@@ -50,8 +50,9 @@ export class AuthService {
     const ok = user ? await argon2.verify(user.passwordHash, password).catch(() => false) : await argon2.verify(await this.dummy(), password).catch(() => false) && false;
     if (!user || !ok || !user.active) {
       if (user) {
-        const failed = user.failedLogins + 1;
-        await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: failed, lockedUntil: failed >= MAX_FAILED ? new Date(now.getTime() + LOCK_MIN * 60000) : null } });
+        // atomic increment (a read-then-write lost concurrent failures and delayed the lockout)
+        const { failedLogins: failed } = await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: { increment: 1 } }, select: { failedLogins: true } });
+        if (failed >= MAX_FAILED) await this.prisma.user.update({ where: { id: user.id }, data: { lockedUntil: new Date(now.getTime() + LOCK_MIN * 60000) } });
       }
       await this.audit.log({ actor: user ? { id: user.id, role: user.role } : null, action: 'auth.login_failed', entity: 'user', entityId: user?.id, meta: { email }, ip });
       this.metrics.authFailures.inc({ kind: 'login_invalid' });
@@ -126,7 +127,10 @@ export class AuthService {
   async forgot(emailRaw: string, ip: string) {
     const email = emailRaw.trim().toLowerCase();
     const hits = await this.kv.hit(`rl:forgot:${email}:${ip}`, 3600);
-    if (hits > 5) throw new AppError(429, 'RATE_LIMITED', 'Too many requests. Try again later.');
+    // Also per address regardless of IP: rotating addresses must not mint unlimited fresh codes (each one is 5 more guesses). Applies to unknown
+    // addresses too, so the limit itself reveals nothing about which accounts exist.
+    const perEmail = await this.kv.hit(`rl:forgot:${email}`, 3600);
+    if (hits > 5 || perEmail > 10) throw new AppError(429, 'RATE_LIMITED', 'Too many requests. Try again later.');
     const user = await this.prisma.user.findUnique({ where: { email } });
     let devCode: string | undefined;
     if (user && user.active) {
@@ -148,11 +152,14 @@ export class AuthService {
     if (!user) throw bad;
     const reset = await this.prisma.passwordReset.findFirst({ where: { userId: user.id, usedAt: null }, orderBy: { createdAt: 'desc' } });
     if (!reset || reset.expiresAt < new Date() || reset.attempts >= 5) throw bad;
-    if (reset.codeHash !== sha256(`${user.id}:${code}`)) {
-      await this.prisma.passwordReset.update({ where: { id: reset.id }, data: { attempts: { increment: 1 } } });
-      throw bad;
-    }
-    await this.prisma.passwordReset.update({ where: { id: reset.id }, data: { usedAt: new Date() } });
+    // Consume one of the 5 guesses ATOMICALLY before comparing: a conditional UPDATE, so a burst of parallel guesses cannot all pass a stale
+    // "attempts < 5" read (previously every concurrent request was evaluated and only then counted).
+    const slot = await this.prisma.passwordReset.updateMany({ where: { id: reset.id, usedAt: null, attempts: { lt: 5 } }, data: { attempts: { increment: 1 } } });
+    if (slot.count === 0) throw bad;
+    if (reset.codeHash !== sha256(`${user.id}:${code}`)) throw bad;
+    // single use, also under concurrency: only one request can turn the code into a reset token
+    const used = await this.prisma.passwordReset.updateMany({ where: { id: reset.id, usedAt: null }, data: { usedAt: new Date() } });
+    if (used.count === 0) throw bad;
     const token = randomBytes(24).toString('base64url');
     await this.kv.setText(`rt:${sha256(token)}`, user.id, RESET_TTL_MIN * 60);
     await this.audit.log({ actor: user, action: 'auth.reset_code_verified', entity: 'user', entityId: user.id, ip });
@@ -164,7 +171,8 @@ export class AuthService {
     const userId = await this.kv.take(key);
     if (!userId) throw new AppError(400, 'INVALID_TOKEN', 'This reset link has expired. Request a new code.');
     await this.setPassword(userId, newPassword);
-    await this.audit.log({ actor: { id: userId, role: 'STUDENT' }, action: 'auth.password_reset', entity: 'user', entityId: userId, ip });
+    const who = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });   // the real role, not an assumed STUDENT
+    await this.audit.log({ actor: { id: userId, role: who?.role ?? 'STUDENT' }, action: 'auth.password_reset', entity: 'user', entityId: userId, ip });
     return { ok: true };
   }
 

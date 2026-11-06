@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, it } from 'vitest';
-import { Api, DisposablePg, DisposableRedis, REPO_DIR, migrateAndSeed } from './harness';
+import { Api, DisposableMariaDb, DisposableRedis, REPO_DIR, migrateAndSeed } from './harness';
 
 /**
  * A/B benchmark of the candidate START path: with vs without the admission lookup (policy P-26).
@@ -10,15 +10,15 @@ import { Api, DisposablePg, DisposableRedis, REPO_DIR, migrateAndSeed } from './
  * Fresh disposable PostgreSQL + Redis; a NEW API process per round; rounds alternate A,B,A,B,A,B to spread drift/warm-up.
  */
 const ROUNDS = Number(process.env.BENCH_ROUNDS ?? 3), N = Number(process.env.BENCH_CANDIDATES ?? 2000), RAMP = Number(process.env.BENCH_RAMP ?? 20);
-let db: DisposablePg; let redis: DisposableRedis;
+let db: DisposableMariaDb; let redis: DisposableRedis;
 const results: Record<'A (with admission)' | 'B (admission stubbed)', { p50: number; p95: number; p99: number; max: number; cpu: string }[]> = { 'A (with admission)': [], 'B (admission stubbed)': [] };
 
 describe.skipIf(process.env.RUN_BENCH !== '1')('start path A/B', () => {
   beforeAll(async () => {
     execFileSync('npm', ['run', 'build:shared'], { cwd: REPO_DIR, stdio: 'pipe' }); execFileSync('npm', ['run', 'build', '-w', '@oes/api'], { cwd: REPO_DIR, stdio: 'pipe' });
-    db = new DisposablePg(); await db.init(); redis = new DisposableRedis(); await redis.start(); migrateAndSeed({ DATABASE_URL: db.url, REDIS_URL: redis.url });
+    db = new DisposableMariaDb(); await db.init(); redis = new DisposableRedis(); await redis.start(); migrateAndSeed({ DATABASE_URL: db.url, REDIS_URL: redis.url });
   }, 300_000);
-  afterAll(async () => { await redis?.kill(); db?.destroy(); });
+  afterAll(async () => { await redis?.kill(); await db?.destroy(); });
 
   it(`${ROUNDS}× alternating, ${N} candidates, ramp ${RAMP}s, start only`, async () => {
     const infra = { DATABASE_URL: db.url, REDIS_URL: redis.url };

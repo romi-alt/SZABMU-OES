@@ -1,6 +1,6 @@
 import { CourseAccessService } from '../org/course-access.service';
 import { Injectable, Logger } from '@nestjs/common';
-import { LINKS, percent, scoreQuestion, sumScores } from '@oes/shared';
+import { LINKS, MIN_CANDIDATES, itemStatistics, percent, scoreQuestion, sumScores } from '@oes/shared';
 import { PrismaService } from '../../infra/prisma.service';
 import { idList, int } from '../../infra/sql';
 import { QueuesService } from '../../infra/queues.service';
@@ -72,10 +72,19 @@ export class ResultsService {
     const sat = await this.prisma.$queryRaw<{ n: bigint }[]>`
       SELECT COUNT(*) AS n FROM attempts a JOIN students s ON s.id = a."studentId"
       WHERE a."examId" = ${examId} AND a.status IN ('SUBMITTED','AUTO_SUBMITTED') AND (${sf ? 1 : 0} = 0 OR s."institutionId" IN ${idList(sf?.in ?? [])})`;
-    const actions = await this.prisma.keyAction.findMany({ where: { examId } });
+    const actions = await this.prisma.keyAction.findMany({ where: { examId }, orderBy: { createdAt: 'asc' } });
     const n = int(sat[0]!.n);
+    // Classical item statistics (deterministic, packages/shared/psychometrics.ts) on the EFFECTIVE key: changed keys applied, voided items left out.
+    // Same candidate scope as the counts above. Prompts for academic review only; nothing is changed automatically.
+    const eff = new Map(eqs.map((q) => [q.id, { correct: q.correctLabel, voided: false }]));
+    for (const k of actions) { const e = eff.get(k.examQuestionId); if (!e) continue; if (k.kind === 'VOID') e.voided = true; else if (k.newLabel) e.correct = k.newLabel; }
+    const scored = eqs.filter((q) => !eff.get(q.id)!.voided);
+    const sheets = await this.prisma.attempt.findMany({ where: { examId, status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] }, student: { institutionId: sf } }, select: { answers: { select: { examQuestionId: true, selectedLabel: true } } } });
+    const stats = itemStatistics(sheets.map((a) => { const m = new Map(a.answers.map((x) => [x.examQuestionId, x.selectedLabel])); return scored.map((q) => (m.get(q.id) != null && m.get(q.id) === eff.get(q.id)!.correct ? 1 : 0) as 0 | 1); }), scored.length);
+    const statOf = new Map(scored.map((q, i) => [q.id, stats.items_[i]!]));
     return {
       exam: { id: exam.id, code: exam.code, title: exam.title, status: exam.status, batch: exam.resultBatch?.status ?? null }, candidates: n,
+      statistics: { candidates: stats.candidates, items: stats.items, mean: stats.mean, sd: stats.sd, kr20: stats.kr20, sem: stats.sem, reliable: stats.reliable, minCandidates: MIN_CANDIDATES },
       questions: eqs.map((q) => {
         const dist: Record<string, number> = {};
         for (const r of rows.filter((x) => x.eqid === q.id)) dist[r.label ?? '—'] = r.n;
@@ -83,7 +92,7 @@ export class ResultsService {
         const attempted = Object.entries(dist).filter(([k]) => k !== '—').reduce((s, [, v]) => s + v, 0);
         const correctN = dist[q.correctLabel ?? ''] ?? 0;
         const pCorrect = n ? Math.round((correctN / n) * 1000) / 10 : 0;
-        return { examQuestionId: q.id, position: q.position, stem: (q.snapshot as { stem: string }).stem, key: q.correctLabel, distribution: dist, attempted, pCorrect, flag: n >= 10 && (pCorrect < 20 || pCorrect > 95) ? (pCorrect < 20 ? 'VERY_HARD_OR_MISKEYED' : 'TOO_EASY') : null, actions: act.map((k) => ({ kind: k.kind, newLabel: k.newLabel, reason: k.reason })) };
+        return { examQuestionId: q.id, position: q.position, stem: (q.snapshot as { stem: string }).stem, key: q.correctLabel, distribution: dist, attempted, pCorrect, flag: n >= 10 && (pCorrect < 20 || pCorrect > 95) ? (pCorrect < 20 ? 'VERY_HARD_OR_MISKEYED' : 'TOO_EASY') : null, stats: (() => { const t = statOf.get(q.id); return t ? { p: t.p, d: t.d, rpb: t.rpb, flags: t.flags } : null; })(), actions: act.map((k) => ({ kind: k.kind, newLabel: k.newLabel, reason: k.reason })) };
       }),
     };
   }

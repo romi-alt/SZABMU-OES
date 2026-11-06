@@ -53,6 +53,7 @@ export class OrgController {
   @Perm('student.manage') @Patch('students/:id') patchStudent(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.org.updateStudent(u, id, parse(studentPatch, b), ip); }
 
   @Perm('enrollment.manage') @Post('enrollments/bulk') enrol(@CurrentUser() u: AuthUser, @Body() b: unknown, @Ip() ip: string) { return this.org.enrol(u, parse(enrolDto, b), ip); }
+  @Perm('student.read') @Get('courses/:id/terms') courseTerms(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.org.courseTerms(u, id); }
   @Perm('student.read') @Get('enrollments') enrollments(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) { return this.org.listEnrollments(u, parse(z.object({ courseId: uuid, term: z.string().min(3), institutionId: uuid.optional() }), q)); }
   @Perm('enrollment.manage') @Patch('enrollments/:id/attendance') att(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.org.setAttendance(u, id, parse(z.object({ attendancePct: z.number().min(0).max(100) }), b).attendancePct, ip); }
   @Perm('eligibility.override') @Post('enrollments/:id/condone') condone(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.org.condone(u, id, parse(z.object({ note: z.string().min(5).max(500) }), b).note, ip); }

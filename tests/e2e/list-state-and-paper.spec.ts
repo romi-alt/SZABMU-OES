@@ -23,7 +23,9 @@ test.describe('list state lives in the address bar (UI-028)', () => {
   test('filters and page are in the URL for accounts and the audit trail too', async ({ page }) => {
     await login(page, 'super.admin'); await page.goto('/users?role=LECTURER'); await expect(page.getByLabel('Role')).toHaveValue('LECTURER');
     await expect(page.locator('tbody tr td:nth-child(3)').first()).toHaveText('Lecturer');
-    await page.goto('/audit?action=auth.login'); await expect(page.getByLabel('Action starts with')).toHaveValue('auth.login');
+    await page.goto('/audit?action=auth.'); await expect(page.getByLabel('Activity')).toHaveValue('auth.');
+    await expect(page.getByLabel('Activity').locator('option:checked')).toHaveText('Sign-in and passwords');
+    await page.goto('/audit?action=auth.login'); await expect(page.getByLabel('Activity')).toHaveValue('auth.login');   // older deep links keep working
   });
 });
 

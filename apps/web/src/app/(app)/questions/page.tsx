@@ -3,8 +3,20 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { post, put, useGet } from '@/api';
 import { useMe } from '@/session';
+import { itemWritingChecks } from '@oes/shared';
 import { useUrlState } from '@/url-state';
 import { Async, Badge, Card, Field, Modal, PageHead, Pager, Status, Table, useAction, Confirm, CancelButton, ListEmpty } from '@/ui';
+
+/** Item-writing advice (deterministic rules in @oes/shared): shown to authors while editing and to reviewers; never blocks saving or approval. */
+function ItemChecks({ draft }: { draft: { stem: string; vignette?: string | null; options: { label: string; text: string; isCorrect?: boolean }[] } }) {
+  const found = itemWritingChecks(draft);
+  if (!found.length) return null;
+  return (
+    <div className="notice warn small" data-testid="item-checks"><b>Item-writing advice</b> (does not block saving or approval):
+      <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{found.map((f) => <li key={f.id}>{f.message}{f.options?.length ? ` Option${f.options.length > 1 ? 's' : ''} ${f.options.join(', ')}.` : ''}</li>)}</ul>
+    </div>
+  );
+}
 
 const blankOpts = () => ['A', 'B', 'C', 'D', 'E'].map((label, i) => ({ label, text: '', isCorrect: i === 0 }));
 const DIFF: Record<string, string> = { EASY: 'green', MEDIUM: 'amber', HARD: 'red' };
@@ -31,6 +43,7 @@ function Editor({ q, courses, institutionId, onClose, onSaved }: { q?: any; cour
         <fieldset style={{ border: 0, padding: 0, margin: 0 }} className="stack"><legend className="small muted" style={{ fontWeight: 600, marginBottom: 6 }}>Options — select the single correct answer (4 or 5 options) <span aria-hidden className="req">*</span></legend>
           {f.options.map((o: any, i: number) => <div className="row" key={o.label}><input type="radio" name="correct" aria-label={`Option ${o.label} is correct`} checked={o.isCorrect} onChange={() => setOpt(i, { isCorrect: true })} /><span className="mono" style={{ width: 16 }}>{o.label}</span><input className="in" value={o.text} onChange={(e) => setOpt(i, { text: e.target.value })} placeholder={i >= 4 ? 'Optional fifth option' : 'Option text'} aria-label={`Option ${o.label} text`} /></div>)}
         </fieldset>
+        {f.stem.trim().length >= 10 && f.options.filter((o: any) => o.text.trim()).length >= 4 && <ItemChecks draft={f} />}
         <div className="grid g2"><Field label="Difficulty"><select className="in" value={f.difficulty} onChange={(e) => set('difficulty', e.target.value)}><option>EASY</option><option>MEDIUM</option><option>HARD</option></select></Field></div>
         <Field label="Explanation (reviewers only)"><textarea className="in" value={f.explanation} onChange={(e) => set('explanation', e.target.value)} rows={2} /></Field>
       </div>
@@ -38,10 +51,27 @@ function Editor({ q, courses, institutionId, onClose, onSaved }: { q?: any; cour
   );
 }
 
+/** Possible duplicates (deterministic text similarity, server-scoped like the list). A prompt for review: nothing is merged or retired automatically. */
+function Duplicates({ courseId, onOpen, onClose }: { courseId: string; onOpen: (id: string) => void; onClose: () => void }) {
+  const st = useGet<any>(`/questions/duplicates${courseId ? `?courseId=${courseId}` : ''}`);
+  return (
+    <Modal title="Possible duplicate questions" onClose={onClose} footer={<button className="btn" onClick={onClose}>Close</button>}>
+      <Async state={st}>{(d) => <div className="stack" data-testid="duplicates">
+        <p className="small muted">Compared {d.compared} question{d.compared === 1 ? '' : 's'}{courseId ? ' in this course' : ' you can access'}, by wording of the vignette, stem and options (option order ignored). Pairs at {Math.round(d.threshold * 100)} % similarity or more are listed. Review them yourself — nothing is changed automatically.</p>
+        {!d.pairs.length ? <div className="small">No likely duplicates found.</div> : <ul className="stack" style={{ listStyle: 'none', padding: 0, margin: 0 }}>{d.pairs.map((p: any) => (
+          <li key={`${p.a.id}-${p.b.id}`} className="card" style={{ padding: 12 }}>
+            <div className="row between"><b>{Math.round(p.score * 100)} % similar</b></div>
+            {[p.a, p.b].map((q: any) => <div key={q.id} className="row between" style={{ gap: 12, marginTop: 8 }}><span className="small">{q.stem} <span className="code">{q.course}</span> <Status s={q.status} /></span><button className="btn btn-sm" onClick={() => onOpen(q.id)}>Open</button></div>)}
+          </li>))}</ul>}
+      </div>}</Async>
+    </Modal>
+  );
+}
+
 function Inner() {
   const { me, can } = useMe(); const sp = useSearchParams(); const { run } = useAction();
   const url = useUrlState({ status: sp.get('status') ?? '', courseId: '', search: '', page: '1' }); const status = url.vals.status; const courseId = url.vals.courseId; const search = url.vals.search; const page = Number(url.vals.page) || 1; const setStatus = (v: string) => url.set('status', v); const setCourseId = (v: string) => url.set('courseId', v); const setSearch = (v: string) => url.set('search', v); const setPage = (n: number) => url.set('page', String(n));
-  const [edit, setEdit] = useState<any | 'new' | null>(null); const [rej, setRej] = useState<any>(null); const [note, setNote] = useState(''); const [view, setView] = useState<any>(null);
+  const [dups, setDups] = useState(false); const [edit, setEdit] = useState<any | 'new' | null>(null); const [rej, setRej] = useState<any>(null); const [note, setNote] = useState(''); const [view, setView] = useState<any>(null);
   const programs = useGet<any[]>('/programs'); const mine = useGet<any[]>(me?.role === 'LECTURER' ? '/me/course-assignments' : null);
   // Lecturers work only on assigned courses; everyone else sees the full catalogue (server enforces either way).
   const courses = me?.role === 'LECTURER' ? (mine.data ?? []).map((a) => a.course) : (programs.data ?? []).flatMap((p) => p.courses);
@@ -53,8 +83,10 @@ function Inner() {
   return (
     <>
       <PageHead title="Question bank" sub={canReview ? 'Review submitted questions and curate the approved bank.' : 'Author questions; submit for examiner approval. Approved questions are available for papers.'}>
+        <button className="btn" onClick={() => setDups(true)}>Possible duplicates…</button>
         {canWrite && <button className="btn btn-green" onClick={() => setEdit('new')}>+ New question</button>}
       </PageHead>
+      {dups && <Duplicates courseId={courseId} onClose={() => setDups(false)} onOpen={(id) => { setDups(false); void open(id); }} />}
       <Card flush>
         <div className="filters">
           <Field label="Status"><select className="in" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}><option value="">All statuses</option>{['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'RETIRED'].map((s) => <option key={s}>{s}</option>)}</select></Field>
@@ -79,6 +111,7 @@ function Inner() {
       {view && <Modal title="Question" onClose={() => setView(null)}>
         <div className="stack">{view.vignette && <div className="vignette">{view.vignette}</div>}<b>{view.stem}</b>
           {view.options.map((o: any) => <div key={o.label} className="row"><span className="mono" style={{ width: 16 }}>{o.label}</span><span>{o.text}</span>{o.isCorrect && <Badge tone="green">correct</Badge>}</div>)}
+          <ItemChecks draft={view} />
           {view.explanation && <div className="notice small"><b>Explanation:</b> {view.explanation}</div>}{view.reviewNote && <div className="notice warn small"><b>Reviewer note:</b> {view.reviewNote}</div>}</div></Modal>}
     </>
   );

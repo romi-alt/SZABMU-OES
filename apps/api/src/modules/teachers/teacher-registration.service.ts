@@ -105,6 +105,7 @@ export class TeacherRegistrationService {
       const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
       const pending: Pending = { fullName: d.fullName.trim(), passwordHash, employeeId, department: d.department.trim(), designation: d.designation.trim(), phone: d.phone.trim(), photo, assignments: d.assignments, codeHash: sha256(`${email}:${code}`), attempts: 0 };
       await this.kv.setText(`treg:${email}`, JSON.stringify(pending), TTL_SEC);
+      await this.kv.del(`treg:tries:${email}`);   // a new code gets a fresh set of guesses
       const msg = await this.mail.enqueue(email, 'SZABMU Examinations — confirm your teacher registration', `Your 6-digit registration code is ${code}. It expires in ${TTL_SEC / 60} minutes.\nAfter you enter it, your registration is sent to the university for approval. You cannot use the system until it is approved.\nIf you did not try to register, ignore this message.`, 'teacher_registration');
       // Managed Node.js hosting cannot be relied on to keep a queue worker alive, so the first delivery attempt is made here, within a time limit;
       // the outbox row and the queued job remain as the retry path (deliver() is idempotent once the message is SENT).
@@ -120,8 +121,10 @@ export class TeacherRegistrationService {
     if ((await this.kv.hit(`rl:treg:verify:${ip}`, 3600)) > 30) throw new AppError(429, 'RATE_LIMITED', 'Too many attempts. Try again later.');
     const raw = await this.kv.getText(`treg:${email}`); if (!raw) throw bad;
     const p = JSON.parse(raw) as Pending;
-    if (p.attempts >= MAX_ATTEMPTS) { await this.kv.del(`treg:${email}`); throw bad; }
-    if (p.codeHash !== sha256(`${email}:${code}`)) { p.attempts++; const ttl = await this.kv.ttl(`treg:${email}`); if (ttl > 0) await this.kv.setText(`treg:${email}`, JSON.stringify(p), ttl); throw bad; }
+    // Count the guess ATOMICALLY before comparing (kv.hit is an atomic increment). The previous read-modify-write of `attempts` inside the
+    // pending JSON let a burst of parallel guesses all be evaluated; with rotating addresses that bypassed the per-IP limit.
+    if ((await this.kv.hit(`treg:tries:${email}`, TTL_SEC)) > MAX_ATTEMPTS) { await this.kv.del(`treg:${email}`); throw bad; }
+    if (p.codeHash !== sha256(`${email}:${code}`)) throw bad;
     await this.validateAssignments(p.assignments);                                         // the academic data may have changed while the code was pending
     const userId = await this.prisma.$transaction(async (tx) => {
       if (await tx.user.findUnique({ where: { email }, select: { id: true } })) throw conflict('EMAIL_TAKEN', 'This email already has an account');
