@@ -8,3 +8,4 @@ export type * from './dto';
 export * from './exam-status';
 export * from './phone';
 export * from './portal';
+export * from './psychometrics';
