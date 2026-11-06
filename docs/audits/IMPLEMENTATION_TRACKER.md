@@ -15,9 +15,9 @@ Branch `claude/oes-platform-foundation`, from commit `d6f297f`. **Nothing has be
 | T-SEC-02 | P1 | Bound integrity-event detail, rate-limit events | `delivery.controller.ts` | SEC-02 (failed before: 5 000-char detail accepted) | pass | — | Verified |
 | T-SEC-08 | P1 | Client IP from forgeable `X-Forwarded-For` | — | analysis only | — | per-IP limits and audit IP spoofable (per-account limits mitigate) | Blocked — needs the real hop count on Hostinger (approval for a diagnostic) |
 | T-DI-01 | P1 | Tests for untested failure scenarios #7, #10, #13, #16/#17 | `test/failure-scenarios.test.ts` | 4 tests | pass (no defect found) | — | Verified |
-| T-QA-01 | P1 | Port the fault-injection suite to MariaDB (DI-05) | — | `npm run test:fault` fails at migrate (P1013) | — | crash-durability evidence only exists for PostgreSQL | Not started |
+| T-QA-01 | P1 | Port the fault-injection suite to MariaDB (DI-05) | `apps/api/test-fault/*`, `vitest.fault.config.ts`, `scripts/db-backup.mjs` (restore server: `--no-defaults`, own PID file, root-safe) | `npm run test:fault`: **17 passed, 1 skipped** (opt-in benchmark) — API SIGKILL ×2, kill inside a write, restart, lost acks, database crash + InnoDB recovery, Redis loss, clock forgery, reconciler failover, backup during writes + isolated restore | pass | not in CI (needs mariadbd on the runner; `.github/workflows/ci.yml` is a shared file) | Verified |
 | T-PERF-01 | P1 | Port the load test to MariaDB and measure | `tests/load/exam-load.mjs` | runs below | pass (integrity) | not measured on Hostinger | Verified (local measurement) |
-| T-PERF-02 | P1 | Reduce start-burst latency / single-process limit | — | 1 000 candidates: start p95 3.0–3.7 s, save p50 242–340 ms at CPU ≈50 % | — | exam start bursts on one Node process | Not started (needs design: cache paper earlier, lighter start path, or more processes if the plan allows) |
+| T-PERF-02 | P1 | Start-burst capacity of one process | `delivery.service.ts` (per-process paper cache; no answer read-back for a new attempt) | §2b: realistic pace 1 000/3 000/5 000 candidates fine; burst of 3 000 starts in 6 s: 191 → 209 starts/s, p50 9.0 → 7.1 s | partial | a synchronized start of thousands within seconds queues for ~10 s on one process; mitigations are deployment/policy choices (§2b) | Implemented (partial gain), limit documented |
 | T-A11Y-00 | P1 | Make the axe scans run (missing dependency) | `package.json`, `package-lock.json` (+2 entries) | 4 scans now run and pass | pass | — | Verified |
 | T-A11Y-01 | P1 | Label-in-Name failure on exam palette | `exam/[examId]/palette.tsx`, `page.tsx` | axe `label-content-name-mismatch` → 0; 33 exam-player e2e pass | pass | — | Verified |
 | T-A11Y-02 | P2 | Scan critical journeys | `tests/e2e/a11y-critical.spec.ts`, `global-setup.ts` (9 students/campus) | 11 more states, 0 serious/critical | pass | automated scans only | Verified |
@@ -49,6 +49,26 @@ Latency degrades between 500 and 1 000 *highly active* candidates while host CPU
 3 000 and 5 000 were not run (the generator shares the same 4 vCPUs; results would measure the test machine). **No capacity claim for Hostinger follows from this.**
 Command: `node tests/load/exam-load.mjs --candidates N --questions 50 --think 1000 --ramp 20 --concurrency 512` with the API started as `RUN_WORKERS=true node --env-file=.env apps/api/dist/main.js`.
 
+## 2b. Realistic pace and start bursts (same machine, one API process, pool 20)
+Realistic = ~20 s per question (still faster than most candidates), 10 questions, every candidate also heartbeats every 15 s and submits twice (replay).
+
+| Scenario | Starts | start p50 / p95 | save p50 / p95 / p99 | Errors | Acknowledged | Lost / altered | Host CPU mean |
+|---|---|---|---|---|---|---|---|
+| 1 000 candidates, starts spread over 20 s | 1 000 | 9.9 / 13.3 ms | 3.7 / 6.5 / 9.7 ms | 0 | 10 000 | **0** | 9 % |
+| 3 000 candidates, starts over 30 s | 3 000 | 8.3 / 13.1 ms | 3.5 / 7.8 / 13.6 ms | 0 | 30 000 | **0** | 19 % |
+| 5 000 candidates, starts over 60 s | 5 000 | 9.1 / 19.8 ms | 4.0 / 14.9 / 28.6 ms | 0 | 50 000 | **0** | 27 % |
+| 5 000 candidates, starts within **10 s** (500/s) | 5 000 | 10 791 / 14 852 ms | 8.3 / 268 / 1 814 ms | 0 | 15 000 | **0** | 38 % |
+| start only, 3 000 within 6 s (before T-PERF-02) | 3 000 | 8 982 / 12 365 ms | — | 0 | — | — | — |
+| same, pool 40 | 2 979 | 6 108 / 10 857 ms | — | **21 client connect timeouts** | — | — | — |
+| same, after T-PERF-02 (pool 20) | 3 000 | 7 139 / 10 462 ms | — | 0 | — | — | — |
+
+Reading: at a human pace the single process handled 5 000 concurrent candidates with ample headroom; the binding constraint is the **start burst**
+— about 200 starts/s per process (CPU profile: ~31 % idle waiting on the database, ~35 % in the database client/driver). A synchronized start
+of thousands therefore queues for several seconds. Options (owner decision): stagger starts per campus (INDIVIDUAL timing already gives each
+candidate their own clock), open admission/lobby early so starts spread, add a small client-side jitter for SYNCHRONIZED starts (costs a few
+seconds of a shared clock — a policy question), or run more API processes (not possible on the current plan, see `HOSTINGER_DEPLOYMENT_AUDIT.md` §3).
+All on one 4-vCPU machine with the database and the load generator; Hostinger numbers will differ.
+
 ## 3. Quality gates — before and after (executed, same environment)
 
 | Gate | Before (`d6f297f`) | After (this branch) |
@@ -57,7 +77,7 @@ Command: `node tests/load/exam-load.mjs --candidates N --questions 50 --think 10
 | Shared unit | 58/58 | 58/58 |
 | API integration (`apps/api`, vitest) | 335/335 (30 files) | **348/348 (32 files)** |
 | Browser (Playwright) | 118 passed, **4 skipped** | **126 passed, 0 skipped, 0 failed** |
-| Fault suite (`npm run test:fault`) | cannot run (PostgreSQL harness) | cannot run (T-QA-01) |
+| Fault suite (`npm run test:fault`) | cannot run (PostgreSQL harness) | **17 passed, 1 skipped** |
 | Load test (MariaDB) | could not run (PostgreSQL script) | runs; see §2 |
 
 Environment: disposable MariaDB 10.11 on 127.0.0.1:3307 (READ COMMITTED, max_connections 500), no Redis, Node from the repo toolchain.
