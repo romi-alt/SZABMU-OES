@@ -43,6 +43,7 @@ export class TeacherController {
   }
   @Perm('teacher.work') @Get('overview') overview(@CurrentUser() u: AuthUser) { return this.t.overview(u); }
   @Perm('teacher.work') @Get('assignments') assignments(@CurrentUser() u: AuthUser) { return this.t.assignments(u); }
+  @Perm('teacher.work') @Get('submissions') submissions(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) { return this.t.submissions(u, parse(page.extend({ status: z.enum(['SUBMITTED', 'APPROVED', 'REJECTED']).optional() }), q)); }
   @Perm('teacher.work') @Get('students') students(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) { return this.t.students(u, parse(page.extend({ assignmentId: uuid.optional(), search: z.string().trim().max(100).optional() }), q)); }
 
   @Perm('teacher.work') @Get('pools') pools(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) { return this.t.pools(u, parse(z.object({ assignmentId: uuid.optional() }), q)); }

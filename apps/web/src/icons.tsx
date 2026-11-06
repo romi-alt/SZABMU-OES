@@ -49,7 +49,7 @@ export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
 /** Icon for a route (menu entries and page headings use the same one). */
 const BY_ROUTE: [string, IconName][] = [
   ['/dashboard', 'dashboard'], ['/schedule', 'schedule'], ['/results', 'results'], ['/performance', 'performance'], ['/profile', 'user'], ['/questions', 'questions'],
-  ['/exams', 'exams'], ['/monitor', 'monitor'], ['/incidents', 'incidents'], ['/my-students', 'students'], ['/classes', 'programs'], ['/pools', 'questions'], ['/teachers', 'assignments'], ['/students', 'students'], ['/enrolment', 'enrolment'], ['/assignments', 'assignments'],
+  ['/exams', 'exams'], ['/monitor', 'monitor'], ['/incidents', 'incidents'], ['/my-students', 'students'], ['/classes', 'programs'], ['/pools', 'questions'], ['/submissions', 'audit'], ['/teachers', 'assignments'], ['/students', 'students'], ['/enrolment', 'enrolment'], ['/assignments', 'assignments'],
   ['/users', 'users'], ['/audit', 'audit'], ['/institutions', 'institutions'], ['/programs', 'programs'], ['/roster', 'roster'], ['/certificate', 'certificate'],
 ];
 export const iconForRoute = (full: string): IconName => { const path = full.split('?')[0]!; return BY_ROUTE.find(([p]) => path === p || path.startsWith(p + '/'))?.[1] ?? 'dashboard'; };
