@@ -17,9 +17,9 @@ const regDto = z.object({
 const verifyDto = z.object({ email: z.string().email().max(254), code: z.string().regex(/^\d{6}$/) });
 const mcq = z.object({
   stem: z.string().trim().min(3).max(2000), options: z.array(z.string().trim().min(1).max(500)).min(4).max(5), correctIndex: z.number().int().min(0).max(4),
-  explanation: z.string().trim().max(2000).optional(), difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']), topic: z.string().trim().max(120).optional(), marks: z.number().positive().max(100).default(1),
+  explanation: z.string().trim().max(2000).optional(), difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']), topic: z.string().trim().max(120).optional(), subtopic: z.string().trim().max(120).nullable().optional(), bloom: z.enum(['REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYZE', 'EVALUATE', 'CREATE']).nullable().optional(), imageId: uuid.nullable().optional(), marks: z.number().positive().max(100).default(1),
 });
-const importRow = z.object({ statement: z.string().max(2000), options: z.array(z.string().max(500)).max(5), correct: z.string().max(3), explanation: z.string().max(2000).optional(), difficulty: z.string().max(10).optional(), topic: z.string().max(120).optional(), marks: z.number().optional() });
+const importRow = z.object({ statement: z.string().max(2000), options: z.array(z.string().max(500)).max(5), correct: z.string().max(3), explanation: z.string().max(2000).optional(), difficulty: z.string().max(10).optional(), topic: z.string().max(120).optional(), subtopic: z.string().max(200).optional(), bloom: z.string().max(20).optional(), marks: z.number().optional() });
 const decision = z.object({ decision: z.enum(['APPROVE', 'REJECT']), note: z.string().trim().max(1000).optional() });
 const reason = z.object({ note: z.string().trim().min(5, 'Give a reason of at least 5 characters').max(1000) });
 
@@ -54,6 +54,9 @@ export class TeacherController {
   @Perm('teacher.work') @Post('pools/:id/questions') createQ(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.t.createQuestion(u, id, parse(mcq, b), ip); }
   @Perm('teacher.work') @Post('pools/:id/import') @HttpCode(200) importQ(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.t.importQuestions(u, id, parse(z.object({ rows: z.array(importRow).min(1).max(500) }), b).rows, ip); }
   @Perm('teacher.work') @Get('pools/:id/export') exportQ(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Ip() ip: string) { return this.t.exportPool(u, id, ip); }
+
+  @Perm('teacher.work') @Post('images') uploadImage(@CurrentUser() u: AuthUser, @Body() b: unknown, @Ip() ip: string) { return this.t.uploadImage(u, parse(z.object({ data: z.string().max(1_500_000) }), b).data, ip); }
+  @Perm('teacher.work') @Get('images/:id') getImage(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.t.getImage(u, id); }
 
   @Perm('teacher.work') @Get('questions') listQ(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) {
     return this.t.listQuestions(u, parse(page.extend({ poolId: uuid.optional(), assignmentId: uuid.optional(), topic: z.string().max(120).optional(), difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(), status: z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED']).optional(), search: z.string().trim().max(100).optional() }), q));

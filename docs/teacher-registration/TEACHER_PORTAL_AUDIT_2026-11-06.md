@@ -56,9 +56,17 @@ File: `apps/api/prisma/migrations/20261106100000_teacher_question_bank_review/mi
 
 **Not yet done:** nothing in the application uses the new columns yet (steps 3–5). **Needs your approval before anything beyond this branch:** merging to `main`.
 
+## Step 3 — editor, image, history and Excel (done; uses the step-2 columns)
+- **Fields.** Subtopic, Bloom's level (optional) and an optional image/diagram on every MCQ; searchable subtopic; Bloom and subtopic in the list, preview, duplicate, CSV and Excel import/export.
+- **Editor.** Preview (inside the dialog), Save draft, **Save & add another** (saves, opens a fresh form at the statement with topic, subtopic, difficulty, Bloom level and marks carried over, and a running count), Cancel. Enter moves to the next option; Ctrl/Cmd+Enter saves and adds another. The existing dialog guard asks "Discard what you entered?" on Cancel/Escape/backdrop/✕ (a freshly opened blank form closes without asking); closing the tab with unsaved work shows the browser's warning. Clear field errors, "Saving…" states, phone layout, axe scan clean.
+- **Images.** `POST /teacher/images` (PNG/JPEG/WebP only — never SVG; real bytes must match the declared type; under 1 MB; stored once per teacher by SHA-256; audited) and `GET /teacher/images/:id` (uploader only; others get 404). A question can only reference an image its author uploaded. **Limit stated plainly: images are kept in the bank and shown to the author and (step 5) reviewers; the student exam player does not display them yet** — that needs a change to the exam delivery code and your decision.
+- **History.** Every create (single, import, lecturer) writes version 1; every edit writes the new version, and a question that existed before history gets its earlier content captured on its first edit. Rows are append-only (database triggers). No viewer yet — the history screen belongs to step 4.
+- **Excel.** Import `.xlsx` (first sheet; Excel, LibreOffice, openpyxl files tested) and export `.xlsx`, plus CSV and Excel templates. The browser reads the file and sends the same validated rows as a CSV; **the server never parses a spreadsheet**. No new dependency: a small zip/XML reader and writer in `apps/web/src/xlsx-lite.ts` using the browser's built-in compression. Reader limits: 2 MB file, 200 parts, 8 MB per inflated part (zip-bomb guard, tested with a 35 KB file that inflates to 30 MB), encrypted/zip64/unknown formats refused, `.xls` refused with a plain message. Written cells are text, so Excel never treats them as formulas. Bad rows: the server names the row (e.g. "Row 3: Bloom level must be…") and imports nothing.
+- **Tests.** API: `teacher-mcq-editor.test.ts` (7, all failed before the code); browser: `teacher-mcq-editor.spec.ts` (5; fails on the old UI) with openpyxl-made fixtures in `tests/e2e/fixtures/` (+ `make-fixtures.py`). Two routes added (both `teacher.work`; manifest updated). Existing specs updated for the renamed buttons. No migration in this step.
+
 ## Proposed order (each step: failing test first, additive migration announced, small commits)
 1. Overview figures + Question Submissions page + nav renames (no schema change).
 2. Schema (additive): **written and tested locally — see "Step 2" above; awaiting your review before any merge.**
-3. Editor: Save & Add Another, unsaved-changes guard, subtopic/Bloom/image fields; Excel import/export.
+3. Editor: Save & Add Another, unsaved-changes guard, subtopic/Bloom/image fields; Excel import/export. **Done — see "Step 3" above.**
 4. Bank-level submit/return/approve/reject and teacher feedback view; version history.
 5. Admin/examiner pages for banks and teacher activity.
