@@ -172,7 +172,7 @@ describe('MCQ pools', () => {
     expect((await t.c.get(`/teacher/questions?poolId=${pool}&status=SUBMITTED`)).body.total).toBe(2); expect((await t.c.put(`/teacher/questions/${q1.id}`, mcq())).status).toBe(409);   // locked while under review
     expect((await t.c.del(`/teacher/pools/${pool}`)).status).toBe(409);
     expect(await ctx.prisma.auditLog.count({ where: { action: 'question.submit', entityId: { in: [q1.id, q2.id] } } })).toBe(2);
-    expect(await ctx.prisma.notification.count({ where: { title: 'Question pool awaiting review' } })).toBeGreaterThan(0);
+    expect(await ctx.prisma.notification.count({ where: { title: 'Question bank awaiting review' } })).toBeGreaterThan(0);
   });
   it('is isolated per teacher and per assignment (IDOR): another teacher gets 404 for pools and questions, and cannot write to them', async () => {
     const t1 = await register(); await approveAll(t1); const t2 = await register(); await approveAll(t2);

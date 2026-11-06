@@ -23,7 +23,7 @@ test.describe('staff workflows', () => {
 
   test('lecturer authors a clinical MCQ → submits → examiner approves', async ({ page, browser }) => {
     await login(page, 'lecturer.a');
-    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Question bank' }).click();
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Question bank', exact: true }).click();
     await page.getByRole('button', { name: '+ New question' }).click();
     const dlg = page.getByRole('dialog', { name: 'New question' });
     await dlg.getByLabel('Type').selectOption('CLINICAL_MCQ');
@@ -40,7 +40,7 @@ test.describe('staff workflows', () => {
 
     const ctx = await browser.newContext(); const ex = await ctx.newPage();
     await login(ex, 'examiner');
-    await ex.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Question bank' }).click();
+    await ex.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Question bank', exact: true }).click();
     const r2 = ex.locator('tbody tr', { hasText: 'underlying cause of this anaemia' });
     await expect(r2).toContainText('Submitted');
     await r2.getByRole('button', { name: 'Approve' }).click();
@@ -118,7 +118,7 @@ test.describe('staff workflows', () => {
 
     const ctx2 = await browser.newContext(); const p2 = await ctx2.newPage();
     await login(p2, 'lecturer.a2');
-    await p2.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Question bank' }).click();
+    await p2.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Question bank', exact: true }).click();
     await expect(p2.getByRole('heading', { name: /Question bank/ })).toBeVisible();
     await expect(p2.getByLabel('Course').first().locator('option')).toHaveCount(2); // "All courses" + the single assigned course
     await ctx2.close();

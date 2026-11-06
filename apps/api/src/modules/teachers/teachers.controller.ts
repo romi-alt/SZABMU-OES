@@ -76,6 +76,7 @@ export class TeacherAdminController {
   constructor(private readonly a: TeacherAdminService) {}
   @Perm('teacher.manage') @Get() list(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) { return this.a.list(u, parse(page.extend({ status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED']).optional(), search: z.string().trim().max(100).optional() }), q)); }
   @Perm('teacher.manage') @Get(':userId') detail(@CurrentUser() u: AuthUser, @Param('userId', ParseUUIDPipe) id: string) { return this.a.detail(u, id); }
+  @Perm('teacher.manage') @Get(':userId/activity') activity(@CurrentUser() u: AuthUser, @Param('userId', ParseUUIDPipe) id: string) { return this.a.activity(u, id); }
   @Perm('teacher.manage') @Get(':userId/pools') pools(@CurrentUser() u: AuthUser, @Param('userId', ParseUUIDPipe) id: string) { return this.a.pools(u, id); }
   @Perm('teacher.manage') @Post(':userId/decision') @HttpCode(200) decide(@CurrentUser() u: AuthUser, @Param('userId', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { const d = parse(decision, b); return this.a.decide(u, id, d.decision, d.note, ip); }
   @Perm('teacher.manage') @Post(':userId/suspend') @HttpCode(200) suspend(@CurrentUser() u: AuthUser, @Param('userId', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.a.suspend(u, id, parse(reason, b).note, ip); }
