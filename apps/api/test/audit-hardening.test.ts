@@ -77,3 +77,29 @@ describe('SEC-03/04/05: password reset hardening', () => {
     expect(entry.actorRole).toBe('INVIGILATOR');
   });
 });
+
+describe('SEC-06: sign-up verification codes cannot be brute-forced with parallel guesses', () => {
+  let ctx: Ctx;
+  beforeAll(async () => { ctx = await boot({ studentsPerCampus: 6 }); });
+  afterAll(async () => { await ctx.app.close(); });
+  const inject = (url: string, payload: unknown, remoteAddress: string) =>
+    ctx.app.getHttpAdapter().getInstance().inject({ method: 'POST', url: `/api${url}`, payload: payload as never, remoteAddress }).then((r) => ({ status: r.statusCode, body: JSON.parse(r.body) }));
+
+  it('30 parallel wrong guesses from 30 addresses use up the 5 guesses: the right code no longer works and no account is created', async () => {
+    const email = `brute.${Date.now()}@example.test`;
+    const s = await inject('/auth/register', { regNo: `BF/${Date.now()}`, email, password: 'Sturdy-Pass-2026!x' }, '10.30.0.1');
+    expect(s.status).toBe(200); const code = s.body.devCode as string;
+    const wrong = Array.from({ length: 30 }, (_, i) => String((Number(code) + 1 + i) % 1_000_000).padStart(6, '0'));
+    const rs = await Promise.all(wrong.map((c, i) => inject('/auth/register/verify', { email, code: c }, `10.31.${i}.9`)));
+    expect(rs.every((r) => r.status === 400)).toBe(true);
+    expect((await inject('/auth/register/verify', { email, code }, '10.32.0.1')).status).toBe(400);
+    expect(await ctx.prisma.user.count({ where: { email } })).toBe(0);
+  });
+
+  it('a normal sign-up still works, including after a couple of typos', async () => {
+    const email = `normal.${Date.now()}@example.test`;
+    const s = await inject('/auth/register', { regNo: `NM/${Date.now()}`, email, password: 'Sturdy-Pass-2026!x' }, '10.33.0.1'); const code = s.body.devCode as string;
+    for (const typo of ['000001', '999998']) if (typo !== code) expect((await inject('/auth/register/verify', { email, code: typo }, '10.33.0.1')).status).toBe(400);
+    expect((await inject('/auth/register/verify', { email, code }, '10.33.0.1')).status).toBe(200);
+  });
+});
