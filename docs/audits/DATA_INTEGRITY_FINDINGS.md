@@ -28,7 +28,7 @@ No defect was found in answer persistence, sealing, timing or grading. All 20 re
 | DI-02 | Info | Item analysis and grading read `correctLabel` + key actions; there is no separate scoring version number — the immutable snapshot plus the append-only `key_actions` list is the version history | Documented |
 | DI-03 | Medium (operational) | Backups/restores of the Hostinger MariaDB are not proven by a restore drill in this audit (a backup tool with restore verification exists: `scripts/db-backup.mjs`, `npm run backup:verify`) | Open — needs access to the production database host |
 | DI-04 | Info | Local tests ran on MariaDB 10.11, production is 11.8 | CI on 11.8 remains the authority |
-| DI-05 | **High (assurance gap)** | The durability fault-injection suite `apps/api/test-fault/` (process kills, dropped connections, pool exhaustion, backup/restore) was not ported in the PostgreSQL→MariaDB move: its harness starts a disposable PostgreSQL and uses the `pg` driver, so `npm run test:fault` fails at `prisma migrate deploy` (P1013). CI does not run it, so this was invisible. The strongest evidence that acknowledged answers survive crashes therefore exists only for the old database. | Open — port the harness to MariaDB (tracker T-QA-01) |
+| DI-05 | **High (assurance gap)** | The durability fault-injection suite `apps/api/test-fault/` (process kills, dropped connections, pool exhaustion, backup/restore) was not ported in the PostgreSQL→MariaDB move: its harness starts a disposable PostgreSQL and uses the `pg` driver, so `npm run test:fault` fails at `prisma migrate deploy` (P1013). CI does not run it, so this was invisible. The strongest evidence that acknowledged answers survive crashes therefore exists only for the old database. | **Fixed**: harness ported; `npm run test:fault` 17 passed, 1 skipped (T-QA-01) |
 
 ## 3. The 20 failure scenarios (Phase 10)
 
@@ -49,8 +49,8 @@ No defect was found in answer persistence, sealing, timing or grading. All 20 re
 | 11 | Teacher fetches results by direct API | refused | `teachers.test` role matrix | Pass |
 | 12 | Campus admin cross-campus access | refused/filtered, never widened | `campus-isolation` 1–10 | Pass |
 | 13 | Session expires during an exam | saves 401; after sign-in the attempt resumes with every confirmed answer | **new** `failure-scenarios` #13 | Pass |
-| 14 | Transaction fails during a save | not "saved"; retried; no partial row | `npm run test:fault` — **cannot run: the fault suite still targets PostgreSQL** (see DI-05) | **Not executed** |
-| 15 | Backend restarts during a session | attempts durable; backlog reconciled once | `exam-control` lease/backlog tests ("a crashed owner's lease expires…", "a backlog … sealed exactly once") | Pass (in-process restart simulation) |
+| 14 | Transaction fails during a save | not "saved"; retried; no partial row | fault suite A2 "crash INSIDE a write" (connection killed mid-transaction; API killed mid-statement) on MariaDB | Pass |
+| 15 | Backend restarts during a session | attempts durable; backlog reconciled once | fault suite A/B (real SIGKILL of the API process) and control "API process killed and restarted with a backlog" | Pass |
 | 16 | Result recalculated after a question-bank revision | unchanged | **new** `failure-scenarios` #16/#17 | Pass |
 | 17 | Paper changed after candidates started | delivered paper unchanged (snapshot) | **new** `failure-scenarios` #16/#17 | Pass |
 | 18 | Multiple concurrent sessions for one attempt | one active client; others read-only | `exam-engine` second window test | Pass |
