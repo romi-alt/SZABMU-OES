@@ -117,8 +117,11 @@ async function backup() {
 async function disposableServer(dir) {
   const bin = process.env.MARIADB_BIN; const exe = (n) => (bin ? path.join(bin, n + (process.platform === 'win32' ? '.exe' : '')) : n);
   const data = path.join(dir, 'data'); const port = await freePort();
-  execFileSync(exe('mariadb-install-db'), [`--datadir=${data}`, ...(process.platform === 'win32' ? ['--password=restore'] : ['--auth-root-authentication-method=normal', '--skip-test-db'])], { stdio: 'pipe' });
-  const proc = spawn(exe('mariadbd'), [`--datadir=${data}`, `--port=${port}`, '--bind-address=127.0.0.1', '--skip-networking=0', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci',
+  // MariaDB refuses to run as root unless told to; only matters when this tool itself runs as root (containers, CI sandboxes).
+  const asRoot = process.getuid?.() === 0 ? ['--user=root'] : [];
+  // --no-defaults (must be first): the throw-away server must not read the host's my.cnf (Debian's sends the PID file to /run/mysqld, absent in containers)
+  execFileSync(exe('mariadb-install-db'), ['--no-defaults', `--datadir=${data}`, ...asRoot, ...(process.platform === 'win32' ? ['--password=restore'] : ['--auth-root-authentication-method=normal', '--skip-test-db'])], { stdio: 'pipe' });
+  const proc = spawn(exe('mariadbd'), ['--no-defaults', `--datadir=${data}`, ...asRoot, `--pid-file=${path.join(dir, 'mariadbd.pid')}`, `--port=${port}`, '--bind-address=127.0.0.1', '--skip-networking=0', '--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci',
     ...(process.platform === 'win32' ? [] : [`--socket=${path.join(dir, 'sock')}`, '--skip-grant-tables=0'])], { stdio: 'ignore' });
   const pw = process.platform === 'win32' ? 'restore' : '';
   for (let i = 0; i < 120; i++) {
