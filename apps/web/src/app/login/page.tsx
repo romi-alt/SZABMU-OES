@@ -10,12 +10,14 @@ import { errMsg } from '@/ui';
 import { AuthButton, AuthField, AuthFrame, AuthHeading } from '../AuthFrame';
 
 export default function Login() {
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [tried, setTried] = useState(false);
   const portal = usePortal(); const staff = portal === 'staff'; const router = useRouter(); const { me, refresh } = useMe(); const [expired, setExpired] = useState(false);
   useEffect(() => { try { if (sessionStorage.getItem('oes:expired') === '1') { setExpired(true); sessionStorage.removeItem('oes:expired'); } } catch { /* storage unavailable */ } }, []);
   useEffect(() => { if (me) router.replace('/dashboard'); }, [me, router]);
   async function submit(e: React.FormEvent) {
-    e.preventDefault(); setBusy(true); setErr('');
+    // The button is never greyed out without a reason (audit A-06): pressing it with an empty field says what is missing.
+    e.preventDefault(); setTried(true); if (!email.trim() || !password) return;
+    setBusy(true); setErr('');
     try { await post('/auth/login', { email, password }); await refresh(); router.replace('/dashboard'); }
     catch (x) { setErr(errMsg(x)); } finally { setBusy(false); }
   }
@@ -24,11 +26,11 @@ export default function Login() {
       <AuthHeading icon="user" title="Sign in" lead="Access your SZABMU examination account" />
       {expired && <div className="notice warn" role="status" data-testid="session-expired">Your session has expired or was ended. Please sign in again — answers already saved are kept.</div>}
       <form onSubmit={submit} noValidate>
-        <AuthField label="University email" icon="mail" type="email" value={email} onChange={setEmail} autoFocus autoComplete="username" placeholder="Enter your university email" />
-        <AuthField label="Password" icon="lock" type="password" value={password} onChange={setPassword} autoComplete="current-password" placeholder="Enter your password" />
+        <AuthField label="University email" icon="mail" type="email" value={email} onChange={setEmail} error={tried && !email.trim() ? 'Enter your university email.' : undefined} autoFocus autoComplete="username" placeholder="Enter your university email" />
+        <AuthField label="Password" icon="lock" type="password" value={password} onChange={setPassword} error={tried && !password ? 'Enter your password.' : undefined} autoComplete="current-password" placeholder="Enter your password" />
         {err && <div className="notice bad" role="alert">{err}</div>}
         <div className="auth-row"><Link href="/forgot" className="auth-link">Forgot password?</Link></div>
-        <AuthButton busy={busy} disabled={!email || !password}>{busy ? 'Signing in…' : 'Sign in'}</AuthButton>
+        <AuthButton busy={busy}>{busy ? 'Signing in…' : 'Sign in'}</AuthButton>
       </form>
       {!staff && <p className="auth-alt"><span>New student?</span><Link href="/register" className="auth-link">Create your account</Link></p>}
       <p className="auth-alt" style={{ borderTop: 0, paddingTop: 0, marginTop: 0 }}><span>New teacher?</span><a href={teacherRegisterHref(portal)} className="auth-link">Register as a teacher</a></p>

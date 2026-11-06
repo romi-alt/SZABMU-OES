@@ -10,7 +10,7 @@ export default function Profile() {
   const { me, refresh, logout } = useMe(); const { run, busy } = useAction(); const toast = useToast();
   const [phone, setPhone] = useState(me?.phone ?? ''); const [address, setAddress] = useState(me?.student?.address ?? ''); const [guardian, setGuardian] = useState(me?.student?.guardianPhone ?? '');
   const [father, setFather] = useState(me?.student?.fatherName ?? ''); const [gender, setGender] = useState(me?.student?.gender ?? ''); const [change, setChange] = useState(false);
-  const [cur, setCur] = useState(''); const [pw, setPw] = useState(''); const [pw2, setPw2] = useState('');
+  const [cur, setCur] = useState(''); const [pw, setPw] = useState(''); const [pw2, setPw2] = useState(''); const [pwTried, setPwTried] = useState(false);
   if (!me) return null;
   const phoneErr = isValidPhone(phone) ? '' : PHONE_HINT; const guardianErr = me.student && !isValidPhone(guardian) ? PHONE_HINT : ''; const detailsInvalid = !!(phoneErr || guardianErr);
   const strength = checkPassword(pw, [me.fullName.split(' ')[0] ?? '']);
@@ -44,13 +44,13 @@ export default function Profile() {
           </Card>
         )}
         <Card title="Change password">
-          <form className="stack" onSubmit={(e) => { e.preventDefault(); void run(async () => { await post('/auth/change-password', { currentPassword: cur, newPassword: pw }); toast('Password updated. Other devices were signed out.'); setCur(''); setPw(''); setPw2(''); await refresh(); }); }}>
-            <Field label="Current password"><input className="in" type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} /></Field>
+          <form className="stack" onSubmit={(e) => { e.preventDefault(); setPwTried(true); if (!cur || !strength.ok || pw !== pw2) return; void run(async () => { await post('/auth/change-password', { currentPassword: cur, newPassword: pw }); toast('Password updated. Other devices were signed out.'); setCur(''); setPw(''); setPw2(''); setPwTried(false); await refresh(); }); }}>
+            <Field label="Current password" error={pwTried && !cur ? 'Enter your current password.' : undefined}><input className="in" type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} /></Field>
             <Field label="New password" hint="At least 10 characters; three of lower / upper / digit / symbol."><input className="in" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
             <div className="meter" aria-hidden>{[1, 2, 3, 4].map((n) => <i key={n} className={strength.score >= n ? (strength.score <= 2 ? 'weak' : 'on') : ''} />)}</div>
-            {pw && !strength.ok && <span className="err-text">{strength.problems[0]}</span>}
-            <Field label="Confirm new password"><input className="in" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></Field>
-            <div className="row"><button className="btn btn-primary" disabled={busy || !cur || !strength.ok || pw !== pw2}>Update password</button><button type="button" className="btn" onClick={logout}>Sign out</button></div>
+            {(pw || pwTried) && !strength.ok && <span className="err-text">{pw ? strength.problems[0] : 'Enter a new password.'}</span>}
+            <Field label="Confirm new password" error={pwTried && pw2 !== pw ? 'The two new passwords do not match.' : undefined}><input className="in" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></Field>
+            <div className="row"><button className="btn btn-primary" disabled={busy}>Update password</button><button type="button" className="btn" onClick={logout}>Sign out</button></div>
           </form>
         </Card>
       </div>
