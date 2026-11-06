@@ -25,7 +25,7 @@ Severity: P1 misleads or blocks a core task / excludes users · P2 friction with
 | A-04 | P2 | Long stacked cards for tables on phones | Open |
 | A-05 | P2 | Dashboards list counts, not "what needs me now" | Open (tiles are deep links) |
 | A-06 | P2 | Disabled primary buttons without an explanation | **Fixed** for Sign in and Update password: buttons stay enabled; pressing them names each missing/invalid field and sends nothing (`explained-buttons.spec.ts`). The forgot-password page still disables its button until the new password is valid (its strength meter explains why) |
-| A-07 | P2 | Targets below 24×24 px in question bank and exams list (WCAG 2.5.8) | Open — the question bank is not yet in the axe scan set |
+| A-07 | P2 | Targets below 24×24 px in question bank and exams list (WCAG 2.5.8) | **No violation found (automated)**: axe WCAG 2.2 AA incl. `target-size` passes on /questions, /exams and /audit (`a11y-lists.spec.ts`). Not re-measured by hand |
 | A-08 | P2 | Live monitor repeats "Report incident" per row; duplicate "Not started" | Open |
 | A-09 | P2 | "Withdraw…" on every roster row with equal weight | Open (the action itself is confirmed with a reason) |
 | A-10 | P2 | Audit trail labels are developer terms | Open |
