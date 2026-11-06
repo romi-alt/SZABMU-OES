@@ -83,6 +83,34 @@ File: `apps/api/prisma/migrations/20261106100000_teacher_question_bank_review/mi
 - **Tests.** API: `teacher-bank-admin.test.ts` (3; two failed first, the third characterises the existing exam integration); browser: `question-bank-review.spec.ts` (6, fails on the old UI; axe on the queue, review, activity and phone screens). API 378/378, shared 77/77, lint and typecheck clean. No migration.
 - **Not done / for your decision:** "Submitted Questions" is the existing question list filtered to submitted (linked from the queue), not a second screen; images are visible to reviewers but not yet to students in an examination.
 
+## Phase 10 — verification pass (done)
+Every item of the brief's test list, with the executed test that proves it (all passing at the end of this pass):
+
+| Brief item | Proof |
+|---|---|
+| Approval-state transitions | `teacher-approval-state.test.ts` (pending / rejected / suspended / deactivated account × pre-approved, mixed, revoked assignments); `teacher-approval-live.spec.ts` |
+| Approved teacher dashboard access | `teacher-overview.test.ts`, `teacher-portal-overview.spec.ts`, `teachers.spec.ts` |
+| Pending teacher restrictions | `teachers.test.ts`, `teachers.spec.ts`, and now every working route in `teacher-phase10.test.ts` (route matrix) |
+| Creating MCQ banks; adding and editing questions; saving multiple MCQs | `teachers.test.ts`, `teacher-mcq-editor.test.ts`, `teacher-mcq-editor.spec.ts` (Save & add another, Ctrl+Enter, discard guard) |
+| Correct answer validation | `teachers.test.ts` (400 on bad key), `teacher-phase10.test.ts` (database refuses two correct options; API refuses none) |
+| Bulk import errors | `teachers.test.ts` (all-or-nothing, row named), `teacher-mcq-editor.test.ts` (Bloom/subtopic rows), `teacher-mcq-editor.spec.ts` (Excel: bad Bloom row, zip bomb, non-Excel, .xls) |
+| Question submission and review | `teacher-bank-review.test.ts`, `teacher-bank-admin.test.ts`, `teacher-bank-review.spec.ts`, `question-bank-review.spec.ts` |
+| Revision history | `teacher-mcq-editor.test.ts` (versions on create/edit/import/legacy, append-only), `teacher-bank-review.test.ts` (history, exam freeze) |
+| Student-name-only access | `teachers.test.ts` (names only, by approved assignment); leak scan in `teacher-phase10.test.ts` |
+| Cross-subject / cross-teacher / cross-campus / cross-session denial | `teachers.test.ts` (IDOR), `teacher-phase10.test.ts` (**session scoping** and route matrix: foreign ids → 404, other roles → 403, anonymous → 401) |
+| Direct API access to results denied | `teachers.test.ts` (every result/grade/exam/report route refused for a teacher); `teacher-phase10.test.ts` (no result/contact fields in any teacher GET) |
+| Existing student examination functionality unaffected | full browser suite (exam player, offline, takeover, receipts), API suite (delivery, scoring, failure scenarios), durability fault suite, plus the exam-freeze test |
+
+**Defects found by this pass and fixed (each by a test that failed first):**
+1. **Academic-session scoping gap (authorization).** Banks were checked against course + campus + session, but a *question* was checked against course + campus only. If a teacher had two approved sessions of the same subject and one was revoked, the revoked session's questions stayed readable and editable by id, in lists, in Overview counts and in Question Submissions. Fixed: a question is reachable only through the session its bank belongs to (`questionScope`, `ownQuestion`).
+2. **Pending teacher got a validation error (400) instead of a refusal (403)** on routes whose body is validated before the service runs (found by the route matrix on `POST /teacher/images`). Fixed centrally: the authentication guard now checks "approved, active teacher" for every `teacher.work` route before any handler or validation. Stricter only; the per-service checks remain.
+3. **Phase 7 gaps:** Classes & Subjects lacked MCQ count, bank count, status and the "open question banks" link. Added (`mcqCount`, `bankCount` per approved assignment; link filters the bank list by assignment).
+4. **Accessibility:** the new "Open" link first failed axe (label-in-name); fixed before it was committed.
+
+**Pre-existing failures:** none found. Every failure seen during the work was introduced by it and fixed (listed above and in the earlier steps).
+
+**Still open for your decision (unchanged):** images are not shown to students in an examination; whether editing a question that an examination already uses should be hard-blocked; merging to `main` (would apply the step-2 migration on the next deploy — review the SQL first). Not verified here: behaviour on Hostinger (capacity, SMTP, proxy), because everything was run on disposable local databases.
+
 ## Proposed order (each step: failing test first, additive migration announced, small commits)
 1. Overview figures + Question Submissions page + nav renames (no schema change).
 2. Schema (additive): **written and tested locally — see "Step 2" above; awaiting your review before any merge.**

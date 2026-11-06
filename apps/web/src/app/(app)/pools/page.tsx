@@ -25,19 +25,20 @@ function QImage({ id, alt }: { id: string; alt?: string }) {
 }
 
 export default function Pools() {
-  const url = useUrlState({ pool: '' }); const poolId = url.vals.pool;
-  return poolId ? <PoolDetail poolId={poolId} onBack={() => url.set('pool', '')} /> : <PoolList onOpen={(id) => url.set('pool', id)} />;
+  const url = useUrlState({ pool: '', assignment: '' }); const poolId = url.vals.pool;
+  return poolId ? <PoolDetail poolId={poolId} onBack={() => url.set('pool', '')} /> : <PoolList assignment={url.vals.assignment} onClearFilter={() => url.set('assignment', '')} onOpen={(id) => url.set('pool', id)} />;
 }
 
-function PoolList({ onOpen }: { onOpen: (id: string) => void }) {
-  const st = useGet<any[]>('/teacher/pools'); const as = useGet<any[]>('/teacher/assignments'); const { run, busy } = useAction(); const toast = useToast();
+function PoolList({ onOpen, assignment, onClearFilter }: { onOpen: (id: string) => void; assignment: string; onClearFilter: () => void }) {
+  const st = useGet<any[]>(`/teacher/pools${assignment ? `?assignmentId=${assignment}` : ''}`); const as = useGet<any[]>('/teacher/assignments'); const { run, busy } = useAction(); const toast = useToast();
   const [add, setAdd] = useState(false); const [f, setF] = useState({ assignmentId: '', name: '', description: '' }); const [rm, setRm] = useState<any | null>(null);
-  const approved = (as.data ?? []).filter((a) => a.status === 'APPROVED');
+  const approved = (as.data ?? []).filter((a) => a.status === 'APPROVED'); const scoped = approved.find((a) => a.id === assignment);
   return (
     <>
       <PageHead title="MCQ Question Banks" sub="Question banks for your approved subjects. Submit a bank and the examiners review its questions.">
         <button className="btn btn-green" disabled={!approved.length} onClick={() => { setF({ assignmentId: approved[0]?.id ?? '', name: '', description: '' }); setAdd(true); }}>+ New question bank</button>
       </PageHead>
+      {scoped && <p className="small" style={{ margin: '0 0 8px' }} data-testid="pool-scope">Showing the question banks for <b>{scoped.course.title}</b> ({scoped.course.code}, {scoped.term}). <button className="btn-link" onClick={onClearFilter}>Show all my question banks</button></p>}
       <Async state={st}>{(rows) => rows.length ? (
         <div data-testid="pool-list"><Table rowKey={(p: any) => p.id} rows={rows} cols={[
           { h: 'Question bank', cell: (p: any) => <><button className="btn-link" onClick={() => onOpen(p.id)}><b>{p.name}</b></button>{p.description && <div className="small faint">{p.description}</div>}</> },
