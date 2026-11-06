@@ -1,4 +1,4 @@
-import { LINKS } from '@oes/shared';
+import { LINKS, similarPairs } from '@oes/shared';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -62,6 +62,22 @@ export class QuestionsService {
   }
 
   get(u: AuthUser, id: string) { return this.load(u, id); }
+
+  /**
+   * Possible duplicates among the questions the caller may read (same scoping as `list`): deterministic text similarity
+   * (packages/shared/similarity.ts), nothing leaves the system. A prompt for review only — nothing is merged or retired automatically.
+   */
+  async duplicates(u: AuthUser, f: { courseId?: string; threshold: number }) {
+    const qs = await this.prisma.question.findMany({
+      where: { AND: [await this.access.questionWhere(u)], institutionId: scope.filter(u), courseId: f.courseId, status: { not: 'RETIRED' } as never },
+      orderBy: { createdAt: 'desc' }, take: 3000,
+      select: { id: true, stem: true, vignette: true, status: true, version: true, course: { select: { code: true } }, options: { select: { text: true } } },
+    });
+    const byId = new Map(qs.map((q) => [q.id, q]));
+    const pairs = similarPairs(qs.map((q) => ({ id: q.id, stem: q.stem, vignette: q.vignette, options: q.options.map((o) => o.text) })), f.threshold).slice(0, 200);
+    const view = (id: string) => { const q = byId.get(id)!; return { id, stem: q.stem.length > 160 ? q.stem.slice(0, 160) + '…' : q.stem, status: q.status, course: q.course.code }; };
+    return { compared: qs.length, threshold: f.threshold, pairs: pairs.map((p) => ({ score: p.score, a: view(p.a), b: view(p.b) })) };
+  }
 
   async create(u: AuthUser, d: QuestionInput, ip?: string) {
     validateQuestion(d);

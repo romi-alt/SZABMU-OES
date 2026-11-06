@@ -38,10 +38,27 @@ function Editor({ q, courses, institutionId, onClose, onSaved }: { q?: any; cour
   );
 }
 
+/** Possible duplicates (deterministic text similarity, server-scoped like the list). A prompt for review: nothing is merged or retired automatically. */
+function Duplicates({ courseId, onOpen, onClose }: { courseId: string; onOpen: (id: string) => void; onClose: () => void }) {
+  const st = useGet<any>(`/questions/duplicates${courseId ? `?courseId=${courseId}` : ''}`);
+  return (
+    <Modal title="Possible duplicate questions" onClose={onClose} footer={<button className="btn" onClick={onClose}>Close</button>}>
+      <Async state={st}>{(d) => <div className="stack" data-testid="duplicates">
+        <p className="small muted">Compared {d.compared} question{d.compared === 1 ? '' : 's'}{courseId ? ' in this course' : ' you can access'}, by wording of the vignette, stem and options (option order ignored). Pairs at {Math.round(d.threshold * 100)} % similarity or more are listed. Review them yourself — nothing is changed automatically.</p>
+        {!d.pairs.length ? <div className="small">No likely duplicates found.</div> : <ul className="stack" style={{ listStyle: 'none', padding: 0, margin: 0 }}>{d.pairs.map((p: any) => (
+          <li key={`${p.a.id}-${p.b.id}`} className="card" style={{ padding: 12 }}>
+            <div className="row between"><b>{Math.round(p.score * 100)} % similar</b></div>
+            {[p.a, p.b].map((q: any) => <div key={q.id} className="row between" style={{ gap: 12, marginTop: 8 }}><span className="small">{q.stem} <span className="code">{q.course}</span> <Status s={q.status} /></span><button className="btn btn-sm" onClick={() => onOpen(q.id)}>Open</button></div>)}
+          </li>))}</ul>}
+      </div>}</Async>
+    </Modal>
+  );
+}
+
 function Inner() {
   const { me, can } = useMe(); const sp = useSearchParams(); const { run } = useAction();
   const url = useUrlState({ status: sp.get('status') ?? '', courseId: '', search: '', page: '1' }); const status = url.vals.status; const courseId = url.vals.courseId; const search = url.vals.search; const page = Number(url.vals.page) || 1; const setStatus = (v: string) => url.set('status', v); const setCourseId = (v: string) => url.set('courseId', v); const setSearch = (v: string) => url.set('search', v); const setPage = (n: number) => url.set('page', String(n));
-  const [edit, setEdit] = useState<any | 'new' | null>(null); const [rej, setRej] = useState<any>(null); const [note, setNote] = useState(''); const [view, setView] = useState<any>(null);
+  const [dups, setDups] = useState(false); const [edit, setEdit] = useState<any | 'new' | null>(null); const [rej, setRej] = useState<any>(null); const [note, setNote] = useState(''); const [view, setView] = useState<any>(null);
   const programs = useGet<any[]>('/programs'); const mine = useGet<any[]>(me?.role === 'LECTURER' ? '/me/course-assignments' : null);
   // Lecturers work only on assigned courses; everyone else sees the full catalogue (server enforces either way).
   const courses = me?.role === 'LECTURER' ? (mine.data ?? []).map((a) => a.course) : (programs.data ?? []).flatMap((p) => p.courses);
@@ -53,8 +70,10 @@ function Inner() {
   return (
     <>
       <PageHead title="Question bank" sub={canReview ? 'Review submitted questions and curate the approved bank.' : 'Author questions; submit for examiner approval. Approved questions are available for papers.'}>
+        <button className="btn" onClick={() => setDups(true)}>Possible duplicates…</button>
         {canWrite && <button className="btn btn-green" onClick={() => setEdit('new')}>+ New question</button>}
       </PageHead>
+      {dups && <Duplicates courseId={courseId} onClose={() => setDups(false)} onOpen={(id) => { setDups(false); void open(id); }} />}
       <Card flush>
         <div className="filters">
           <Field label="Status"><select className="in" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}><option value="">All statuses</option>{['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'RETIRED'].map((s) => <option key={s}>{s}</option>)}</select></Field>
