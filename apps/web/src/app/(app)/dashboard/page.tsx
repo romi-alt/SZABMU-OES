@@ -28,6 +28,27 @@ const SHORTCUTS: Record<string, { label: string; desc: string; href: string }[]>
   SUPER_ADMIN: [{ label: 'Institutions', desc: 'Colleges and affiliations', href: '/institutions' }, { label: 'Users', desc: 'Staff accounts and roles', href: '/users' }, { label: 'Programs & courses', desc: 'Academic structure', href: '/programs' }, { label: 'Audit trail', desc: 'Security-relevant history', href: '/audit' }],
 };
 
+/** UI audit A-05: what needs this person now, in order, from the counts the dashboard already returns (no extra request, no new API). */
+interface Need { key: string; one: string; many: string; href: string; urgent?: boolean }
+const ATTENTION: Record<string, Need[]> = {
+  CCE: [{ key: 'openIncidents', one: 'open incident', many: 'open incidents', href: '/incidents', urgent: true }, { key: 'liveExams', one: 'examination is live now', many: 'examinations are live now', href: '/monitor', urgent: true }, { key: 'papersToApprove', one: 'paper is waiting for your approval', many: 'papers are waiting for your approval', href: '/exams?status=PAPER_PENDING' }, { key: 'resultsToPublish', one: 'result set is ready to publish', many: 'result sets are ready to publish', href: '/exams?status=RESULT_PENDING' }],
+  EXAMINER: [{ key: 'liveExams', one: 'examination is live now', many: 'examinations are live now', href: '/monitor', urgent: true }, { key: 'papersPending', one: 'paper is waiting for your approval', many: 'papers are waiting for your approval', href: '/exams?status=PAPER_PENDING' }, { key: 'questionsToReview', one: 'question is waiting for your review', many: 'questions are waiting for your review', href: '/questions?status=SUBMITTED' }, { key: 'resultsToApprove', one: 'result set is waiting for your approval', many: 'result sets are waiting for your approval', href: '/exams?status=RESULT_PENDING' }],
+  CAMPUS_ADMIN: [{ key: 'openIncidents', one: 'open incident at your campus', many: 'open incidents at your campus', href: '/incidents', urgent: true }, { key: 'liveExams', one: 'examination is in progress at your campus', many: 'examinations are in progress at your campus', href: '/monitor', urgent: true }],
+  INVIGILATOR: [{ key: 'liveNow', one: 'examination is live now', many: 'examinations are live now', href: '/monitor', urgent: true }, { key: 'myOpenIncidents', one: 'of your incident reports is still open', many: 'of your incident reports are still open', href: '/incidents' }],
+  LECTURER: [{ key: 'resultsToReview', one: 'result set is waiting for your review', many: 'result sets are waiting for your review', href: '/exams' }],
+};
+function NeedsAttention({ role, d }: { role: string; d: Record<string, unknown> }) {
+  const rules = ATTENTION[role]; if (!rules) return null;
+  const items = rules.map((n) => ({ n, v: Number(d[n.key] ?? 0) })).filter(({ v }) => v > 0);
+  return (
+    <Card title="Needs your attention">
+      {items.length === 0 ? <div className="card-b muted" data-testid="attention-empty">Nothing needs your action right now.</div> :
+        <ul className="attention" data-testid="attention-list">{items.map(({ n, v }) => (
+          <li key={n.key}><Link href={n.href} className={n.urgent ? 'attn urgent' : 'attn'}><span className="attn-n mono">{v}</span><span className="attn-t">{v === 1 ? n.one : n.many}</span><Icon name="arrow" size={16} /></Link></li>))}</ul>}
+    </Card>
+  );
+}
+
 function QuickActions({ role }: { role: string }) {
   return (
     <Card title="Quick actions"><ul className="shortcuts" data-testid="quick-actions">{(SHORTCUTS[role] ?? []).map((s) => (
@@ -85,6 +106,7 @@ export default function Dashboard() {
           })}</div>
           <div className="dash-grid">
             <div className="stack-lg">
+              <NeedsAttention role={me.role} d={d} />
               {me.role === 'STUDENT' && <MyExams />}
               {me.role === 'LECTURER' && d.byStatus && <Card title="My question pipeline"><div className="row wrap">{Object.entries(d.byStatus).map(([k, v]) => <span key={k} className="chip">{k.toLowerCase()}: <b className="mono">{v as number}</b></span>)}</div></Card>}
               <RecentActivity />

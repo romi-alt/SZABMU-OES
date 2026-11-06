@@ -33,7 +33,8 @@ test.describe('UI audit batch: profile, roster, exam list, question bank, sign-o
   test('A-09: Withdraw on a roster row is a quiet link-style control', async ({ page }) => {
     await login(page, 'cce'); await page.goto('/exams');
     await page.getByRole('link', { name: /MBBS-PATH-MT|Pathology Mid-term/ }).first().click();
-    const w = page.locator('tbody tr', { hasText: 'DMC-B-2024-0006' }).getByRole('button', { name: 'Withdraw…' });
+    const w = page.getByRole('button', { name: 'Withdraw…' }).first();   // any row: other specs may already have withdrawn a particular candidate
+    await expect(w).toBeVisible();
     await expect(w).toHaveClass(/btn-link/); await expect(w).not.toHaveClass(/(^|\s)btn(\s|$)/);
   });
 });
