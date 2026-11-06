@@ -21,16 +21,21 @@ Severity: P1 misleads or blocks a core task / excludes users · P2 friction with
 |---|---|---|---|
 | A-01 | P1 | Raw UTC timestamps in notifications | Fixed earlier (`humanizeTimes`), test `polish.spec.ts` |
 | A-02 | P1 | Student's main action below the fold on phones | Fixed earlier, test `polish.spec.ts` |
-| A-03 | P2 | Read-only profile fields look editable | Partly addressed by the new profile page (identity shown as text); re-check |
+| A-03 | P2 | Read-only profile fields look editable | **Fixed**: name and email are now plain label/value rows like the academic details; only editable fields are inputs (`ui-audit-batch3.spec.ts`). The Save button is still at the top of the card |
 | A-04 | P2 | Long stacked cards for tables on phones | Open |
 | A-05 | P2 | Dashboards list counts, not "what needs me now" | Open (tiles are deep links) |
 | A-06 | P2 | Disabled primary buttons without an explanation | **Fixed** for Sign in and Update password: buttons stay enabled; pressing them names each missing/invalid field and sends nothing (`explained-buttons.spec.ts`). The forgot-password page still disables its button until the new password is valid (its strength meter explains why) |
 | A-07 | P2 | Targets below 24×24 px in question bank and exams list (WCAG 2.5.8) | **No violation found (automated)**: axe WCAG 2.2 AA incl. `target-size` passes on /questions, /exams and /audit (`a11y-lists.spec.ts`). Not re-measured by hand |
 | A-08 | P2 | Live monitor repeats "Report incident" per row; duplicate "Not started" | **Fixed**: Connection shows "—" until an attempt exists (Status alone says "Not started"); the per-row incident control is a quiet "Incident…" link with the same per-candidate accessible name. `staff`, `exam-control`, `responsive`, `a11y-critical` specs pass |
-| A-09 | P2 | "Withdraw…" on every roster row with equal weight | Open (the action itself is confirmed with a reason) |
+| A-09 | P2 | "Withdraw…" on every roster row with equal weight | **Fixed (weight)**: a quiet link-style control; the action itself is still confirmed with a reason (`ui-audit-batch3.spec.ts`, `staff.spec.ts`). Not turned into a row menu |
 | A-10 | P2 | Audit trail labels are developer terms | **Fixed**: plain-language Activity filter (14 groups) and friendly entity names replace the free-text prefix box; 'Entry no.' header; old `?action=` links still work (`list-state-and-paper.spec.ts`). Rows already used plain-language action labels |
 | A-11 | P2 | Enrolment: arbitrary default course, free-text term | **Fixed (term)**: term chosen from terms in use with exam/enrolment counts (`GET /courses/:id/terms`, campus-scoped); a typed new term is upper-cased and warned about when no exam uses it. Tests: `course-terms.test.ts`, `enrolment.spec.ts`. Default course still the first in the list |
-| A-13…A-18 | P3 | Breadcrumb repetition, duplicate links, cryptic headers, empty pages, sign-out icon only, sidebar height | Open |
+| A-13 | P3 | Breadcrumb repeats the page title | Open (already hidden on small phones; specs read `.crumbs b`, so left as is) |
+| A-14 | P3 | Exam list: two links per row, code wraps | **Fixed**: one link per row (the code), kept on one line (`ui-audit-batch3.spec.ts`) |
+| A-15 | P3 | Question bank headers cryptic | **Fixed**: "Difficulty", "In papers", "Correct" (item analysis "Difficulty" too); course code no longer wraps |
+| A-16 | P3 | Results and Performance near-identical empty pages | Open (policy decision) |
+| A-17 | P3 | Sign-out icon only | **Fixed**: visible "Sign out" label next to the icon |
+| A-18 | P3 | Sidebar unused height | Open (cosmetic) |
 
 ## What was verified to work well (evidence)
 - Exam player: one forward action, autosave with a server-confirmed "Saved" state, unsynced answers shown as "not yet confirmed", palette with non-colour glyphs, roving tabindex and keyboard jump (`exam-player-safety.spec.ts`, 33 exam-player tests pass).
