@@ -10,7 +10,8 @@
 |---|---|
 | Student portal | **https://szabmu.site** (also `www.` and `oes.szabmu.site`) — candidates sit exams |
 | Staff dashboard | https://dashboard.szabmu.site (college / university roles) |
-| Original free URL | https://yellowgreen-grasshopper-337716.hostingersite.com (mapped to the student portal) |
+| Main domain (hPanel) | **`szabmu.site`** since 2026-11-07 (website root `/home/u943531942/domains/szabmu.site/public_html`). `oes.szabmu.site` and `dashboard.szabmu.site` are parked on it. Git auto-deploy (`romi-alt/SZABMU-OES`, `main`) and the Node.js build settings carried over unchanged |
+| Former free URL | `yellowgreen-grasshopper-337716.hostingersite.com` — **detached** 2026-11-07 (now 403). The launcher would still 301 it to `szabmu.site` if it were ever re-attached (`REDIRECT_HOSTS`) |
 | Health check | `GET /api/health` → `{"status":"ok","db":true,"redis":null,"coordination":"database"}` without Redis (`"redis":true,"coordination":"redis"` with it) |
 | Hosting | Hostinger Cloud Enterprise (order `1009002313`, hPanel user `u943531942`), **one** managed Node.js website |
 | Node.js | 24 (highest Hostinger offers; CI job `node24` is green for build/typecheck/lint/tests) |
@@ -98,7 +99,7 @@ WEB_ORIGIN="https://oes.szabmu.site,https://dashboard.szabmu.site"
 
 Hostname requirement: Hostinger's free `*.hostingersite.com` domains accept neither subdomains nor parked domains, so the two portals
 use the account's real domain `szabmu.site`. Per the owner: the student exam side is the main address `szabmu.site`, the college dashboard is the subdomain `dashboard.szabmu.site`. **Live since 2026-11-01:** `oes.szabmu.site` and `dashboard.szabmu.site` are parked on this
-website (DNS: Hostinger `ALIAS` → `*.cdn.hstgr.net`, TLS issued automatically); `PORTAL_HOSTS` also maps the free URL to `student`.
+website (DNS: Hostinger `ALIAS` → `*.cdn.hstgr.net`, TLS issued automatically). The free URL is no longer attached; its `PORTAL_HOSTS` entry is unused and can be deleted.
 Live check: student on oes 200, CCE on dashboard 200, cross-portal 401 both ways, `/exams` 404 on oes and 200 on dashboard.
 
 ## Operating it
@@ -199,3 +200,13 @@ event channel, live monitor, control service and student registration use Redis 
 ## Automatic database migrations at start (added with the teacher/onboarding release)
 
 `scripts/hostinger-single-site.mjs` calls `scripts/auto-migrate.mjs` before it serves: it runs `prisma migrate deploy` (only committed, additive migrations, each once; never reset or destructive) against the **direct** Neon endpoint (a `-pooler` host name is rewritten, or set `MIGRATE_DATABASE_URL`). It is a no-op when nothing is pending and never stops the site from starting; a failure is logged as `[migrate] FAILED …`. Set `AUTO_MIGRATE=false` to turn it off. Release `teacher_registration_and_pools` + `student_onboarding` are applied this way on first start. Check the site log for `[migrate] applied pending migrations`.
+
+## Main-domain change (2026-11-07)
+The website was created on the free subdomain, so hPanel listed it under that name with `szabmu.site` only *parked*. hPanel's redirect
+tool refuses a target parked on the same site, and the Hostinger API has no "change main domain" operation, so the change was made in
+hPanel (Hostinger's in-panel agent): detach parked `szabmu.site` → change main domain to `szabmu.site`.
+- `szabmu.site` showed Hostinger's "Parked Domain" page for ~5 min (≈14:37–14:42 PKT) until the change completed.
+- **The change dropped every remaining parked domain**: `oes.` and `dashboard.szabmu.site` returned 403 until re-added
+  (`hosting_websites_add-domain`, type `parked`, on `szabmu.site`). Re-add parked domains immediately after any future main-domain change.
+- Verified afterwards: `szabmu.site`, `www.`, `oes.`, `dashboard.` all serve the app and `/api/health` is `ok`; TLS `CN=szabmu.site`
+  valid to 2027-01-29; `hosting_get-deployment` shows Git auto-deploy still enabled on `main`.
