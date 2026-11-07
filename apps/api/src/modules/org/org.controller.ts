@@ -50,6 +50,7 @@ export class OrgController {
   @Perm('user.manage') @Post('users/:id/reset-password') resetPw(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Ip() ip: string) { return this.org.resetUserPassword(u, id, ip); }
 
   @Perm('student.read') @Get('students') students(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) { return this.org.listStudents(u, parse(page.extend({ institutionId: uuid.optional(), programId: uuid.optional(), semester: z.coerce.number().int().optional(), search: z.string().max(100).optional() }), q)); }
+  @Perm('student.read') @Get('students/:id') studentRecord(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) { return this.org.studentRecord(u, id); }
   @Perm('student.manage') @Post('students') addStudent(@CurrentUser() u: AuthUser, @Body() b: unknown, @Ip() ip: string) { return this.org.createStudent(u, parse(studentDto, b), ip); }
   @Perm('student.manage') @Post('students/import') importStudents(@CurrentUser() u: AuthUser, @Body() b: unknown, @Ip() ip: string) { const d = parse(importDto, b); return this.org.importStudents(u, d.institutionId, d.rows, ip); }
   @Perm('student.manage') @Patch('students/:id') patchStudent(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.org.updateStudent(u, id, parse(studentPatch, b), ip); }

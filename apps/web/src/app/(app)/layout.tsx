@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useMe } from '@/session';
 import { NAV, crumbFor, ruleFor } from '@/nav';
-import { get, post, fmtDT, humanizeTimes } from '@/api';
+import { get, post, fmtDT, humanizeTimes, useGet } from '@/api';
 import { Loading } from '@/ui';
 import { Icon, iconForRoute } from '@/icons';
 import { PERMISSIONS, ROLE_LABEL, isSafeAppLink, type Permission, type Role, type NotificationDto, type NotificationsDto } from '@oes/shared';
@@ -76,6 +76,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
     document.addEventListener('keydown', onKey); document.body.classList.add('nav-locked');
     return () => { document.removeEventListener('keydown', onKey); document.body.classList.remove('nav-locked'); };
   }, [navOpen]);
+  // UI-042: Results is the main page; the Performance trends entry appears once the student has at least one published result.
+  const published = useGet<unknown[]>(me?.role === 'STUDENT' ? '/me/results' : null); const hasResults = (published.data?.length ?? 0) > 0;
   if (loading || !me) return <div style={{ padding: 40 }}><Loading /></div>;
   const nav = NAV[me.role];
   // A teacher whose registration is pending, rejected or suspended sees only their approval status (the API refuses every working route as well).
@@ -90,7 +92,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <BrandLogo white priority className="brand" />
         <div className="brand-name"><i className="auth-bar" aria-hidden />SZABMU Online Examination Center</div>
         <nav className="nav" aria-label="Primary"><div className="nav-label">{nav.label}</div>
-          {(gated ? [] : nav.items).map((i) => <Link key={i.href} href={i.href} aria-current={path === i.href || (i.href !== '/dashboard' && path.startsWith(i.href)) ? 'page' : undefined}><Icon name={iconForRoute(i.href)} size={18} /><span>{i.label}</span></Link>)}
+          {(gated ? [] : nav.items.filter((i) => !(me.role === 'STUDENT' && i.href === '/performance' && !hasResults))).map((i) => <Link key={i.href} href={i.href} aria-current={path === i.href || (i.href !== '/dashboard' && path.startsWith(i.href)) ? 'page' : undefined}><Icon name={iconForRoute(i.href)} size={18} /><span>{i.label}</span></Link>)}
         </nav>
         <div className="sidebar-foot">{me.institutions.map((i) => i.code).join(' · ') || 'University-wide'}</div>
       </aside>
@@ -99,7 +101,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <header className="topbar">
           <button ref={menuBtn} className="btn btn-sm menu-btn" data-testid="menu-button" aria-label="Menu" aria-controls="primary-nav" aria-expanded={navOpen} onClick={() => setNavOpen(!navOpen)}><Icon name="menu" size={18} /> Menu</button>
           <div className="crumbs">{ROLE_LABEL[me.role]} › <b>{crumb}</b></div>
-          <div className="row topbar-r"><Bell /><span className="user-chip" title={me.email}><span className="user-av" aria-hidden><Icon name="user" size={16} /></span><span className="user-name">{me.fullName}</span></span><button className="btn btn-sm signout-btn" onClick={logout}><Icon name="logout" size={16} /> <span>Sign out</span></button></div>
+          <div className="row topbar-r"><Link href="/help" className="btn btn-sm">Help</Link><Bell /><span className="user-chip" title={me.email}><span className="user-av" aria-hidden><Icon name="user" size={16} /></span><span className="user-name">{me.fullName}</span></span><button className="btn btn-sm signout-btn" onClick={logout}><Icon name="logout" size={16} /> <span>Sign out</span></button></div>
         </header>
         <main className="content" id="main" tabIndex={-1}>{gated ? <TeacherApproval /> : me.mustChangePw && path !== '/profile' ? <ForceChange /> : denied && rule ? <NoAccess name={rule.name} perm={rule.perm} /> : children}</main>
       </div>

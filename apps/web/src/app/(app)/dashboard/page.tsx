@@ -4,7 +4,7 @@ import { fmtDT, humanizeTimes, useGet } from '@/api';
 import { Icon, iconForRoute } from '@/icons';
 import { useMe } from '@/session';
 import { TeacherOverview } from './TeacherOverview';
-import { Async, Card, PageHead, Stat } from '@/ui';
+import { Async, Card, PageHead, Stat, Status } from '@/ui';
 import { examPriority, isSafeAppLink } from '@oes/shared';
 import { ExamActionLink, ExamStatusCell, presentExam, type MyExam, NotEligibleNotice, type NotEligible } from '@/exam-status-ui';
 
@@ -35,7 +35,7 @@ const ATTENTION: Record<string, Need[]> = {
   EXAMINER: [{ key: 'liveExams', one: 'examination is live now', many: 'examinations are live now', href: '/monitor', urgent: true }, { key: 'banksToReview', one: 'teacher question bank is waiting for your review', many: 'teacher question banks are waiting for your review', href: '/question-banks' }, { key: 'papersPending', one: 'paper is waiting for your approval', many: 'papers are waiting for your approval', href: '/exams?status=PAPER_PENDING' }, { key: 'questionsToReview', one: 'question is waiting for your review', many: 'questions are waiting for your review', href: '/questions?status=SUBMITTED' }, { key: 'resultsToApprove', one: 'result set is waiting for your approval', many: 'result sets are waiting for your approval', href: '/exams?status=RESULT_PENDING' }],
   CAMPUS_ADMIN: [{ key: 'openIncidents', one: 'open incident at your campus', many: 'open incidents at your campus', href: '/incidents', urgent: true }, { key: 'liveExams', one: 'examination is in progress at your campus', many: 'examinations are in progress at your campus', href: '/monitor', urgent: true }],
   INVIGILATOR: [{ key: 'liveNow', one: 'examination is live now', many: 'examinations are live now', href: '/monitor', urgent: true }, { key: 'myOpenIncidents', one: 'of your incident reports is still open', many: 'of your incident reports are still open', href: '/incidents' }],
-  LECTURER: [{ key: 'resultsToReview', one: 'result set is waiting for your review', many: 'result sets are waiting for your review', href: '/exams' }],
+  LECTURER: [{ key: 'returnedQuestions', one: 'of your questions was returned for changes', many: 'of your questions were returned for changes', href: '/questions?status=REJECTED', urgent: true }, { key: 'resultsToReview', one: 'result set is waiting for your review', many: 'result sets are waiting for your review', href: '/exams' }],
 };
 function NeedsAttention({ role, d }: { role: string; d: Record<string, unknown> }) {
   const rules = ATTENTION[role]; if (!rules) return null;
@@ -49,9 +49,30 @@ function NeedsAttention({ role, d }: { role: string; d: Record<string, unknown> 
   );
 }
 
-function QuickActions({ role }: { role: string }) {
+/** UI-023: the examinations running now in this person's scope, each linking to its live monitor (the counts alone did not say which). */
+const LIVE_ROLES = ['CCE', 'EXAMINER', 'CAMPUS_ADMIN', 'INVIGILATOR'];
+const RUNNING = ['ADMISSION_OPEN', 'LIVE', 'SUSPENDED', 'CLOSING'];
+interface DutyExam { id: string; code: string; title: string; status: string; closesAt?: string | null; _count?: { candidates: number } }
+function LiveNow() {
+  const st = useGet<DutyExam[]>('/invigilation/exams');
   return (
-    <Card title="Quick actions"><ul className="shortcuts" data-testid="quick-actions">{(SHORTCUTS[role] ?? []).map((s) => (
+    <Card title="Live now">
+      <Async state={st}>{(rows: DutyExam[]) => {
+        const running = rows.filter((e) => RUNNING.includes(e.status));
+        if (!running.length) return <div className="card-b muted" data-testid="live-empty">No examination is running right now.</div>;
+        return (
+          <ul className="attention" data-testid="live-list">{running.slice(0, 5).map((e) => (
+            <li key={e.id}><Link href={`/monitor/${e.id}`} className="attn">
+              <span className="attn-t"><b className="mono">{e.code}</b> {e.title}<span className="small faint"> · {e._count?.candidates ?? 0} candidates{e.closesAt ? ` · closes ${fmtDT(e.closesAt)}` : ''}</span></span><Status s={e.status} /><Icon name="arrow" size={16} /></Link></li>))}
+            {running.length > 5 && <li><Link href="/monitor" className="attn"><span className="attn-t">All {running.length} running examinations</span><Icon name="arrow" size={16} /></Link></li>}</ul>);
+      }}</Async>
+    </Card>
+  );
+}
+
+function QuickActions({ role, hide = [] }: { role: string; hide?: string[] }) {
+  return (
+    <Card title="Quick actions"><ul className="shortcuts" data-testid="quick-actions">{(SHORTCUTS[role] ?? []).filter((s) => !hide.includes(s.href)).map((s) => (
       <li key={s.href + s.label}><Link href={s.href} className="shortcut"><span className="shortcut-ico"><Icon name={iconForRoute(s.href)} size={18} /></span><span className="shortcut-t"><b>{s.label}</b><small>{s.desc}</small></span><Icon name="arrow" size={16} /></Link></li>))}</ul></Card>
   );
 }
@@ -106,12 +127,13 @@ export default function Dashboard() {
           })}</div>
           <div className="dash-grid">
             <div className="stack-lg">
-              <NeedsAttention role={me.role} d={d} />
+              <NeedsAttention role={me.role} d={me.role === 'LECTURER' ? { ...d, returnedQuestions: (d.byStatus as Record<string, number> | undefined)?.REJECTED ?? 0 } : d} />
+              {LIVE_ROLES.includes(me.role) && <LiveNow />}
               {me.role === 'STUDENT' && <MyExams />}
               {me.role === 'LECTURER' && d.byStatus && <Card title="My question pipeline"><div className="row wrap">{Object.entries(d.byStatus).map(([k, v]) => <span key={k} className="chip">{k.toLowerCase()}: <b className="mono">{v as number}</b></span>)}</div></Card>}
               <RecentActivity />
             </div>
-            <QuickActions role={me.role} />
+            <QuickActions role={me.role} hide={me.role === 'STUDENT' && !Number(d.completed ?? 0) ? ['/performance'] : []} />
           </div>
         </div>)}
       </Async>
