@@ -10,7 +10,7 @@
 |---|---|
 | Student portal | **https://szabmu.site** (also `www.` and `oes.szabmu.site`) — candidates sit exams |
 | Staff dashboard | https://dashboard.szabmu.site (college / university roles) |
-| Original free URL | https://yellowgreen-grasshopper-337716.hostingersite.com (mapped to the student portal) |
+| Original free URL | https://yellowgreen-grasshopper-337716.hostingersite.com — **retired**: the launcher 301-redirects it to `https://szabmu.site` (`REDIRECT_HOSTS`). It stays the website's name in hPanel; hPanel's redirect tool refuses a target parked on the same site and the API cannot change a website's main domain, so only hPanel "Change domain" can rename it |
 | Health check | `GET /api/health` → `{"status":"ok","db":true,"redis":null,"coordination":"database"}` without Redis (`"redis":true,"coordination":"redis"` with it) |
 | Hosting | Hostinger Cloud Enterprise (order `1009002313`, hPanel user `u943531942`), **one** managed Node.js website |
 | Node.js | 24 (highest Hostinger offers; CI job `node24` is green for build/typecheck/lint/tests) |
@@ -98,7 +98,7 @@ WEB_ORIGIN="https://oes.szabmu.site,https://dashboard.szabmu.site"
 
 Hostname requirement: Hostinger's free `*.hostingersite.com` domains accept neither subdomains nor parked domains, so the two portals
 use the account's real domain `szabmu.site`. Per the owner: the student exam side is the main address `szabmu.site`, the college dashboard is the subdomain `dashboard.szabmu.site`. **Live since 2026-11-01:** `oes.szabmu.site` and `dashboard.szabmu.site` are parked on this
-website (DNS: Hostinger `ALIAS` → `*.cdn.hstgr.net`, TLS issued automatically); `PORTAL_HOSTS` also maps the free URL to `student`.
+website (DNS: Hostinger `ALIAS` → `*.cdn.hstgr.net`, TLS issued automatically); The free URL is redirected to `szabmu.site` before any portal mapping (its `PORTAL_HOSTS` entry is now unused).
 Live check: student on oes 200, CCE on dashboard 200, cross-portal 401 both ways, `/exams` 404 on oes and 200 on dashboard.
 
 ## Operating it
