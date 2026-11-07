@@ -22,7 +22,7 @@ export default function Institutions() {
   const qs = new URLSearchParams({ page: String(page), pageSize: String(PAGE) }); if (search) qs.set('search', search);
   for (const [k, v] of Object.entries(flt)) if (v) qs.set(k, String(v));   // demo is always sent: the default hides synthetic records even on a site that shows them
   const st = useGet<{ total: number; items: any[] }>(`/directory/institutions?${qs}`);
-  const [off, setOff] = useState<any>(null);
+  const [off, setOff] = useState<any>(null); const [imp, setImp] = useState(false);
   const [view, setView] = useState<string | null>(null); const [edit, setEdit] = useState<any>(null); const [add, setAdd] = useState(false);
   const [f, setF] = useState({ code: '', name: '', type: 'MEDICAL_COLLEGE', affiliation: 'CONSTITUENT', city: '' });
   const setFilter = (k: string, v: string | boolean) => { setFlt((p) => ({ ...p, [k]: v })); setPage(1); };
@@ -33,7 +33,7 @@ export default function Institutions() {
   return (
     <>
       <PageHead title="Institutions" sub="SZABMU constituent and affiliated institutions and the programmes each one is listed for. Seat figures are published reference data, not limits; student counts are actual enrolments.">
-        {can('institution.manage') && <button className="btn btn-green" onClick={() => { setF({ code: '', name: '', type: 'MEDICAL_COLLEGE', affiliation: 'CONSTITUENT', city: '' }); setAdd(true); }}>+ Register institution</button>}
+        {can('institution.manage') && <><button className="btn" onClick={() => setImp(true)}>Update directory</button><button className="btn btn-green" onClick={() => { setF({ code: '', name: '', type: 'MEDICAL_COLLEGE', affiliation: 'CONSTITUENT', city: '' }); setAdd(true); }}>+ Register institution</button></>}
       </PageHead>
       <Card>
         <form role="search" aria-label="Filter institutions" className="toolbar" onSubmit={(e) => e.preventDefault()}>
@@ -65,6 +65,7 @@ export default function Institutions() {
           ]} />
           <Pager page={page} total={d.total} size={PAGE} onPage={setPage} />
         </>)}</Async></Card>
+      {imp && <ImportDirectory onClose={() => setImp(false)} onApplied={() => st.reload?.()} />}
       {off && <Confirm danger title={`Deactivate ${off.name}?`} yes="Deactivate institution" onNo={() => setOff(null)} onYes={() => run(async () => { await patch(`/institutions/${off.id}`, { active: false }); setOff(null); st.reload?.(); }, 'Institution deactivated')}
         body={<>Staff and candidates of <b>{off.code}</b> will no longer be able to use it for new exams. No student data is deleted, and you can activate it again at any time.</>} />}
       {view && <Detail id={view} onClose={() => setView(null)} canManage={can('institution.manage')} onChanged={() => st.reload?.()} />}
@@ -147,5 +148,32 @@ function SessionForm({ s, onClose, onSaved }: { s: any; onClose: () => void; onS
           <Field label="Admissions"><select className="in" value={status} onChange={(e) => setStatus(e.target.value)}><option value="OPEN">Open</option><option value="CLOSED">Closed</option></select></Field>
           <Field label="Seat limit (optional)" hint="Blank means no limit is enforced"><input className="in" inputMode="numeric" value={limit} onChange={(e) => setLimit(e.target.value.replace(/\D/g, ''))} /></Field>
           <Field label="Label (optional)"><input className="in" value={label} onChange={(e) => setLabel(e.target.value)} /></Field></div></div>
+    </Modal>);
+}
+
+interface ImportReport { version: string; mode: string; datasetSha256: string; runId?: string; counts: Record<string, { create: number; reuse: number; update: number; preserved: number; skipped: number }>; ambiguous: string[]; reviewExisting: string[]; discrepancies: string[]; unresolved: string[]; lineCount: number }
+const ENTITY: Record<string, string> = { institution: 'Institutions', program: 'Programmes', offering: 'Programme offerings', allocation: 'Seat allocations', curriculum: 'Curriculum documents', source: 'Sources', claim: 'Source claims', alias: 'Programme aliases' };
+
+/** Super administrators load or refresh the official directory from the browser: check first (writes nothing), then apply exactly what was checked. */
+function ImportDirectory({ onClose, onApplied }: { onClose: () => void; onApplied: () => void }) {
+  const { run, busy } = useAction(); const [rep, setRep] = useState<ImportReport | null>(null); const [done, setDone] = useState<ImportReport | null>(null); const [sure, setSure] = useState(false);
+  const total = (k: 'create' | 'reuse' | 'update' | 'preserved') => Object.values(rep?.counts ?? {}).reduce((a, c) => a + c[k], 0);
+  const list = (title: string, xs: string[]) => xs.length > 0 && <details><summary>{title} ({xs.length})</summary><ul className="small" style={{ margin: '6px 0', paddingLeft: 18 }}>{xs.map((x, i) => <li key={i}>{x}</li>)}</ul></details>;
+  return (
+    <Modal title="Update directory" onClose={onClose} footer={<><CancelButton>{done ? 'Close' : 'Cancel'}</CancelButton>
+      {!done && <button className="btn" disabled={busy} onClick={() => run(async () => { setSure(false); setRep(await post<ImportReport>('/directory/import', { apply: false })); })}>{rep ? 'Check again' : 'Check (changes nothing)'}</button>}
+      {!done && rep && <button className="btn btn-green" disabled={busy || !sure} onClick={() => run(async () => { const r = await post<ImportReport>('/directory/import', { apply: true, datasetSha256: rep.datasetSha256 }); setDone(r); onApplied(); }, 'Directory updated')}>Apply to the live database</button>}</>}>
+      <div className="stack" data-testid="import-directory">
+        <p className="small" style={{ margin: 0 }}>Loads the official SZABMU institutions and programmes (dataset <b>{rep?.version ?? 'checked first'}</b>). Existing records you edited are kept, nothing is deleted, and the run is recorded so it can be undone. <b>Check</b> shows what would happen and changes nothing.</p>
+        {!rep && !done && <Notice>Start with “Check”. You can apply only after a check.</Notice>}
+        {rep && !done && <>
+          <Table rowKey={(r: any) => r.k} rows={Object.entries(rep.counts).map(([k, c]) => ({ k, ...c }))} cols={[
+            { h: 'Record', cell: (r: any) => ENTITY[r.k] ?? r.k }, { h: 'Create', num: true, cell: (r: any) => r.create }, { h: 'Reuse', num: true, cell: (r: any) => r.reuse }, { h: 'Update', num: true, cell: (r: any) => r.update }, { h: 'Kept as edited', num: true, cell: (r: any) => r.preserved }]} />
+          <p className="small" style={{ margin: 0 }}>Totals: {total('create')} to create, {total('update')} to update, {total('reuse')} already present.</p>
+          {list('Ambiguous matches (nothing is merged automatically)', rep.ambiguous)}{list('Existing relationships to review', rep.reviewExisting)}{list('Differences from the official pages or your edits', rep.discrepancies)}{list('Items still unresolved (recorded, not applied)', rep.unresolved)}
+          <Notice tone="warn">Applying writes to this site’s live database. Make sure a database backup exists first.</Notice>
+          <label className="row small"><input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} /> I have a backup and want to apply this checked update</label></>}
+        {done && <Notice tone="ok">Directory updated. Run <span className="code">{done.runId}</span> ({total('create') ? `${Object.values(done.counts).reduce((a, c) => a + c.create, 0)} records created` : 'nothing new to create'}). Keep this run number: it is how this update is undone.</Notice>}
+      </div>
     </Modal>);
 }

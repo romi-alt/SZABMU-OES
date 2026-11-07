@@ -12,6 +12,7 @@ const listQuery = page.extend({
 });
 const offeringPatch = z.object({ intakeStatus: z.enum(['UNRESTRICTED', 'STOPPED']).optional(), intakeStoppedFromBatchYear: z.number().int().min(1990).max(2100).nullable().optional(), verificationStatus: z.enum(['VERIFIED', 'NEEDS_VERIFICATION', 'LEGACY_UNVERIFIED', 'UNLISTED']).optional() });
 const sessionBody = z.object({ admissionsStatus: z.enum(['OPEN', 'CLOSED']), seatLimit: z.number().int().min(1).max(100000).nullable().optional(), label: z.string().trim().max(100).nullable().optional(), note: z.string().trim().max(1000).nullable().optional() });
+const importBody = z.object({ apply: z.boolean(), datasetSha256: z.string().regex(/^[0-9a-f]{64}$/).optional() });
 const reassign = z.object({ toInstitutionId: uuid, toProgramId: uuid, studentIds: z.array(uuid).min(1).max(200), shift: z.enum(['MORNING', 'EVENING']).optional(), reason: z.string().trim().min(10).max(500) });
 
 /** Institution & programme directory (administration). Reads: institution.read (scoped); writes: institution.manage, audited. */
@@ -24,5 +25,6 @@ export class DirectoryController {
   @Perm('institution.manage') @Patch('offerings/:id') offering(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.d.updateOffering(u, id, parse(offeringPatch, b), ip); }
   @Perm('institution.manage') @Put('offerings/:id/sessions/:batchYear') setSession(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Param('batchYear', ParseIntPipe) y: number, @Body() b: unknown, @Ip() ip: string) { return this.d.setSession(u, id, y, parse(sessionBody, b), ip); }
   @Perm('institution.manage') @Delete('offerings/:id/sessions/:batchYear') clearSession(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Param('batchYear', ParseIntPipe) y: number, @Ip() ip: string) { return this.d.clearSession(u, id, y, ip); }
+  @Perm('institution.manage') @Post('import') @HttpCode(200) importDirectory(@CurrentUser() u: AuthUser, @Body() b: unknown, @Ip() ip: string) { return this.d.importDirectory(u, parse(importBody, b), ip); }
   @Perm('institution.manage') @Post('reassign-students') @HttpCode(200) reassign(@CurrentUser() u: AuthUser, @Body() b: unknown, @Ip() ip: string) { return this.d.reassignStudents(u, parse(reassign, b), ip); }
 }
