@@ -10,6 +10,8 @@ test('a lecturer finds My courses in the menu; it lists exactly the assigned cou
   for (const a of mine) await expect(page.getByTestId('my-courses')).toContainText(a.course.code);
   const first = page.getByTestId('my-courses').getByRole('link', { name: /^Open question bank for/ }).first(); await expect(first).toHaveAttribute('href', new RegExp(`^/questions\\?courseId=${mine[0]!.course.id}$`));
   await first.click(); await expect(page).toHaveURL(/\/questions\?courseId=/); await expect(page.getByRole('heading', { level: 1, name: /Question bank/ })).toBeVisible();
+  await page.waitForTimeout(500); await expect(page).toHaveURL(new RegExp(`/questions\\?courseId=${mine[0]!.course.id}$`));   // the filter stays in the address (it survives a reload)
+  await page.reload(); await expect(page).toHaveURL(/courseId=/);
 });
 
 test('a returned question shows the reviewer\'s reason in the list; the dashboard says how many were returned', async ({ page }) => {
