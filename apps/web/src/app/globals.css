@@ -470,6 +470,7 @@ a:has(> .stat) { display: block; border-radius: 16px; transition: transform .12s
 .modal:has([data-testid="teacher-detail"]) { max-width: min(900px, 96vw); width: 96vw; }
 @media (max-width: 860px) { .auth { grid-template-rows: auto 1fr; } }
 a.auth-btn, a.auth-btn:hover { color: #fff; }
+a.auth-btn-ghost, a.auth-btn-ghost:hover { color: var(--maroon); }   /* a ghost button is transparent: white text on it is invisible (404 page "Sign in") */
 @media (max-width: 860px) { .auth-form { align-content: start; } }
 
 /* ---- Complete your profile (one-time student page) ---- */
