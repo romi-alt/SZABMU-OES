@@ -205,7 +205,7 @@ describe('web attack surface', () => {
       expect(r.status).toBe(200);
       expect(r.body.items).toHaveLength(0);
     }
-    expect((await admin.get("/students/'; DROP TABLE users;--")).status).toBe(404);
+    expect((await admin.get("/students/'; DROP TABLE users;--")).status).toBe(400);   // the student record route exists now: a non-UUID id is rejected before any query
     expect((await admin.patch("/students/not-a-uuid", { semester: 2 })).status).toBe(400);
     expect(await ctx.prisma.user.count()).toBeGreaterThan(10);
     const login = await new Client(ctx.app).req('POST', '/auth/login', { email: "admin.a@demo.szabmu.invalid' OR '1'='1", password: 'x' });

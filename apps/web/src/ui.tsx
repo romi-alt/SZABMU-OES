@@ -55,7 +55,7 @@ export function ListEmpty({ noun, filters, onClear }: { noun: string; filters: s
   return <span data-testid="list-empty">No {noun} match {filters.join(' · ')}. <button className="btn-link" onClick={onClear}>Clear filters</button></span>;
 }
 export const Empty = ({ children }: { children: ReactNode }) => <div className="empty">{children}</div>;
-export function Loading() { return <div className="stack" aria-busy="true" aria-label="Loading"><div className="skeleton" style={{ width: '40%' }} /><div className="skeleton" /><div className="skeleton" style={{ width: '80%' }} /></div>; }
+export function Loading() { return <div className="stack" role="status" aria-busy="true" aria-label="Loading"><div className="skeleton" style={{ width: '40%' }} /><div className="skeleton" /><div className="skeleton" style={{ width: '80%' }} /></div>; }
 /** What kind of failure is this? Drives the title, the wording and the recovery action; never exposes stack traces or internals. */
 export function classifyError(e: unknown): { kind: 'network' | 'unavailable' | 'forbidden' | 'notfound' | 'server' | 'other'; title: string } {
   if (!(e instanceof ApiError)) return { kind: 'other', title: '' };

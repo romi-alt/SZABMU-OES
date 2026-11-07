@@ -82,6 +82,10 @@ npm run directory:rollback -- RUN_ID --apply --actor "NAME"
 
 Expected first dry run on a database with only the demo universe: institutions 34 created, programmes 59 created + 1 updated (MBBS keeps its existing name; reported), offerings 98, allocations 100, curriculum documents 49, 3 stopped.
 
+## Subjects for programmes loaded from the directory
+
+Real programmes arrive **without subjects** (no curriculum is invented), so teachers can pick an institution and programme but have no subjects to choose until an administrator enters them. **Programs & courses → Add subjects in bulk** (super administrator and Controller of Examinations, `program.manage`) takes pasted lines `semester, title[, code[, credits]]`, shows a preview, and adds only what you confirm (`POST /api/programs/:id/courses/bulk`, `dryRun` first, audited as `course.bulk_create`). It never invents data: a missing code gets an **internal reference** (`PROGRAMME-S<semester>-<nn>`, not an official subject code) and missing credits are stored as 0 = *not recorded*. Subjects that already exist, repeat in the list, or use a taken code are skipped and reported. Tests: `apps/api/test/bulk-courses.test.ts`, `tests/e2e/bulk-subjects.spec.ts`.
+
 ## Where it is enforced (server side)
 
 `directory/rules.ts` is the single rule set: `assertOffered`, `assertEnrollmentAllowed` (stopped intake, session closed/full, shift), `assertNotHiddenDemo`, `outsideSzabmuPairs`. Used by student onboarding, admin student create/import/update, roster import, teacher registration and lecturer assignment, cohort (`enrol`) and exam roster refresh. Every `/directory` route has exactly one `@Perm` (`institution.read` / `institution.manage`) and is scoped by the caller’s institutions; campus administrators get 404 for other campuses. Teachers get no results access; AI does not touch marks, eligibility or exam state.

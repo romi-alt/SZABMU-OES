@@ -106,7 +106,7 @@ export class CourseAccessService {
   mine(u: AuthUser) {
     return this.prisma.courseAssignment.findMany({
       where: { userId: u.id, revokedAt: null, status: 'APPROVED', institutionId: scope.filter(u) },
-      include: { course: { select: { id: true, code: true, title: true, semester: true } }, institution: { select: { id: true, code: true } } },
+      include: { course: { select: { id: true, code: true, title: true, semester: true, program: { select: { code: true } } } }, institution: { select: { id: true, code: true } } },
     });
   }
 }

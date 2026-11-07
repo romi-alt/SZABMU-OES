@@ -1,5 +1,4 @@
 'use client';
-import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { post, put, useGet } from '@/api';
 import { useMe } from '@/session';
@@ -69,8 +68,8 @@ function Duplicates({ courseId, onOpen, onClose }: { courseId: string; onOpen: (
 }
 
 function Inner() {
-  const { me, can } = useMe(); const sp = useSearchParams(); const { run } = useAction();
-  const url = useUrlState({ status: sp.get('status') ?? '', courseId: '', search: '', page: '1' }); const status = url.vals.status; const courseId = url.vals.courseId; const search = url.vals.search; const page = Number(url.vals.page) || 1; const setStatus = (v: string) => url.set('status', v); const setCourseId = (v: string) => url.set('courseId', v); const setSearch = (v: string) => url.set('search', v); const setPage = (n: number) => url.set('page', String(n));
+  const { me, can } = useMe(); const { run } = useAction();
+  const url = useUrlState({ status: '', courseId: '', search: '', page: '1' }); const status = url.vals.status; const courseId = url.vals.courseId; const search = url.vals.search; const page = Number(url.vals.page) || 1; const setStatus = (v: string) => url.set('status', v); const setCourseId = (v: string) => url.set('courseId', v); const setSearch = (v: string) => url.set('search', v); const setPage = (n: number) => url.set('page', String(n));
   const [dups, setDups] = useState(false); const [edit, setEdit] = useState<any | 'new' | null>(null); const [rej, setRej] = useState<any>(null); const [note, setNote] = useState(''); const [view, setView] = useState<any>(null);
   const programs = useGet<any[]>('/programs'); const mine = useGet<any[]>(me?.role === 'LECTURER' ? '/me/course-assignments' : null);
   // Lecturers work only on assigned courses; everyone else sees the full catalogue (server enforces either way).
@@ -95,7 +94,7 @@ function Inner() {
         </div>
         <Async state={list}>{(d) => <>
           <Table rowKey={(r: any) => r.id} rowLabel={(r: any) => `question ${String(r.stem).slice(0, 40)}`} empty={<ListEmpty noun="questions" filters={[search && `“${search}”`, status && status.toLowerCase(), courseId && 'this course'].filter(Boolean) as string[]} onClear={url.reset} />} rows={d.items} cols={[
-            { h: 'Question', cell: (r: any) => <button className="btn-link" style={{ textAlign: 'left', textDecoration: 'none', color: 'var(--ink)', fontWeight: 500 }} onClick={() => open(r.id)}>{r.stem.length > 90 ? r.stem.slice(0, 90) + '…' : r.stem}</button> },
+            { h: 'Question', cell: (r: any) => <><button className="btn-link" style={{ textAlign: 'left', textDecoration: 'none', color: 'var(--ink)', fontWeight: 500 }} onClick={() => open(r.id)}>{r.stem.length > 90 ? r.stem.slice(0, 90) + '…' : r.stem}</button>{r.status === 'REJECTED' && r.reviewNote && <div className="small" data-testid="returned-note" style={{ color: 'var(--crimson)', marginTop: 2 }}><b>Returned:</b> {r.reviewNote}</div>}</> },
             { h: 'Course', more: true, cell: (r: any) => <span className="code">{r.course.code}</span> }, { h: 'Type', more: true, cell: (r: any) => <Badge tone="blue">{r.type === 'CLINICAL_MCQ' ? 'Clinical' : 'MCQ'}</Badge> },
             { h: 'Difficulty', more: true, cell: (r: any) => <Badge tone={DIFF[r.difficulty]!}>{r.difficulty.toLowerCase()}</Badge> }, { h: 'In papers', num: true, more: true, cell: (r: any) => r.usedCount }, { h: 'Correct', more: true, cell: (r: any) => <b className="mono">{r.correct}</b> }, { h: 'Status', cell: (r: any) => <Status s={r.status} /> },
             { h: '', cell: (r: any) => <div className="row">

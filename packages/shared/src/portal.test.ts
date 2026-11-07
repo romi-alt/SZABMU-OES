@@ -31,7 +31,7 @@ describe('page routes per portal', () => {
   });
 
   it('serves sign-in, recovery, verification, dashboard and profile on both', () => {
-    for (const p of ['/', '/login', '/forgot', '/verify', '/mfa', '/dashboard', '/profile'])
+    for (const p of ['/', '/login', '/forgot', '/verify', '/mfa', '/dashboard', '/profile', '/help'])
       for (const portal of ['student', 'staff'] as const) expect(isPagePathAllowedOnPortal(p, portal)).toBe(true);
   });
 
