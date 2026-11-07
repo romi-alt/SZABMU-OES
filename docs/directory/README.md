@@ -2,6 +2,7 @@
 
 Status: implemented and **merged to `main`** (PR #28, merge commit `0ab1f36`, 2026-11-07). Dataset version `2026-11-06.1`.
 
+* **Also merged:** PR #29 (bulk subject entry, read-only menu entries) deployed as `ceda0ed`.
 * **Deployed:** `main` was deployed on 2026-11-07 to the single Hostinger site behind `szabmu.site`, `oes.szabmu.site` and `dashboard.szabmu.site`; its git auto-deploy follows `main` again. The Hostinger launcher auto-applies additive migrations when the app starts; applying this one there was **not independently confirmed** (no database access from the build environment).
 * **The real institution data is loaded by an explicit step, never automatically:** until a super administrator runs **Update directory** (below) or the import command, the live Institutions page is empty.
 * **Live-site setting:** `DEMO_INSTITUTIONS_VISIBLE` is not set on that site, so the synthetic demo institutions are hidden. Set it to `true` only on a site that should show demo data.
