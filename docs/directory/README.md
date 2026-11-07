@@ -1,6 +1,10 @@
 # Institution & programme directory
 
-Status: implemented on branch `claude/vigilant-cori-2lo8uc`. **The migration has not been applied to any live database and nothing has been deployed.** Dataset version `2026-11-06.1`.
+Status: implemented on branch `claude/vigilant-cori-2lo8uc` (PR #28, **not merged to `main`**). Dataset version `2026-11-06.1`.
+
+* **Deployed:** the branch was deployed on 2026-11-07 to the single Hostinger site behind `szabmu.site`, `oes.szabmu.site` and `dashboard.szabmu.site` (its git auto-deploy now follows this branch, not `main`). The Hostinger launcher auto-applies additive migrations when the app starts; applying this one there was **not independently confirmed** (no database access from the build environment).
+* **The real institution data is loaded by an explicit step, never automatically:** until a super administrator runs **Update directory** (below) or the import command, the live Institutions page is empty.
+* **Live-site setting:** `DEMO_INSTITUTIONS_VISIBLE` is not set on that site, so the synthetic demo institutions are hidden. Set it to `true` only on a site that should show demo data.
 
 ## Data relationships
 
@@ -50,7 +54,17 @@ Stopped intakes (`SZ-C02/DPT`, `SZ-C09/DPT`, `SZ-C12/BSN_POST_RN`) each carry a 
 * Administrator edits are recorded in `lockedFields` and are **reported as a discrepancy, not overwritten**, on the next import.
 * Rollback undoes only the changes of one run; anything that gained dependents since (students, assignments…) is delisted, not deleted, so later records survive.
 
-### Exact commands for the target environment
+### Loading the data from the browser (no terminal)
+
+A super administrator (`institution.manage`) opens **Institutions → Update directory**:
+
+1. **Check** runs the importer as a dry run through `POST /api/directory/import` with `{ "apply": false }`. It writes nothing and returns the counts per record type plus ambiguities, discrepancies and unresolved items.
+2. Tick the backup confirmation. **Apply to the live database** sends `{ "apply": true, "datasetSha256": "<hash from the check>" }`. The server re-checks the dataset hash (409 `DATASET_CHANGED` if it differs), refuses a concurrent run (409 `IMPORT_IN_PROGRESS`), runs the import, and writes an audit entry `directory.import` with the run ID.
+3. Keep the run ID: it is what `directory:rollback` needs.
+
+Tests: `apps/api/test/directory-import-api.test.ts` (permissions, dry run writes nothing, hash required and checked, audited, second run changes nothing) and `tests/e2e/directory.spec.ts`.
+
+### Exact commands for the target environment (command line)
 
 ```bash
 # 1. back up the database first (hPanel backup or mysqldump), then apply additive migrations
