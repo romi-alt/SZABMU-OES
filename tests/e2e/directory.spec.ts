@@ -46,6 +46,16 @@ test.describe('institutions screen', () => {
     await ctx.close();
   });
 
+  test('a super administrator checks, then applies, the directory update from the browser; others do not see it', async ({ page, browser }) => {
+    await login(page, 'super.admin'); await page.goto('/institutions'); await page.getByRole('button', { name: 'Update directory' }).click();
+    const dlg = page.getByRole('dialog', { name: 'Update directory' }); const apply = dlg.getByRole('button', { name: 'Apply to the live database' }); await expect(apply).toHaveCount(0);
+    await dlg.getByRole('button', { name: /^Check/ }).click(); await expect(dlg.getByTestId('import-directory').getByRole('table')).toContainText('Institutions'); await expect(dlg).toContainText('already present');
+    await expect(apply).toBeDisabled(); expect(await serious(page)).toEqual([]);
+    await dlg.getByLabel(/I have a backup/).check(); await apply.click(); await expect(dlg).toContainText('Directory updated'); await expect(dlg).toContainText('Keep this run number');
+    await dlg.getByRole('button', { name: 'Close' }).click(); await expect(page.locator('tbody tr').first()).toBeVisible();
+    const ctx = await browser.newContext(); const p2 = await ctx.newPage(); await login(p2, 'admin.a'); await p2.goto('/institutions'); await expect(p2.getByRole('button', { name: 'Update directory' })).toHaveCount(0); await ctx.close();
+  });
+
   test('phone layout has no horizontal scroll and folds secondary columns', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 }); await login(page, 'super.admin'); await page.goto('/institutions'); await expect(page.locator('tbody tr').first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);

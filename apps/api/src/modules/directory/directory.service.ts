@@ -9,6 +9,7 @@ import { AppError, badRequest, notFound } from '../../common/errors';
 import { paginate } from '../../common/validate';
 import { CONFIG, type Config } from '../../config';
 import { assertEnrollmentAllowed } from '../../directory/rules';
+import { ImportInProgress, runImport } from '../../directory/importer';
 
 export interface ListQuery { page: number; pageSize: number; search?: string; sector?: string; affiliation?: string; kind?: string; type?: string; region?: string; city?: string; listingStatus?: string; operationalStatus?: string; restricted?: boolean; demo?: 'exclude' | 'include' | 'only' }
 
@@ -168,4 +169,23 @@ export class DirectoryService {
     for (const s of students) await dropUserSessions(this.kv, s.userId);      // the cached session carries the old campus scope
     return { moved: students.length };
   }
+
+  /**
+   * Runs the versioned directory import from the browser (the same code as the command line). A check (dry run) writes nothing; applying must quote the
+   * dataset hash of a check, so what is applied is exactly what was reviewed. Audited; a concurrent run is refused.
+   */
+  async importDirectory(u: AuthUser, d: { apply: boolean; datasetSha256?: string }, ip?: string) {
+    const check = async () => runImport(this.prisma, { mode: 'DRY_RUN', actor: u.email }).catch(importError);
+    if (d.apply) {
+      if (!d.datasetSha256) throw badRequest('Check the import first, then apply the dataset that was checked.');
+      const current = (await check()).datasetSha256;
+      if (current !== d.datasetSha256) throw new AppError(409, 'DATASET_CHANGED', 'The directory data changed since it was checked. Check it again before applying.');
+    }
+    const r = d.apply ? await runImport(this.prisma, { mode: 'APPLY', actor: u.email }).catch(importError) : await check();
+    if (d.apply) await this.prisma.$transaction((tx) => this.audit.append(tx, { actor: u, action: 'directory.import', entity: 'directory_import_run', entityId: r.runId ?? null, meta: { runId: r.runId, mode: r.mode, version: r.version, datasetSha256: r.datasetSha256 } as never, ip }));
+    const { lines, ...summary } = r; void lines;
+    return { ...summary, lineCount: lines.length };
+  }
 }
+
+function importError(e: unknown): never { if (e instanceof ImportInProgress) throw new AppError(409, 'IMPORT_IN_PROGRESS', e.message); throw e; }
