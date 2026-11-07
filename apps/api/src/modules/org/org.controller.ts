@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, HttpCode } from '@nestjs/common';
 import { z } from 'zod';
 import { ROLES, INSTITUTION_TYPES, isValidPhone, PHONE_HINT } from '@oes/shared';
 import { CurrentUser, Ip, Perm, type AuthUser } from '../../common/auth';
@@ -20,6 +20,7 @@ const instPatch = z.object({ code: instCode.optional(), name: instName.optional(
   listingStatus: z.enum(['LISTED', 'NEEDS_VERIFICATION', 'HIDDEN']).optional(), operationalStatus: z.enum(['OPERATING', 'UNKNOWN', 'CLOSED']).optional() });
 const deptDto = z.object({ code: z.string().min(1).max(20), name: z.string().min(2).max(200) });
 const programDto = z.object({ code: z.string().min(2).max(20), name: z.string().min(2).max(200), durationYrs: z.number().int().min(1).max(8), level: z.string().max(40).optional() });
+const bulkCourseDto = z.object({ rows: z.array(z.object({ semester: z.number().int().min(1).max(12), title: z.string().trim().min(2).max(200), code: z.string().trim().min(2).max(30).optional(), credits: z.number().int().min(0).max(30).optional() })).min(1).max(200), dryRun: z.boolean() });
 const courseDto = z.object({ code: z.string().min(2).max(30), title: z.string().min(2).max(200), semester: z.number().int().min(1).max(12), credits: z.number().int().min(0).max(30).optional() });
 const phoneField = z.string().max(30).refine(isValidPhone, PHONE_HINT);
 const userDto = z.object({ email: z.string().email().max(254), fullName: z.string().min(2).max(200), role, institutionIds: z.array(uuid).max(50), phone: phoneField.optional() });
@@ -42,6 +43,7 @@ export class OrgController {
   @Perm('program.read') @Get('programs') programs() { return this.org.listPrograms(); }
   @Perm('program.manage') @Post('programs') addProgram(@CurrentUser() u: AuthUser, @Body() b: unknown, @Ip() ip: string) { return this.org.createProgram(u, parse(programDto, b), ip); }
   @Perm('program.manage') @Post('programs/:id/courses') addCourse(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.org.createCourse(u, id, parse(courseDto, b), ip); }
+  @Perm('program.manage') @Post('programs/:id/courses/bulk') @HttpCode(200) bulkCourses(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() b: unknown, @Ip() ip: string) { return this.org.bulkCreateCourses(u, id, parse(bulkCourseDto, b), ip); }
   @Perm('program.read') @Get('courses') courses(@Query() q: Record<string, string>) { const d = parse(z.object({ programId: uuid.optional(), semester: z.coerce.number().int().optional() }), q); return this.org.listCourses(d.programId, d.semester); }
 
   @Perm('user.manage') @Get('users') users(@CurrentUser() u: AuthUser, @Query() q: Record<string, string>) { return this.org.listUsers(u, parse(page.extend({ role: role.optional(), staffOnly: z.enum(['true', 'false']).transform((v) => v === 'true').optional(), institutionId: uuid.optional(), search: z.string().max(100).optional() }), q)); }

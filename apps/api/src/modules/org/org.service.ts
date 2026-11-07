@@ -78,6 +78,36 @@ export class OrgService {
     await this.audit.log({ actor: u, action: 'course.create', entity: 'course', entityId: c.id, ip });
     return c;
   }
+  /**
+   * Bulk entry of a programme's subjects from its curriculum. Nothing is invented: a supplied code and credit value are kept; a missing code gets an
+   * internal reference (PROGRAMME-S<semester>-<nn>, not an official subject code) and missing credits are stored as 0 = not recorded. Rows that already
+   * exist (same semester and title), repeat inside the list, or use a taken code are skipped and reported. `dryRun` writes nothing.
+   */
+  async bulkCreateCourses(u: AuthUser, programId: string, d: { rows: { semester: number; title: string; code?: string; credits?: number }[]; dryRun: boolean }, ip?: string) {
+    const program = await this.prisma.program.findUnique({ where: { id: programId }, select: { id: true, code: true } }); if (!program) throw notFound('Programme');
+    const key = (sem: number, title: string) => `${sem}|${title.trim().replace(/\s+/g, ' ').toLowerCase()}`;
+    const existing = await this.prisma.course.findMany({ where: { programId }, select: { semester: true, title: true, code: true } });
+    const have = new Set(existing.map((c) => key(c.semester, c.title)));
+    const takenCodes = new Set((await this.prisma.course.findMany({ where: { code: { in: d.rows.map((r) => r.code).filter((c): c is string => !!c) } }, select: { code: true } })).map((c) => c.code.toLowerCase()));
+    const refCount = new Map<number, number>(); for (const c of existing) if (new RegExp(`^${program.code}-S${c.semester}-\\d+$`).test(c.code)) refCount.set(c.semester, (refCount.get(c.semester) ?? 0) + 1);
+    const skipped: { row: number; title: string; reason: 'ALREADY_EXISTS' | 'REPEATED_IN_LIST' | 'CODE_TAKEN' }[] = []; const plan: { semester: number; title: string; code: string; credits: number }[] = []; const seenCodes = new Set<string>();
+    d.rows.forEach((r, i) => {
+      const title = r.title.trim().replace(/\s+/g, ' '); const k = key(r.semester, title);
+      if (have.has(k)) { skipped.push({ row: i + 1, title, reason: plan.some((p) => key(p.semester, p.title) === k) ? 'REPEATED_IN_LIST' : 'ALREADY_EXISTS' }); return; }
+      const code = r.code?.trim();
+      if (code && (takenCodes.has(code.toLowerCase()) || seenCodes.has(code.toLowerCase()))) { skipped.push({ row: i + 1, title, reason: 'CODE_TAKEN' }); return; }
+      let assigned = code;
+      if (!assigned) { let n = (refCount.get(r.semester) ?? 0) + 1; do assigned = `${program.code}-S${r.semester}-${String(n++).padStart(2, '0')}`; while (takenCodes.has(assigned.toLowerCase()) || seenCodes.has(assigned.toLowerCase())); refCount.set(r.semester, n - 1); }
+      seenCodes.add(assigned.toLowerCase()); have.add(k); plan.push({ semester: r.semester, title, code: assigned, credits: r.credits ?? 0 });
+    });
+    if (d.dryRun) return { dryRun: true, created: 0, wouldCreate: plan.length, skipped, preview: plan };
+    if (plan.length) await this.prisma.$transaction(async (tx) => {
+      await tx.course.createMany({ data: plan.map((p) => ({ ...p, programId })) });
+      await this.audit.append(tx, { actor: u, action: 'course.bulk_create', entity: 'program', entityId: programId, meta: { programId, count: plan.length, skipped: skipped.length } as never, ip });
+    });
+    return { dryRun: false, created: plan.length, wouldCreate: plan.length, skipped, preview: plan };
+  }
+
   listCourses(programId?: string, semester?: number) {
     return this.prisma.course.findMany({ where: { programId, semester }, orderBy: [{ semester: 'asc' }, { code: 'asc' }], include: { program: { select: { code: true } } } });
   }
