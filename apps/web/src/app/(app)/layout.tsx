@@ -99,7 +99,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <header className="topbar">
           <button ref={menuBtn} className="btn btn-sm menu-btn" data-testid="menu-button" aria-label="Menu" aria-controls="primary-nav" aria-expanded={navOpen} onClick={() => setNavOpen(!navOpen)}><Icon name="menu" size={18} /> Menu</button>
           <div className="crumbs">{ROLE_LABEL[me.role]} › <b>{crumb}</b></div>
-          <div className="row topbar-r"><Bell /><span className="user-chip" title={me.email}><span className="user-av" aria-hidden><Icon name="user" size={16} /></span><span className="user-name">{me.fullName}</span></span><button className="btn btn-sm icon-btn" onClick={logout} aria-label="Sign out" title="Sign out"><Icon name="logout" size={18} /></button></div>
+          <div className="row topbar-r"><Bell /><span className="user-chip" title={me.email}><span className="user-av" aria-hidden><Icon name="user" size={16} /></span><span className="user-name">{me.fullName}</span></span><button className="btn btn-sm signout-btn" onClick={logout}><Icon name="logout" size={16} /> <span>Sign out</span></button></div>
         </header>
         <main className="content" id="main" tabIndex={-1}>{gated ? <TeacherApproval /> : me.mustChangePw && path !== '/profile' ? <ForceChange /> : denied && rule ? <NoAccess name={rule.name} perm={rule.perm} /> : children}</main>
       </div>

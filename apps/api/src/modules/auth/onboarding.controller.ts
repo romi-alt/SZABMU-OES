@@ -9,7 +9,7 @@ const thisYear = new Date().getFullYear();
 const profileDto = z.object({
   fullName: z.string().trim().min(3, 'Enter your full name').max(120), fatherName: z.string().trim().min(3, "Enter your father's name").max(120), gender: z.enum(['MALE', 'FEMALE', 'OTHER']),
   institutionId: uuid, programId: uuid, semester: z.number().int().min(1).max(12), batchYear: z.number().int().min(1990).max(thisYear + 1), mobile: z.string().trim().min(7).max(20),
-  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), photo: z.string().max(300_000).optional(),
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), photo: z.string().max(300_000).optional(), shift: z.string().max(12).optional(),
 });
 
 @Controller()

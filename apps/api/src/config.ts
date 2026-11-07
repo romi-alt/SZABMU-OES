@@ -30,6 +30,8 @@ const schema = z.object({
   SMTP_SECURE: z.enum(['true', 'false']).optional(),
   MAIL_FROM: z.string().default('SZABMU Examinations <exams@szabmu.example>'),
   DEV_EXPOSE_CODES: z.enum(['true', 'false']).default('false'),
+  /** Demo/synthetic institutions appear in registration lists and totals only when this is true (local development and tests). A deployed site leaves it unset. */
+  DEMO_INSTITUTIONS_VISIBLE: z.enum(['true', 'false']).default('false'),
   RUN_WORKERS: z.enum(['true', 'false']).default('true'),
   /** Must be 'true' behind a load balancer/reverse proxy so req.ip (rate limits, audit) is the client's, not the proxy's. */
   // 'true' trusts every X-Forwarded-For entry (the client can forge the left-most one); a number N trusts exactly the N proxies in front of the

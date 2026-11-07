@@ -104,6 +104,36 @@ describe('SEC-06: sign-up verification codes cannot be brute-forced with paralle
   });
 });
 
+describe('SEC-06 (teacher path): teacher sign-up codes cannot be brute-forced with parallel guesses', () => {
+  let ctx: Ctx; let seq = 0;
+  beforeAll(async () => { ctx = await boot({ studentsPerCampus: 3 }); });
+  afterAll(async () => { await ctx.app.close(); });
+  const inject = (url: string, payload: unknown, remoteAddress: string) =>
+    ctx.app.getHttpAdapter().getInstance().inject({ method: 'POST', url: `/api${url}`, payload: payload as never, remoteAddress }).then((r) => ({ status: r.statusCode, body: JSON.parse(r.body) }));
+  const form = () => {
+    const n = ++seq; const c = ctx.seeded.courses.path.id; const i = (ctx.seeded.institutions as Record<'a', { id: string }>).a.id;
+    return { fullName: `Dr Brute Force ${n}`, email: `tbrute${n}.${Date.now()}@example.test`, password: 'Sturdy-Pass-2026!x', employeeId: `BF-${Date.now()}-${n}`, department: 'Pathology', designation: 'Assistant Professor', phone: '+92 300 1234567',
+      assignments: [{ institutionId: i, programId: ctx.seeded.programs.mbbs.id, semester: 4, term: '2026-SPRING', courseId: c }] };
+  };
+
+  it('30 parallel wrong guesses from 30 addresses use up the 5 guesses: the right code no longer works and no teacher account is created', async () => {
+    const f = form(); const s = await inject('/teacher-registration', f, '10.40.0.1');
+    expect(s.status).toBe(200); const code = s.body.devCode as string;
+    const wrong = Array.from({ length: 30 }, (_, i) => String((Number(code) + 1 + i) % 1_000_000).padStart(6, '0'));
+    const rs = await Promise.all(wrong.map((c, i) => inject('/teacher-registration/verify', { email: f.email, code: c }, `10.41.${i}.9`)));
+    expect(rs.every((r) => r.status === 400)).toBe(true);
+    expect((await inject('/teacher-registration/verify', { email: f.email, code }, '10.42.0.1')).status).toBe(400);
+    expect(await ctx.prisma.user.count({ where: { email: f.email } })).toBe(0);
+  });
+
+  it('a normal teacher sign-up still works, including after a couple of typos', async () => {
+    const f = form(); const s = await inject('/teacher-registration', f, '10.43.0.1'); const code = s.body.devCode as string;
+    for (const typo of ['000001', '999998']) if (typo !== code) expect((await inject('/teacher-registration/verify', { email: f.email, code: typo }, '10.43.0.1')).status).toBe(400);
+    expect((await inject('/teacher-registration/verify', { email: f.email, code }, '10.43.0.1')).status).toBe(200);
+    expect(await ctx.prisma.user.count({ where: { email: f.email, role: 'TEACHER' } })).toBe(1);
+  });
+});
+
 describe('SEC-07: the second factor cannot be brute-forced with parallel guesses', () => {
   let ctx: Ctx;
   beforeAll(async () => { process.env.MFA_ENFORCE = 'true'; ctx = await boot({ studentsPerCampus: 3 }); });

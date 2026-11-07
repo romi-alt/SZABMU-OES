@@ -26,8 +26,8 @@ export async function asUser(prisma: PrismaService, email: string): Promise<Auth
 }
 
 export async function resetDatabase(prisma: PrismaService) {
-  // app_locks holds fixed lock rows created by the migration; sequences are not base tables.
-  const rows = await prisma.$queryRaw<{ t: string }[]>`SELECT table_name AS t FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' AND table_name NOT IN ('_prisma_migrations', 'app_locks')`;
+  // app_locks and awarding_bodies hold reference rows created by migrations (the SZABMU awarding body); sequences are not base tables.
+  const rows = await prisma.$queryRaw<{ t: string }[]>`SELECT table_name AS t FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' AND table_name NOT IN ('_prisma_migrations', 'app_locks', 'awarding_bodies')`;
   // TRUNCATE skips DELETE triggers (append-only guards) and resets AUTO_INCREMENT. FOREIGN_KEY_CHECKS is per session, so pin one connection.
   await prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
@@ -51,19 +51,22 @@ export async function seed(app: INestApplicationContext, opts: { studentsPerCamp
 
   // Institutions (all names are fictional and prefixed "Demo")
   const [a, b, c] = await Promise.all([
-    prisma.institution.create({ data: { code: 'DMC-A', name: 'Demo Medical College A (synthetic)', type: 'MEDICAL_COLLEGE', affiliation: 'CONSTITUENT', city: 'Islamabad' } }),
-    prisma.institution.create({ data: { code: 'DMC-B', name: 'Demo Medical College B (synthetic)', type: 'MEDICAL_COLLEGE', affiliation: 'AFFILIATED', city: 'Rawalpindi' } }),
-    prisma.institution.create({ data: { code: 'DNC-C', name: 'Demo College of Nursing C (synthetic)', type: 'NURSING_COLLEGE', affiliation: 'AFFILIATED', city: 'Lahore' } }),
+    prisma.institution.create({ data: { code: 'DMC-A', name: 'Demo Medical College A (synthetic)', type: 'MEDICAL_COLLEGE', affiliation: 'CONSTITUENT', city: 'Islamabad', isDemo: true } }),
+    prisma.institution.create({ data: { code: 'DMC-B', name: 'Demo Medical College B (synthetic)', type: 'MEDICAL_COLLEGE', affiliation: 'AFFILIATED', city: 'Rawalpindi', isDemo: true } }),
+    prisma.institution.create({ data: { code: 'DNC-C', name: 'Demo College of Nursing C (synthetic)', type: 'NURSING_COLLEGE', affiliation: 'AFFILIATED', city: 'Lahore', isDemo: true } }),
   ]);
   await prisma.department.createMany({ data: [{ institutionId: a.id, code: 'PATH', name: 'Pathology' }, { institutionId: a.id, code: 'PHARM', name: 'Pharmacology' }, { institutionId: b.id, code: 'PATH', name: 'Pathology' }] });
 
   // Programs and courses
   const mbbs = await prisma.program.create({ data: { code: 'MBBS', name: 'Bachelor of Medicine, Bachelor of Surgery', durationYrs: 5 } });
   const bsn = await prisma.program.create({ data: { code: 'BSN', name: 'Bachelor of Science in Nursing', durationYrs: 4 } });
-  const path = await prisma.course.create({ data: { programId: mbbs.id, code: 'MBBS-PATH-4', title: 'Pathology', semester: 4, credits: 4 } });
-  const pharm = await prisma.course.create({ data: { programId: mbbs.id, code: 'MBBS-PHARM-4', title: 'Pharmacology', semester: 4, credits: 4 } });
-  await prisma.course.create({ data: { programId: mbbs.id, code: 'MBBS-ANAT-1', title: 'Anatomy', semester: 1, credits: 5 } });
-  await prisma.course.create({ data: { programId: bsn.id, code: 'BSN-FUND-1', title: 'Fundamentals of Nursing', semester: 1, credits: 3 } });
+  const path = await prisma.course.create({ data: { programId: mbbs.id, code: 'MBBS-PATH-4', title: 'Pathology', semester: 4, credits: 4, isDemo: true } });
+  const pharm = await prisma.course.create({ data: { programId: mbbs.id, code: 'MBBS-PHARM-4', title: 'Pharmacology', semester: 4, credits: 4, isDemo: true } });
+  await prisma.course.create({ data: { programId: mbbs.id, code: 'MBBS-ANAT-1', title: 'Anatomy', semester: 1, credits: 5, isDemo: true } });
+  await prisma.course.create({ data: { programId: bsn.id, code: 'BSN-FUND-1', title: 'Fundamentals of Nursing', semester: 1, credits: 3, isDemo: true } });
+  // Synthetic offerings for the demo pairs (the migration does the same for existing data). Verification stays LEGACY_UNVERIFIED: no source verified them.
+  const szabmu = await prisma.awardingBody.findUniqueOrThrow({ where: { key: 'szabmu' } });
+  for (const [inst, prog] of [[a, mbbs], [b, mbbs], [c, bsn]] as const) await prisma.institutionProgramOffering.create({ data: { institutionId: inst.id, programId: prog.id, awardingBodyId: szabmu.id, verificationStatus: 'LEGACY_UNVERIFIED' } });
 
   // Staff
   const superU = await mk('super.admin', 'Demo Super Administrator', 'SUPER_ADMIN', []);

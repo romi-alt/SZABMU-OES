@@ -31,7 +31,10 @@
     "test:fault": "npm run build:shared && npm run test:fault -w @oes/api",
     "backup:db": "node scripts/db-backup.mjs backup",
     "backup:verify": "node scripts/db-backup.mjs verify",
-    "start:hostinger": "node scripts/hostinger-single-site.mjs"
+    "start:hostinger": "node scripts/hostinger-single-site.mjs",
+    "directory:verify": "node apps/api/dist/directory/cli.js verify",
+    "directory:import": "node --env-file=.env apps/api/dist/directory/cli.js import",
+    "directory:rollback": "node --env-file=.env apps/api/dist/directory/cli.js rollback"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",

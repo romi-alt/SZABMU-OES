@@ -117,6 +117,12 @@ export class AuthGuard implements CanActivate {
     const perm = this.reflector.getAllAndOverride<Permission | undefined>('perm', [handler, cls]);
     if (!perm) throw forbidden('Route has no declared permission'); // deny by default
     if (!can(user.role, perm)) throw forbidden('Your role is not permitted to perform this action');
+    // Working teacher routes need an APPROVED, active teacher account, checked here in the database before any handler or validation runs
+    // (the services check again). Pending, rejected and suspended teachers therefore get the same 403 on every such route.
+    if (perm === 'teacher.work') {
+      const t = await this.prisma.teacherProfile.findUnique({ where: { userId: user.id }, select: { status: true, user: { select: { active: true } } } });
+      if (!t || t.status !== 'APPROVED' || !t.user.active) throw new AppError(403, 'TEACHER_NOT_APPROVED', t?.status === 'SUSPENDED' ? 'Your access is suspended. Contact your campus administrator.' : 'Your registration has not been approved yet.');
+    }
     if (user.mustChangePw && !this.reflector.getAllAndOverride<boolean>('allowMustChange', [handler, cls])) {
       throw new AppError(403, 'PASSWORD_CHANGE_REQUIRED', 'You must change your password before continuing');
     }

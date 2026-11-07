@@ -12,6 +12,7 @@ export const LINKS = {
   teachers: '/teachers',
   students: '/students',
   pools: '/pools',
+  questionBanks: '/question-banks',
   classes: '/classes',
   exam: (examId: string) => `/exams/${examId}`,
 } as const;
