@@ -6,6 +6,7 @@ import { PrismaService } from '../../infra/prisma.service';
 import { idList } from '../../infra/sql';
 import { KvService } from '../../infra/kv.service';
 import { MailService } from '../../infra/mail.service';
+import { assertEnrollmentAllowed } from '../../directory/rules';
 import { AppError, badRequest, conflict } from '../../common/errors';
 import { AuditService } from '../audit/audit.service';
 import { scope, sha256, type AuthUser } from '../../common/auth';
@@ -97,11 +98,19 @@ export class RegistrationService {
     const programs = await this.prisma.program.findMany({ where: { code: { in: codes } }, select: { id: true, code: true } });
     const byCode = new Map(programs.map((p) => [p.code, p.id])); const unknown = codes.filter((c) => !byCode.has(c));
     if (unknown.length) throw badRequest(`Unknown programme code(s): ${unknown.join(', ')}`);
+    // Every programme must be one this institution offers. The register records students the institution already has, so a stopped intake is flagged, not refused, unless a source dates the stop from that batch.
+    const warnings: string[] = []; const checked = new Set<string>();
+    for (const r of rows) {
+      const pid = byCode.get(r.programCode.trim())!; const k = `${pid}|${r.batchYear}`; if (checked.has(k)) continue; checked.add(k);
+      await assertEnrollmentAllowed(this.prisma, { institutionId, programId: pid, batchYear: r.batchYear, shift: null, trusted: true }).catch((e) => { if (e?.code === 'BAD_REQUEST' && /shift/i.test(e.message)) return; throw e; });
+      const off = await this.prisma.institutionProgramOffering.findUnique({ where: { institutionId_programId: { institutionId, programId: pid } }, select: { intakeStatus: true } });
+      if (off?.intakeStatus === 'STOPPED') warnings.push(`${r.programCode.trim()}: intake stopped at this institution; the rows for batch ${r.batchYear} were recorded as an existing cohort.`);
+    }
     const existing = await this.prisma.$queryRaw<{ regNo: string }[]>`SELECT "regNo" FROM roster_entries WHERE "regNo" IN ${idList(regs)} UNION SELECT "regNo" FROM students WHERE "regNo" IN ${idList(regs)}`;   // the _ci collation compares case-insensitively
     if (existing.length) throw conflict('ROSTER_DUPLICATES', 'Some registration numbers are already registered', { regNos: existing.map((e) => e.regNo) });
     await this.prisma.rosterEntry.createMany({ data: rows.map((r) => ({ institutionId, programId: byCode.get(r.programCode.trim())!, regNo: r.regNo.trim(), fullName: r.fullName.trim(), dateOfBirth: new Date(r.dateOfBirth), semester: r.semester, batchYear: r.batchYear, importedBy: u.id })) });
     await this.audit.log({ actor: u, action: 'roster.import', entity: 'institution', entityId: institutionId, institutionId, meta: { count: rows.length }, ip });
-    return { imported: rows.length };
+    return { imported: rows.length, warnings: [...new Set(warnings)] };
   }
 
   /** Register status for admins (no dates of birth are returned). */

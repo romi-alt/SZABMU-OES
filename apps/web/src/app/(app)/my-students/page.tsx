@@ -11,7 +11,7 @@ export default function MyStudents() {
   const approved = (as.data ?? []).filter((a) => a.status === 'APPROVED');
   return (
     <>
-      <PageHead title="Students" sub="Names of students enrolled in your approved classes and subjects." />
+      <PageHead title="My Students" sub="Names of students enrolled in your approved classes and subjects." />
       <div className="filters" style={{ marginBottom: 12 }}>
         <Field label="Search"><input className="in" type="search" value={search} onChange={(e) => { url.set('search', e.target.value); url.set('page', '1'); }} placeholder="Student name" /></Field>
         {approved.length > 1 && <Field label="Class and subject"><select className="in" value={assignment} onChange={(e) => { url.set('assignment', e.target.value); url.set('page', '1'); }}><option value="">All my classes</option>{approved.map((a) => <option key={a.id} value={a.id}>{a.course.code} · {a.institution.code} · {a.term}</option>)}</select></Field>}

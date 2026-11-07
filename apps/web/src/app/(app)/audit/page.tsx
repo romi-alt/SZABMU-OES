@@ -23,12 +23,12 @@ export default function Audit() {
       {chain && <Notice tone={chain.brokenAt ? 'bad' : 'ok'}>{chain.brokenAt ? `Chain broken at sequence ${chain.brokenAt}.` : `Chain intact — ${chain.checked} entries verified.`}</Notice>}
       <Card flush>
         <div className="filters"><Field label="Entity"><select className="in" value={entity} onChange={(e) => { setEntity(e.target.value); setPage(1); }}><option value="">All records</option>{ENTITIES.map((x) => <option key={x} value={x}>{entityLabel(x)}</option>)}</select></Field><Field label="Activity"><select className="in" value={action} onChange={(e) => { setAction(e.target.value); setPage(1); }}><option value="">All activity</option>{ACTIVITY.map(([v, l]) => <option key={v} value={v}>{l}</option>)}{action && !ACTIVITY.some(([v]) => v === action) && <option value={action}>{action}</option>}</select></Field></div>
-        <Async state={st}>{(d) => <><Table rowKey={(r: any) => r.seq} rows={d.items} empty={<ListEmpty noun="audit entries" filters={[entity && entityLabel(entity), action && (ACTIVITY.find(([v]) => v === action)?.[1] ?? action)].filter(Boolean) as string[]} onClear={url.reset} />} cols={[
-          { h: 'Entry no.', num: true, cell: (r: any) => r.seq }, { h: 'When', cls: 'nowrap', cell: (r: any) => fmtDT(r.at) },
+        <Async state={st}>{(d) => <><Table rowKey={(r: any) => String(r.seq)} rowLabel={(r: any) => `entry ${r.seq}`} rows={d.items} empty={<ListEmpty noun="audit entries" filters={[entity && entityLabel(entity), action && (ACTIVITY.find(([v]) => v === action)?.[1] ?? action)].filter(Boolean) as string[]} onClear={url.reset} />} cols={[
+          { h: 'Entry no.', num: true, more: true, cell: (r: any) => r.seq }, { h: 'When', cls: 'nowrap', cell: (r: any) => fmtDT(r.at) },
           { h: 'What happened', cell: (r: any) => <><b>{auditLabel(r.action)}</b><div className="small faint code" title="Technical action name">{r.action}</div></> },
-          { h: 'Who', cell: (r: any) => r.actorRole ? ROLE_LABEL[r.actorRole as keyof typeof ROLE_LABEL] ?? r.actorRole.toLowerCase() : 'System / not signed in' },
-          { h: 'About', cell: (r: any) => r.entity === 'exam' && r.entityId ? <Link href={`/exams/${r.entityId}`}>{entityLabel(r.entity)} {r.entityId.slice(0, 8)}</Link> : <>{entityLabel(r.entity)}{r.entityId ? <span className="small faint mono"> {r.entityId.slice(0, 8)}</span> : null}</> },
-          { h: 'Details', cell: (r: any) => <details className="audit-det"><summary className="small">Show</summary><div className="small mono faint">{r.meta ? JSON.stringify(r.meta) : 'No extra details.'}<br />Record hash {r.hash.slice(0, 16)}…</div></details> },
+          { h: 'Who', more: true, cell: (r: any) => r.actorRole ? ROLE_LABEL[r.actorRole as keyof typeof ROLE_LABEL] ?? r.actorRole.toLowerCase() : 'System / not signed in' },
+          { h: 'About', more: true, cell: (r: any) => r.entity === 'exam' && r.entityId ? <Link href={`/exams/${r.entityId}`}>{entityLabel(r.entity)} {r.entityId.slice(0, 8)}</Link> : <>{entityLabel(r.entity)}{r.entityId ? <span className="small faint mono"> {r.entityId.slice(0, 8)}</span> : null}</> },
+          { h: 'Details', more: true, cell: (r: any) => <details className="audit-det"><summary className="small">Show</summary><div className="small mono faint">{r.meta ? JSON.stringify(r.meta) : 'No extra details.'}<br />Record hash {r.hash.slice(0, 16)}…</div></details> },
         ]} /><Pager page={page} total={d.total} size={50} onPage={setPage} /></>}</Async>
       </Card>
     </>

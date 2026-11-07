@@ -95,7 +95,7 @@ describe('registration is transactional and grants nothing', () => {
     const t = await register(); const a = await as(ctx, 'admin.a');
     expect((await a.post(`/admin/teachers/${t.userId}/decision`, { decision: 'APPROVE' })).status).toBe(200);
     expect((await t.c.get('/auth/me')).body.permissions).toContain('teacher.work');
-    expect((await t.c.get('/teacher/overview')).body).toEqual({ classes: 0, subjects: 0, mcqs: 0, students: 0 });
+    expect((await t.c.get('/teacher/overview')).body).toEqual({ classes: 0, subjects: 0, mcqs: 0, students: 0, questions: { draft: 0, submitted: 0, approved: 0, rejected: 0 }, banks: { total: 0, empty: 0, draft: 0, submitted: 0, rejected: 0, approved: 0 }, recent: [] });
     expect((await t.c.get('/teacher/students')).body).toEqual({ total: 0, items: [] });
     expect((await t.c.post('/teacher/pools', { assignmentId: t.path.id, name: 'Pending subject' })).status).toBe(404);
     expect(await t.c.get('/teacher/assignments').then((r) => r.body.every((x: any) => x.status === 'PENDING' && x.studentCount === null))).toBe(true);
@@ -172,7 +172,7 @@ describe('MCQ pools', () => {
     expect((await t.c.get(`/teacher/questions?poolId=${pool}&status=SUBMITTED`)).body.total).toBe(2); expect((await t.c.put(`/teacher/questions/${q1.id}`, mcq())).status).toBe(409);   // locked while under review
     expect((await t.c.del(`/teacher/pools/${pool}`)).status).toBe(409);
     expect(await ctx.prisma.auditLog.count({ where: { action: 'question.submit', entityId: { in: [q1.id, q2.id] } } })).toBe(2);
-    expect(await ctx.prisma.notification.count({ where: { title: 'Question pool awaiting review' } })).toBeGreaterThan(0);
+    expect(await ctx.prisma.notification.count({ where: { title: 'Question bank awaiting review' } })).toBeGreaterThan(0);
   });
   it('is isolated per teacher and per assignment (IDOR): another teacher gets 404 for pools and questions, and cannot write to them', async () => {
     const t1 = await register(); await approveAll(t1); const t2 = await register(); await approveAll(t2);
@@ -193,7 +193,7 @@ describe('MCQ pools', () => {
     const bad = await t.c.post(`/teacher/pools/${pool}/import`, { rows: [good, { ...good, correct: 'Z' }] }); expect(bad.status).toBe(400); expect(bad.body.message).toMatch(/Row 3/);
     expect((await t.c.get(`/teacher/questions?poolId=${pool}`)).body.total).toBe(0);                                                  // nothing created
     expect((await t.c.post(`/teacher/pools/${pool}/import`, { rows: [good, evil] })).body.created).toBe(2);
-    const ex = (await t.c.get(`/teacher/pools/${pool}/export`)).body; expect(ex.rows).toBe(2); expect(ex.filename).toBe('Import-me.csv'); expect(ex.csv.split('\r\n')[0]).toBe('statement,option_a,option_b,option_c,option_d,option_e,correct,explanation,difficulty,topic,marks,status');
+    const ex = (await t.c.get(`/teacher/pools/${pool}/export`)).body; expect(ex.rows).toBe(2); expect(ex.filename).toBe('Import-me.csv'); expect(ex.csv.split('\r\n')[0]).toBe('statement,option_a,option_b,option_c,option_d,option_e,correct,explanation,difficulty,topic,subtopic,bloom,marks,status');
     expect(ex.csv).toContain(`"'=HYPERLINK(""http://x"",""click"")"`); expect(ex.csv).toContain("'@cmd"); expect(ex.csv).toContain(",'+1,");
     expect(await ctx.prisma.auditLog.count({ where: { action: 'pool.export', entityId: pool } })).toBe(1);
   });

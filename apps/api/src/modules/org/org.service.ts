@@ -6,7 +6,8 @@ import { PrismaService } from '../../infra/prisma.service';
 import { KvService } from '../../infra/kv.service';
 import { AuditService } from '../audit/audit.service';
 import { dropUserSessions, scope, type AuthUser } from '../../common/auth';
-import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
+import { AppError, badRequest, conflict, forbidden, notFound } from '../../common/errors';
+import { assertEnrollmentAllowed, outsideSzabmuPairs } from '../../directory/rules';
 import type { Prisma } from '../../generated/prisma/client';
 
 /** Roles a campus administrator may provision, and only within their own institutions. */
@@ -14,6 +15,9 @@ const CAMPUS_ADMIN_MAY_CREATE: Role[] = ['STUDENT', 'LECTURER', 'INVIGILATOR'];
 export const ATTENDANCE_THRESHOLD = 75; // policy P-06
 
 export const tempPassword = () => `Tmp-${randomBytes(9).toString('base64url')}-9a`;
+
+/** Institution fields the directory import writes; an administrator's edit to one of them is locked against re-import. */
+const IMPORT_OWNED = ['name', 'abbreviation', 'sector', 'affiliation', 'type', 'kind', 'city', 'region', 'campusLabel', 'listingStatus'];
 
 @Injectable()
 export class OrgService {
@@ -32,17 +36,20 @@ export class OrgService {
    * Partial update. Only fields that were sent AND differ from the stored value are written; an empty or no-op PATCH changes nothing and
    * writes no audit entry. The audit trail records the real before/after of each changed field.
    */
-  async updateInstitution(u: AuthUser, id: string, d: { code?: string; name?: string; type?: string; affiliation?: string; city?: string; active?: boolean }, ip?: string) {
+  async updateInstitution(u: AuthUser, id: string, d: { code?: string; name?: string; type?: string; affiliation?: string; city?: string; active?: boolean; abbreviation?: string | null; sector?: string | null; region?: string | null; campusLabel?: string | null; listingStatus?: string; operationalStatus?: string }, ip?: string) {
     const current = await this.prisma.institution.findUnique({ where: { id } });
     if (!current) throw notFound('Institution');
     const changes: Record<string, { from: unknown; to: unknown }> = {}; const data: Record<string, unknown> = {};
-    for (const key of ['code', 'name', 'type', 'affiliation', 'city', 'active'] as const) {
+    for (const key of ['code', 'name', 'type', 'affiliation', 'city', 'active', 'abbreviation', 'sector', 'region', 'campusLabel', 'listingStatus', 'operationalStatus'] as const) {
       const next = d[key]; if (next === undefined) continue;
       const prev = (current as Record<string, unknown>)[key];
       if (prev !== next) { changes[key] = { from: prev, to: next }; data[key] = next; }
     }
     if (!Object.keys(changes).length) return current;
-    const i = await this.prisma.institution.update({ where: { id }, data: data as Prisma.InstitutionUpdateInput });
+    // A field an administrator edits is locked against the directory import: a re-run reports it but never overwrites it.
+    const owned = Object.keys(changes).filter((k) => IMPORT_OWNED.includes(k));           // `active` and `code` belong to the system, not to the import
+    const lockedFields = [...new Set([...(Array.isArray(current.lockedFields) ? (current.lockedFields as string[]) : []), ...owned])];
+    const i = await this.prisma.institution.update({ where: { id }, data: { ...(data as Prisma.InstitutionUpdateInput), ...(owned.length ? { lockedFields } : {}) } });
     await this.audit.log({ actor: u, action: 'institution.update', entity: 'institution', entityId: id, institutionId: id, meta: { changes } as never, ip });
     return i;
   }
@@ -161,20 +168,27 @@ export class OrgService {
     return { items, total };
   }
 
-  async createStudent(u: AuthUser, d: { email: string; fullName: string; institutionId: string; programId: string; regNo: string; semester: number; batchYear: number; dateOfBirth?: string }, ip?: string) {
+  async createStudent(u: AuthUser, d: { email: string; fullName: string; institutionId: string; programId: string; regNo: string; semester: number; batchYear: number; dateOfBirth?: string; shift?: 'MORNING' | 'EVENING' }, ip?: string) {
     scope.assert(u, d.institutionId);
+    // An administrator records a student the institution already has (a register-backed, existing cohort): a stopped intake does not bar that unless a source dates the stop from this batch.
+    const placement = await assertEnrollmentAllowed(this.prisma, { institutionId: d.institutionId, programId: d.programId, batchYear: d.batchYear, shift: d.shift, trusted: true });
     const pw = tempPassword();
     const s = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({ data: { email: d.email.toLowerCase(), fullName: d.fullName, role: 'STUDENT', passwordHash: await argon2.hash(pw, { type: argon2.argon2id }), mustChangePw: true, institutions: { create: [{ institutionId: d.institutionId }] } } });
-      return tx.student.create({ data: { userId: user.id, institutionId: d.institutionId, programId: d.programId, regNo: d.regNo, semester: d.semester, batchYear: d.batchYear, dateOfBirth: d.dateOfBirth ? new Date(d.dateOfBirth) : undefined } });
+      return tx.student.create({ data: { userId: user.id, institutionId: d.institutionId, programId: d.programId, regNo: d.regNo, semester: d.semester, batchYear: d.batchYear, shift: placement.shift, dateOfBirth: d.dateOfBirth ? new Date(d.dateOfBirth) : undefined } });
     });
     await this.audit.log({ actor: u, action: 'student.create', entity: 'student', entityId: s.id, institutionId: d.institutionId, ip });
     return { id: s.id, regNo: s.regNo, temporaryPassword: pw };
   }
 
   /** Bulk import. All-or-nothing per row batch; duplicates are reported rather than silently skipped. */
-  async importStudents(u: AuthUser, institutionId: string, rows: { email: string; fullName: string; programId: string; regNo: string; semester: number; batchYear: number }[], ip?: string) {
+  async importStudents(u: AuthUser, institutionId: string, rows: { email: string; fullName: string; programId: string; regNo: string; semester: number; batchYear: number; shift?: 'MORNING' | 'EVENING' }[], ip?: string) {
     scope.assert(u, institutionId);
+    const placements = new Map<string, Awaited<ReturnType<typeof assertEnrollmentAllowed>>>();
+    for (const [i, r] of rows.entries()) {                                  // every row's pair must be an offering, checked once per distinct combination
+      const k = `${r.programId}|${r.batchYear}|${r.shift ?? ''}`;
+      if (!placements.has(k)) { try { placements.set(k, await assertEnrollmentAllowed(this.prisma, { institutionId, programId: r.programId, batchYear: r.batchYear, shift: r.shift, trusted: true })); } catch (e) { if (e instanceof AppError) throw new AppError(e.getStatus(), e.code, `Row ${i + 1}: ${e.message}`, e.extra); throw e; } }
+    }
     const emails = rows.map((r) => r.email.toLowerCase());
     const regs = rows.map((r) => r.regNo);
     if (new Set(emails).size !== emails.length || new Set(regs).size !== regs.length) throw badRequest('Duplicate email or registration number within the import file');
@@ -186,7 +200,7 @@ export class OrgService {
       let n = 0;
       for (const r of rows) {
         const user = await tx.user.create({ data: { email: r.email.toLowerCase(), fullName: r.fullName, role: 'STUDENT', passwordHash: hash, mustChangePw: true, institutions: { create: [{ institutionId }] } } });
-        await tx.student.create({ data: { userId: user.id, institutionId, programId: r.programId, regNo: r.regNo, semester: r.semester, batchYear: r.batchYear } });
+        await tx.student.create({ data: { userId: user.id, institutionId, programId: r.programId, regNo: r.regNo, semester: r.semester, batchYear: r.batchYear, shift: placements.get(`${r.programId}|${r.batchYear}|${r.shift ?? ''}`)!.shift } });
         n++;
       }
       return n;
@@ -199,6 +213,7 @@ export class OrgService {
     const s = await this.prisma.student.findUnique({ where: { id } });
     if (!s || !scope.allows(u, s.institutionId)) throw notFound('Student');
     if (d.programId && !(await this.prisma.program.findUnique({ where: { id: d.programId }, select: { id: true } }))) throw badRequest('Unknown programme');
+    if (d.programId && d.programId !== s.programId) await assertEnrollmentAllowed(this.prisma, { institutionId: s.institutionId, programId: d.programId, batchYear: d.batchYear ?? s.batchYear, shift: s.shift, trusted: true });   // moving to another programme is a new placement
     const { verify, ...rest } = d;
     await this.prisma.student.update({ where: { id }, data: { ...rest, ...(verify ? { selfDeclared: false } : {}) } });
     await this.audit.log({ actor: u, action: verify ? 'student.verified' : 'student.update', entity: 'student', entityId: id, institutionId: s.institutionId, meta: { ...d, from: { programId: s.programId, semester: s.semester, batchYear: s.batchYear, selfDeclared: s.selfDeclared } } as never, ip });
@@ -210,6 +225,8 @@ export class OrgService {
     scope.assert(u, d.institutionId);
     const course = await this.prisma.course.findUnique({ where: { id: d.courseId } });
     if (!course) throw notFound('Course');
+    // Students whose offering is awarded by someone other than SZABMU are outside SZABMU cohorts and examinations.
+    if ((await outsideSzabmuPairs(this.prisma)).has(`${d.institutionId}|${course.programId}`)) return { eligibleCohort: 0, newlyEnrolled: 0 };
     const students = await this.prisma.student.findMany({
       where: { institutionId: d.institutionId, programId: course.programId, semester: course.semester, ...(d.studentIds ? { id: { in: d.studentIds } } : {}), status: 'ACTIVE', selfDeclared: false },   // students who chose their own placement are enrolled only after an administrator verifies them
       select: { id: true },

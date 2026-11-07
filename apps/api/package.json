@@ -15,7 +15,8 @@
     "worker": "node dist/worker.js",
     "reconcile": "node dist/cron/reconcile.js",
     "test": "vitest run",
-    "test:fault": "vitest run --config vitest.fault.config.ts"
+    "test:fault": "vitest run --config vitest.fault.config.ts",
+    "directory": "node dist/directory/cli.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",

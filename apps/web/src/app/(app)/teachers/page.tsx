@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { fmtDT, post, useGet } from '@/api';
 import { useUrlState } from '@/url-state';
 import { Async, Badge, CancelButton, Field, ListEmpty, Modal, PageHead, Pager, Table, useAction, useToast } from '@/ui';
+import { auditLabel } from '@/audit-labels';
 
 const TONE: Record<string, string> = { PENDING: 'amber', APPROVED: 'green', REJECTED: 'red', SUSPENDED: 'red', REVOKED: 'grey' };
 const word = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
@@ -50,7 +51,7 @@ function Reason({ title, label, optional, yes, onYes, onNo }: { title: string; l
 }
 
 function TeacherDetail({ userId, onClose, onChanged }: { userId: string; onClose: () => void; onChanged: () => void }) {
-  const st = useGet<any>(`/admin/teachers/${userId}`); const [pools, setPools] = useState<any[] | null>(null); const { run, busy } = useAction(); const toast = useToast();
+  const st = useGet<any>(`/admin/teachers/${userId}`); const [pools, setPools] = useState<any[] | null>(null); const [activity, setActivity] = useState<any | null>(null); const { run, busy } = useAction(); const toast = useToast();
   const [ask, setAsk] = useState<{ title: string; label: string; optional?: boolean; yes: string; act: (note: string) => Promise<unknown>; done: string } | null>(null);
   const act = (path: string, body: object, done: string) => run(async () => { await post(path, body); toast(done); st.reload?.(); onChanged(); });
   return (
@@ -84,6 +85,14 @@ function TeacherDetail({ userId, onClose, onChanged }: { userId: string; onClose
               <section aria-label="MCQ pools" data-testid="teacher-pools"><h4 style={{ margin: '0 0 6px' }}>MCQ pools</h4>
                 {pools.length ? pools.map((p) => <details key={p.id} style={{ marginBottom: 6 }}><summary><b>{p.name}</b> · {p.course?.code} · {p.questions.length} question{p.questions.length === 1 ? '' : 's'}</summary>
                   <ul className="plain-list">{p.questions.map((q: any) => <li key={q.id}>{q.stem} <span className="small faint">({word(q.difficulty)}, {q.status.toLowerCase()})</span></li>)}</ul></details>) : <p className="muted small">This teacher has no pools in your institutions.</p>}</section>)}
+          </div>
+          <div>
+            {activity === null ? <button className="btn btn-sm" onClick={() => run(async () => { const { get } = await import('@/api'); setActivity(await get<any>(`/admin/teachers/${userId}/activity`)); })}>View activity history</button> : (
+              <section aria-label="Activity history" data-testid="teacher-activity"><h4 style={{ margin: '0 0 6px' }}>Activity history</h4>
+                <p className="small muted" style={{ margin: '0 0 6px' }}>Question banks: {activity.summary.banks.total} ({activity.summary.banks.draft + activity.summary.banks.empty} draft · {activity.summary.banks.submitted} under review · {activity.summary.banks.rejected} returned · {activity.summary.banks.approved} approved). Questions: {activity.summary.questions.draft} draft · {activity.summary.questions.submitted} under review · {activity.summary.questions.rejected} returned · {activity.summary.questions.approved} approved.</p>
+                {activity.items.length ? <ul className="plain-list">{activity.items.map((i: any, n: number) => (
+                  <li key={n}><b>{auditLabel(i.action)}</b>{i.bank ? <> — {i.bank.name}</> : null}{typeof i.approved === 'number' ? <> ({i.approved} approved, {i.rejected} returned)</> : null}{i.note ? <> — “{i.note}”</> : null}
+                    <div className="small faint">{fmtDT(i.at)} · {i.actor.name}</div></li>))}</ul> : <p className="muted small">No activity recorded for your institutions yet.</p>}</section>)}
           </div>
         </div>)}
       </Async>

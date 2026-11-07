@@ -15,14 +15,16 @@ const instDto = z.object({ code: instCode, name: instName, type: z.enum(INSTITUT
  * PATCH semantics: a field that is not sent is never touched. This schema is deliberately NOT derived from `instDto.partial()` —
  * zod keeps `.default()` on partial fields, which silently injected affiliation=CONSTITUENT into every partial update (UI-002).
  */
-const instPatch = z.object({ code: instCode.optional(), name: instName.optional(), type: z.enum(INSTITUTION_TYPES).optional(), affiliation: instAffiliation.optional(), city: instCity.optional(), active: z.boolean().optional() });
+const instPatch = z.object({ code: instCode.optional(), name: instName.optional(), type: z.enum(INSTITUTION_TYPES).optional(), affiliation: instAffiliation.optional(), city: instCity.optional(), active: z.boolean().optional(),
+  abbreviation: z.string().trim().max(40).nullable().optional(), sector: z.enum(['PUBLIC', 'PRIVATE']).nullable().optional(), region: z.string().trim().max(100).nullable().optional(), campusLabel: z.string().trim().max(150).nullable().optional(),
+  listingStatus: z.enum(['LISTED', 'NEEDS_VERIFICATION', 'HIDDEN']).optional(), operationalStatus: z.enum(['OPERATING', 'UNKNOWN', 'CLOSED']).optional() });
 const deptDto = z.object({ code: z.string().min(1).max(20), name: z.string().min(2).max(200) });
 const programDto = z.object({ code: z.string().min(2).max(20), name: z.string().min(2).max(200), durationYrs: z.number().int().min(1).max(8), level: z.string().max(40).optional() });
 const courseDto = z.object({ code: z.string().min(2).max(30), title: z.string().min(2).max(200), semester: z.number().int().min(1).max(12), credits: z.number().int().min(0).max(30).optional() });
 const phoneField = z.string().max(30).refine(isValidPhone, PHONE_HINT);
 const userDto = z.object({ email: z.string().email().max(254), fullName: z.string().min(2).max(200), role, institutionIds: z.array(uuid).max(50), phone: phoneField.optional() });
 const userPatch = z.object({ active: z.boolean().optional(), institutionIds: z.array(uuid).max(50).optional(), fullName: z.string().min(2).max(200).optional() });
-const studentDto = z.object({ email: z.string().email().max(254), fullName: z.string().min(2).max(200), institutionId: uuid, programId: uuid, regNo: z.string().min(3).max(40), semester: z.number().int().min(1).max(12), batchYear: z.number().int().min(1990).max(2100), dateOfBirth: z.string().date().optional() });
+const studentDto = z.object({ email: z.string().email().max(254), fullName: z.string().min(2).max(200), institutionId: uuid, programId: uuid, regNo: z.string().min(3).max(40), semester: z.number().int().min(1).max(12), batchYear: z.number().int().min(1990).max(2100), shift: z.enum(['MORNING', 'EVENING']).optional(), dateOfBirth: z.string().date().optional() });
 const importDto = z.object({ institutionId: uuid, rows: z.array(studentDto.omit({ institutionId: true, dateOfBirth: true })).min(1).max(1000) });
 const studentPatch = z.object({ semester: z.number().int().min(1).max(12).optional(), status: z.enum(['ACTIVE', 'SUSPENDED', 'GRADUATED', 'WITHDRAWN']).optional(), address: z.string().max(300).optional(), guardianPhone: phoneField.optional(), verify: z.literal(true).optional(), programId: uuid.optional(), batchYear: z.number().int().min(1990).max(2100).optional() });
 const enrolDto = z.object({ courseId: uuid, term: z.string().min(3).max(30), institutionId: uuid, studentIds: z.array(uuid).max(5000).optional() });
