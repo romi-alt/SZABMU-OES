@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useGet } from '@/api';
 import { Async, Card, PageHead, Stat } from '@/ui';
 
@@ -6,10 +7,11 @@ export default function Performance() {
   const st = useGet<any[]>('/me/results');
   return (
     <>
-      <PageHead title="Performance" sub="Computed from your published results." />
+      <p style={{ margin: '0 0 8px' }}><Link href="/results" className="btn-link">← Results</Link></p>
+      <PageHead title="Performance" sub="Trends computed from your published results." />
       <Async state={st}>{(rows: any[]) => {
         const sat = rows.filter((r) => r.status !== 'ABSENT');
-        if (!sat.length) return <Card><div className="empty">No published results yet.</div></Card>;
+        if (!sat.length) return <Card><div className="empty" data-testid="performance-empty">Trends appear here after your first result is published. <Link href="/results">Go to Results</Link></div></Card>;
         const avg = sat.reduce((a, b) => a + b.percent, 0) / sat.length; const best = [...sat].sort((a, b) => b.percent - a.percent)[0];
         const passed = sat.filter((r) => r.status === 'PASS').length;
         return (

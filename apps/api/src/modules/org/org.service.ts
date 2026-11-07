@@ -168,6 +168,30 @@ export class OrgService {
     return { items, total };
   }
 
+  /**
+   * Read-only student record for people who manage a campus (UI-034): identity, placement, enrolments with attendance, and the admission
+   * decision for each examination. No marks, answers, contact address, date of birth or photograph. Scoped like the list: another
+   * campus's student is "not found".
+   */
+  async studentRecord(u: AuthUser, id: string) {
+    const s = await this.prisma.student.findFirst({
+      where: { id, institutionId: scope.filter(u) },
+      include: {
+        user: { select: { fullName: true, email: true, active: true } }, institution: { select: { id: true, code: true, name: true } }, program: { select: { id: true, code: true, name: true } },
+        enrollments: { orderBy: [{ term: 'desc' }, { createdAt: 'asc' }], include: { course: { select: { code: true, title: true, semester: true } } } },
+        candidacies: { orderBy: { createdAt: 'desc' }, include: { exam: { select: { id: true, code: true, title: true, status: true, opensAt: true } } } },
+      },
+    });
+    if (!s) throw notFound('Student');
+    return {
+      id: s.id, regNo: s.regNo, fullName: s.user.fullName, email: s.user.email, accountActive: s.user.active, status: s.status,
+      institution: s.institution, program: s.program, semester: s.semester, batchYear: s.batchYear, shift: s.shift,
+      verification: s.selfDeclared ? 'SELF_DECLARED' : 'VERIFIED', profileCompletedAt: s.profileCompletedAt, createdAt: s.createdAt,
+      enrolments: s.enrollments.map((e) => ({ id: e.id, course: e.course, term: e.term, status: e.status, eligibility: e.eligibility, attendancePct: e.attendancePct, note: e.eligibilityNote })),
+      exams: s.candidacies.map((c) => ({ id: c.id, exam: c.exam, admission: c.status, reason: c.statusReason })),
+    };
+  }
+
   async createStudent(u: AuthUser, d: { email: string; fullName: string; institutionId: string; programId: string; regNo: string; semester: number; batchYear: number; dateOfBirth?: string; shift?: 'MORNING' | 'EVENING' }, ip?: string) {
     scope.assert(u, d.institutionId);
     // An administrator records a student the institution already has (a register-backed, existing cohort): a stopped intake does not bar that unless a source dates the stop from this batch.

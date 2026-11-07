@@ -20,11 +20,11 @@ export const portalForRole = (role: Role): Portal => (role === 'STUDENT' ? 'stud
 export const roleAllowedOnPortal = (role: Role, portal: Portal): boolean => portalForRole(role) === portal;
 
 /** Pages (first path segment) both portals serve: sign-in, recovery, public certificate verification, MFA step, the role-aware dashboard and profile. */
-const SHARED_PAGES = ['', 'login', 'forgot', 'verify', 'mfa', 'dashboard', 'profile'] as const;
+const SHARED_PAGES = ['', 'login', 'forgot', 'verify', 'mfa', 'dashboard', 'profile', 'help'] as const;
 /** Candidate-only pages. These call `/me/*` endpoints that only the STUDENT role holds. */
 const STUDENT_PAGES = ['schedule', 'results', 'performance', 'exam', 'certificate', 'register', 'complete-profile'] as const;
 /** Staff-only pages (see apps/web/src/nav.ts for which role sees which). */
-const STAFF_PAGES = ['questions', 'exams', 'students', 'enrolment', 'roster', 'assignments', 'users', 'teachers', 'classes', 'pools', 'my-students', 'institutions', 'programs', 'monitor', 'incidents', 'audit', 'question-banks', 'submissions'] as const;
+const STAFF_PAGES = ['questions', 'exams', 'students', 'enrolment', 'roster', 'assignments', 'users', 'teachers', 'classes', 'pools', 'my-students', 'institutions', 'programs', 'monitor', 'incidents', 'audit', 'question-banks', 'submissions', 'my-courses'] as const;
 
 const PAGES: Record<Portal, ReadonlySet<string>> = {
   student: new Set<string>([...SHARED_PAGES, ...STUDENT_PAGES]),
