@@ -1,5 +1,4 @@
 'use client';
-import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { post, put, useGet } from '@/api';
 import { useMe } from '@/session';
@@ -69,8 +68,8 @@ function Duplicates({ courseId, onOpen, onClose }: { courseId: string; onOpen: (
 }
 
 function Inner() {
-  const { me, can } = useMe(); const sp = useSearchParams(); const { run } = useAction();
-  const url = useUrlState({ status: sp.get('status') ?? '', courseId: sp.get('courseId') ?? '', search: '', page: '1' }); const status = url.vals.status; const courseId = url.vals.courseId; const search = url.vals.search; const page = Number(url.vals.page) || 1; const setStatus = (v: string) => url.set('status', v); const setCourseId = (v: string) => url.set('courseId', v); const setSearch = (v: string) => url.set('search', v); const setPage = (n: number) => url.set('page', String(n));
+  const { me, can } = useMe(); const { run } = useAction();
+  const url = useUrlState({ status: '', courseId: '', search: '', page: '1' }); const status = url.vals.status; const courseId = url.vals.courseId; const search = url.vals.search; const page = Number(url.vals.page) || 1; const setStatus = (v: string) => url.set('status', v); const setCourseId = (v: string) => url.set('courseId', v); const setSearch = (v: string) => url.set('search', v); const setPage = (n: number) => url.set('page', String(n));
   const [dups, setDups] = useState(false); const [edit, setEdit] = useState<any | 'new' | null>(null); const [rej, setRej] = useState<any>(null); const [note, setNote] = useState(''); const [view, setView] = useState<any>(null);
   const programs = useGet<any[]>('/programs'); const mine = useGet<any[]>(me?.role === 'LECTURER' ? '/me/course-assignments' : null);
   // Lecturers work only on assigned courses; everyone else sees the full catalogue (server enforces either way).
