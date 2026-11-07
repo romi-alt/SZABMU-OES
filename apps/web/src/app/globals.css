@@ -527,3 +527,9 @@ a.auth-btn, a.auth-btn:hover { color: #fff; }
 .attn.urgent .attn-n { color: var(--crimson); }
 .dash-tiles > a { position: relative; } .dash-tiles > a::after { content: "\203A"; position: absolute; right: 14px; top: 10px; font-size: 20px; line-height: 1; color: var(--ink-3); }
 .dash-tiles > a:hover::after { color: var(--maroon); }
+
+/* Institutions list: the name gets room and reads as a link, secondary text is quiet */
+@media (min-width: 641px) { .tbl td.inst-name { min-width: 260px; } }
+.inst-link { background: none; border: 0; padding: 0; margin: 0; font: inherit; font-weight: 600; color: var(--maroon); text-align: left; cursor: pointer; text-decoration: none; }
+.inst-link:hover { text-decoration: underline; } .inst-link:focus-visible { outline: 2px solid var(--maroon); outline-offset: 2px; border-radius: 3px; }
+.more-filters > summary { cursor: pointer; font-size: 13px; color: var(--maroon); font-weight: 600; padding: 4px 0; }

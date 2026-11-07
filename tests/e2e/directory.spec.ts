@@ -18,7 +18,7 @@ test.describe('institutions screen', () => {
     await page.getByLabel('Search').fill('IMDC'); await expect(page.locator('tbody tr')).toHaveCount(1); await expect(row(page, 'SZ-C10')).toContainText('Islamabad Medical & Dental College');
     await page.getByLabel('Search').fill('Mirpur'); await expect(page.locator('tbody tr')).toHaveCount(2);
     await page.getByLabel('Search').fill(''); await page.getByLabel('Sector').selectOption('PUBLIC'); await page.getByLabel('Type of record').selectOption('INSTITUTION'); await expect(page.locator('tbody tr')).toHaveCount(10);
-    await page.getByLabel('Sector').selectOption(''); await page.getByLabel('Has a stopped intake').check(); await expect(page.locator('tbody tr')).toHaveCount(3); await expect(row(page, 'Aman Medical Institute')).toContainText('1 stopped intake');
+    await page.getByLabel('Sector').selectOption(''); await page.getByText('More filters').click(); await page.getByLabel('Has a stopped intake').check(); await expect(page.locator('tbody tr')).toHaveCount(3); await expect(row(page, 'Aman Medical Institute')).toContainText('1 stopped intake');
     await page.getByLabel('Search').fill('zzzzzz'); await expect(page.getByText(/No institutions/i).first()).toBeVisible();
     await page.getByLabel('Search').fill(''); await page.getByLabel('Has a stopped intake').uncheck();
     await expect(page.locator('tbody tr').first()).toBeVisible(); expect(await serious(page)).toEqual([]);
@@ -59,7 +59,7 @@ test.describe('institutions screen', () => {
   test('phone layout has no horizontal scroll and folds secondary columns', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 }); await login(page, 'super.admin'); await page.goto('/institutions'); await expect(page.locator('tbody tr').first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
-    const r = page.locator('tbody tr').first(); await expect(r.locator('td[data-label="Sector"]')).toBeHidden(); await r.getByRole('button', { name: /^Show details/ }).click(); await expect(r.locator('td[data-label="Sector"]')).toBeVisible();
+    const r = page.locator('tbody tr').first(); await expect(r.locator('td[data-label="Type"]')).toBeHidden(); await r.getByRole('button', { name: /^Show details/ }).click(); await expect(r.locator('td[data-label="Type"]')).toBeVisible();
   });
 });
 

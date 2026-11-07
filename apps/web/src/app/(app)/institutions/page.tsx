@@ -41,27 +41,27 @@ export default function Institutions() {
           {sel('Type of record', 'kind', [['INSTITUTION', 'Institutions'], ['ACADEMIC_UNIT', 'University academic units']])}
           {sel('Sector', 'sector', [['PUBLIC', 'Public'], ['PRIVATE', 'Private']])}
           {sel('Relationship', 'affiliation', [['CONSTITUENT', 'Constituent'], ['AFFILIATED', 'Affiliated']])}
+          <details className="more-filters" style={{ flexBasis: '100%' }}><summary>More filters</summary><div className="toolbar" style={{ marginTop: 8 }}>
           {sel('Institution type', 'type', (facets.data?.types ?? INSTITUTION_TYPES).map((t) => [t, words(t)]))}
           {sel('Region', 'region', (facets.data?.regions ?? []).map((r) => [r, r]))}
           {sel('Operational status', 'operationalStatus', [['OPERATING', 'Operating'], ['UNKNOWN', 'Not confirmed'], ['CLOSED', 'Closed']])}
           {sel('Listing status', 'listingStatus', [['LISTED', 'Listed'], ['HIDDEN', 'Hidden'], ['DELISTED', 'Delisted']])}
           {facets.data?.canViewDemo && sel('Demo records', 'demo', [['exclude', 'Hide'], ['include', 'Include'], ['only', 'Only demo']])}
           <label className="row small" style={{ alignSelf: 'end', paddingBottom: 8 }}><input type="checkbox" checked={flt.restricted} onChange={(e) => setFilter('restricted', e.target.checked)} /> Has a stopped intake</label>
+          </div></details>
         </form>
       </Card>
       <Card flush><Async state={st}>{(d) => (
         <>
           <p className="sr-only" role="status" aria-live="polite">{d.total} institution{d.total === 1 ? '' : 's'} found</p>
           <Table rowKey={(r: any) => r.id} rowLabel={(r: any) => r.name} rows={d.items} empty={<ListEmpty noun="institutions" filters={active} onClear={clear} />} cols={[
-            { h: 'Institution', cell: (r: any) => <><button className="btn-link" onClick={() => setView(r.id)} aria-label={`Open details for ${r.name}`}><b>{r.name}</b></button><div className="small faint"><span className="code">{r.code}</span>{r.abbreviation ? ` · ${r.abbreviation}` : ''}{r.isDemo && <> · <Badge tone="grey">Demo</Badge></>}</div></> },
-            { h: 'Type', more: true, cell: (r: any) => r.kind === 'ACADEMIC_UNIT' ? 'University academic unit' : words(r.type) },
-            { h: 'Sector', more: true, cell: (r: any) => words(r.sector) }, { h: 'Relationship', more: true, cell: (r: any) => words(r.affiliation) },
+            { h: 'Institution', cls: 'inst-name', cell: (r: any) => <><button className="inst-link" onClick={() => setView(r.id)} aria-label={`Open details for ${r.name}`}>{r.name}</button><div className="small faint"><span className="code">{r.code}</span>{r.abbreviation ? ` · ${r.abbreviation}` : ''}{r.isDemo && <> · <Badge tone="grey">Demo</Badge></>}</div></> },
+            { h: 'Type', more: true, cell: (r: any) => <>{r.kind === 'ACADEMIC_UNIT' ? 'University academic unit' : words(r.type)}<div className="small faint">{[words(r.sector), words(r.affiliation)].filter((x) => x !== '—').join(' · ') || '—'}</div></> },
             { h: 'Location', cell: (r: any) => <>{r.city ?? '—'}{r.region && <div className="small faint">{r.region}</div>}</> },
             { h: 'Programmes', num: true, cell: (r: any) => <>{r.offerings.verified}<span className="faint"> / {r.offerings.total}</span>{r.offerings.needsVerification > 0 && <div className="small faint">{r.offerings.needsVerification} to verify</div>}</> },
             { h: 'Students', num: true, cell: (r: any) => r.students },
-            { h: 'Status', cell: (r: any) => <><Badge tone={r.active ? 'green' : 'red'}>{r.active ? 'Active' : 'Inactive'}</Badge> <Badge tone={r.operationalStatus === 'OPERATING' ? 'green' : r.operationalStatus === 'CLOSED' ? 'red' : 'grey'}>{r.operationalStatus === 'UNKNOWN' ? 'Operation not confirmed' : words(r.operationalStatus)}</Badge>{r.listingStatus !== 'LISTED' && <> <Badge tone="amber">{words(r.listingStatus)}</Badge></>}</> },
-            { h: 'Restrictions', cell: (r: any) => r.offerings.stopped ? <Badge tone="amber">{r.offerings.stopped} stopped intake{r.offerings.stopped > 1 ? 's' : ''}</Badge> : <span className="faint">None recorded</span> },
-            { h: '', cell: (r: any) => <span className="row-actions"><button className="btn btn-sm" onClick={() => setView(r.id)} aria-label={`View ${r.name}`}>View</button>{r.canEdit && <button className="btn btn-sm" onClick={() => setEdit(r)} aria-label={`Edit ${r.name}`}>Edit</button>}{r.canEdit && <button className="btn btn-sm" aria-label={`${r.active ? 'Deactivate' : 'Activate'} ${r.name}`} onClick={() => (r.active ? setOff(r) : run(async () => { await patch(`/institutions/${r.id}`, { active: true }); st.reload?.(); }, 'Institution activated'))}>{r.active ? 'Deactivate' : 'Activate'}</button>}</span> },
+            { h: 'Status', cell: (r: any) => <><Badge tone={r.active ? 'green' : 'red'}>{r.active ? 'Active' : 'Inactive'}</Badge>{r.listingStatus !== 'LISTED' && <> <Badge tone="amber">{words(r.listingStatus)}</Badge></>}{r.offerings.stopped > 0 && <div style={{ marginTop: 4 }}><Badge tone="amber">{r.offerings.stopped} stopped intake{r.offerings.stopped > 1 ? 's' : ''}</Badge></div>}{r.operationalStatus !== 'OPERATING' && <div className="small faint">{r.operationalStatus === 'CLOSED' ? 'Closed' : 'Operation not confirmed'}</div>}</> },
+            { h: '', cell: (r: any) => <span className="row-actions">{r.canEdit && <button className="btn btn-sm" onClick={() => setEdit(r)} aria-label={`Edit ${r.name}`}>Edit</button>}{r.canEdit && <button className="btn btn-sm" aria-label={`${r.active ? 'Deactivate' : 'Activate'} ${r.name}`} onClick={() => (r.active ? setOff(r) : run(async () => { await patch(`/institutions/${r.id}`, { active: true }); st.reload?.(); }, 'Institution activated'))}>{r.active ? 'Deactivate' : 'Activate'}</button>}</span> },
           ]} />
           <Pager page={page} total={d.total} size={PAGE} onPage={setPage} />
         </>)}</Async></Card>
