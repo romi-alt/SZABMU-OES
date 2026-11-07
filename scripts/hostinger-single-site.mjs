@@ -60,12 +60,29 @@ function stampPortal(req) {
   if (portal) req.headers['x-oes-portal'] = portal;
 }
 
+/**
+ * Host redirects, e.g. REDIRECT_HOSTS="yellowgreen-grasshopper-337716.hostingersite.com=szabmu.site".
+ * hPanel's redirect tool refuses a target that is parked on the same website, so the launcher does it. Path and query are kept;
+ * GET/HEAD get 301, other methods 308 so a POST is not silently turned into a GET. Targets are always https.
+ * Defaults to retiring the demo site's free Hostinger URL; set REDIRECT_HOSTS="" to turn redirects off.
+ */
+const REDIRECT_HOSTS = new Map(
+  (process.env.REDIRECT_HOSTS ?? 'yellowgreen-grasshopper-337716.hostingersite.com=szabmu.site').split(',').map((s) => s.trim().toLowerCase().split('=')).filter(([h, t]) => h && t && h !== t),
+);
+function redirectHost(req, res) {
+  const target = REDIRECT_HOSTS.get(String(req.headers.host ?? '').trim().toLowerCase().replace(/:\d+$/, ''));
+  if (!target) return false;
+  const status = req.method === 'GET' || req.method === 'HEAD' ? 301 : 308;
+  res.writeHead(status, { location: `https://${target}${req.url ?? '/'}`, 'cache-control': 'public, max-age=3600' }).end();
+  return true;
+}
+
 async function main() {
   autoMigrate(root);                       // additive, idempotent, never fatal (see scripts/auto-migrate.mjs)
   const api = await startApi();
   if (PORTAL_HOSTS.size) process.env.PORTAL_FROM_HEADER = 'true';
   const web = await startWeb();
-  const server = createServer((req, res) => { stampPortal(req); return isApi(req.url) ? api.route(req, res) : web(req, res); });
+  const server = createServer((req, res) => { if (redirectHost(req, res)) return; stampPortal(req); return isApi(req.url) ? api.route(req, res) : web(req, res); });
   server.listen(PORT, () => console.error(`[launcher] serving web + API on :${PORT} (node ${process.version})`));
   const shutdown = () => { server.close(); api.app.close().finally(() => process.exit(0)); setTimeout(() => process.exit(0), 8000).unref(); };
   process.on('SIGTERM', shutdown);
