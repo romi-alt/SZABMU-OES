@@ -1,3 +1,5 @@
+import { readdirSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ROLES } from './roles';
 import { isPagePathAllowedOnPortal, portalForRole, portalOf, roleAllowedOnPortal } from './portal';
@@ -39,5 +41,25 @@ describe('page routes per portal', () => {
     expect(isPagePathAllowedOnPortal('/Exams/1?x=1', 'staff')).toBe(true);
     expect(isPagePathAllowedOnPortal('/admin', 'staff')).toBe(false);
     expect(isPagePathAllowedOnPortal('//schedule', 'student')).toBe(true);
+  });
+});
+
+describe('every page of the web app belongs to a portal', () => {
+  const APP = join(__dirname, '../../../apps/web/src/app');
+  /** First path segment of every route that has a page.tsx (route groups like "(app)" do not count as segments). */
+  const routes = (dir: string, depth = 0): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    if (!e.isDirectory() || e.name.startsWith('_')) return [];
+    const sub = join(dir, e.name); const group = e.name.startsWith('(') && e.name.endsWith(')');
+    const own = existsSync(join(sub, 'page.tsx')) && !group ? [e.name.replace(/^\[.*\]$/, '')] : [];
+    return group ? routes(sub, depth) : [...own, ...(depth === 0 && !own.length ? [] : [])];
+  });
+  const found = new Set([...routes(APP), ...readdirSync(APP, { withFileTypes: true }).filter((e) => e.isDirectory() && e.name.startsWith('(')).flatMap((g) => routes(join(APP, g.name)))]);
+  it('serves the teacher question-bank screens on the staff portal only (they 404ed on the live staff site)', () => {
+    for (const p of ['/question-banks', '/submissions', '/question-banks/abc']) { expect(isPagePathAllowedOnPortal(p, 'staff'), p).toBe(true); expect(isPagePathAllowedOnPortal(p, 'student'), p).toBe(false); }
+  });
+  it('has no page route that neither portal serves (a new page must be added to portal.ts)', () => {
+    expect(found.size).toBeGreaterThan(15);
+    const unserved = [...found].filter((r) => !isPagePathAllowedOnPortal(`/${r}`, 'staff') && !isPagePathAllowedOnPortal(`/${r}`, 'student'));
+    expect(unserved).toEqual([]);
   });
 });
